@@ -33,5 +33,5 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# local data
-data/data.json
+# local data (lib/db.ts writes data/db.json)
+/data/
