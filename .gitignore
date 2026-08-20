@@ -35,3 +35,6 @@ next-env.d.ts
 
 # local data (lib/db.ts writes data/db.json)
 /data/
+
+# SDD controller scratch (superpowers)
+.superpowers/
