@@ -113,7 +113,6 @@ export interface ProjectFinancialKPIs {
   budgetVariancePct: number;
   budgetSeverity: SeverityLevel;
   isOverBudget: boolean;
-  unassignedExpenseCount: number;
 }
 
 export interface BusinessFinancialSummary {

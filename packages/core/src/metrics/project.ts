@@ -79,10 +79,6 @@ export function calculateProjectKPIs(
       ? Math.round((totalDirectCost / project.quotedTotal) * 1000) / 10
       : 0;
 
-  const unassignedExpenseCount = transactions.filter(
-    (t) => t.status === 'unassigned'
-  ).length;
-
   return {
     projectId: project.id,
     projectName: project.name,
@@ -106,6 +102,5 @@ export function calculateProjectKPIs(
     budgetVariancePct,
     budgetSeverity: getBudgetSeverity(budgetVariancePct),
     isOverBudget: totalDirectCost > project.quotedTotal,
-    unassignedExpenseCount,
   };
 }

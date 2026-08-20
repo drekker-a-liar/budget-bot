@@ -42,7 +42,6 @@ describe('calculateProjectKPIs (characterization)', () => {
       budgetVariancePct: 73.4,
       budgetSeverity: 'healthy',
       isOverBudget: false,
-      unassignedExpenseCount: 3,
     });
   });
 
@@ -77,11 +76,16 @@ describe('calculateProjectKPIs (characterization)', () => {
     expect(kpi.grossMarginPct).toBe(100);
   });
 
-  // The defects this task fixes.
-  it('BUG 1: unassignedExpenseCount is the global count, repeated on every project', () => {
-    const counts = SEED_PROJECTS.map((p) => kpiFor(p.id).unassignedExpenseCount);
-    expect(counts).toEqual([3, 3, 3, 3, 3]);
-    // ...even though no unassigned transaction is attached to any project.
+  // CHANGED (bug 1): the KPI object used to carry `unassignedExpenseCount`,
+  // which counted every unassigned transaction in the book and so reported the
+  // same number on every project. Unassigned transactions belong to no project
+  // by definition, so there is no per-project count to report: the field is
+  // gone and only BusinessFinancialSummary.unassignedTransactionsCount remains.
+  it('CHANGED: no longer reports a per-project unassigned expense count', () => {
+    for (const project of SEED_PROJECTS) {
+      expect(kpiFor(project.id)).not.toHaveProperty('unassignedExpenseCount');
+    }
+    // Nothing is lost: no unassigned transaction is attached to a project.
     expect(
       SEED_TRANSACTIONS.filter((t) => t.status === 'unassigned' && t.projectId)
     ).toEqual([]);
