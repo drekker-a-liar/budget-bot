@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { categorizeVendor } from '@/lib/categorizer';
+import { categorizeVendor } from '@budget-bot/core';
 
 export async function GET() {
   const transactions = db.getTransactions();

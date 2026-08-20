@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Project, ProjectFinancialKPIs } from '@/lib/types';
+import { Project, ProjectFinancialKPIs } from '@budget-bot/core';
 import { SeverityBadge } from './SeverityBadge';
 import { MarginGauge } from './MarginGauge';
 import {

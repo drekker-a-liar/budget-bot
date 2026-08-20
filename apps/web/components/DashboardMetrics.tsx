@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { BusinessFinancialSummary } from '@/lib/types';
+import { BusinessFinancialSummary } from '@budget-bot/core';
 import { SeverityBadge } from './SeverityBadge';
 import {
   TrendingUp,

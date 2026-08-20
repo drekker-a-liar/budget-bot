@@ -9,7 +9,7 @@ import {
   CardProfile,
   BusinessFinancialSummary,
   ExpenseCategory,
-} from '@/lib/types';
+} from '@budget-bot/core';
 import { Navigation } from '@/components/Navigation';
 import { DashboardMetrics } from '@/components/DashboardMetrics';
 import { JobCostCard } from '@/components/JobCostCard';

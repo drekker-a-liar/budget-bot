@@ -9,7 +9,7 @@ import {
   LaborEntry,
   Invoice,
   ProjectStatus,
-} from '@/lib/types';
+} from '@budget-bot/core';
 import { Navigation } from '@/components/Navigation';
 import { SeverityBadge } from '@/components/SeverityBadge';
 import { MarginGauge } from '@/components/MarginGauge';

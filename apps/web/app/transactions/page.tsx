@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { ExpenseTransaction, Project, CardProfile, BusinessFinancialSummary, ExpenseCategory } from '@/lib/types';
+import { ExpenseTransaction, Project, CardProfile, BusinessFinancialSummary, ExpenseCategory } from '@budget-bot/core';
 import { Navigation } from '@/components/Navigation';
 import { TransactionInbox } from '@/components/TransactionInbox';
 import { QuickAddModal } from '@/components/QuickAddModal';

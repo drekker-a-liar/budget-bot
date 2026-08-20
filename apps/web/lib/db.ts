@@ -6,7 +6,7 @@ import {
   LaborEntry,
   Invoice,
   CardProfile,
-} from './types';
+} from '@budget-bot/core';
 import {
   SEED_PROJECTS,
   SEED_CARD_PROFILE,

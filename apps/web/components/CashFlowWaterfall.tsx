@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { ExpenseTransaction, Invoice, CardProfile } from '@/lib/types';
+import { ExpenseTransaction, Invoice, CardProfile } from '@budget-bot/core';
 import {
   TrendingUp,
   ArrowUpRight,

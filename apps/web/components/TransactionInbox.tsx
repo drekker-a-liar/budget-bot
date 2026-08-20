@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ExpenseTransaction, Project, ExpenseCategory } from '@/lib/types';
+import { ExpenseTransaction, Project, ExpenseCategory } from '@budget-bot/core';
 import {
   CreditCard,
   Check,

@@ -1,10 +1,14 @@
+// Characterization fixtures: a verbatim copy of the prototype seed data
+// (apps/web/lib/seedData.ts) at the time packages/core was extracted. Copied
+// rather than imported so that core's tests never depend on the app, and so
+// that changing the app's seed data cannot silently move these baselines.
 import {
   Project,
   ExpenseTransaction,
   LaborEntry,
   Invoice,
   CardProfile,
-} from '@budget-bot/core';
+} from '../src/types';
 
 export const SEED_PROJECTS: Project[] = [
   {

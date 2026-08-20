@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Project, ExpenseCategory, PricingType, ProjectStatus } from '@/lib/types';
+import { Project, ExpenseCategory, PricingType, ProjectStatus } from '@budget-bot/core';
 import { Receipt, Clock, Hammer, FileText, X } from 'lucide-react';
 
 interface QuickAddModalProps {

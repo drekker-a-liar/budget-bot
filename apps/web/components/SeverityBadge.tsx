@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { SeverityLevel } from '@/lib/types';
+import { SeverityLevel } from '@budget-bot/core';
 import { CheckCircle2, AlertTriangle, AlertCircle, HelpCircle } from 'lucide-react';
 
 interface SeverityBadgeProps {

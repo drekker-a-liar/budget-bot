@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { ProjectFinancialKPIs } from '@/lib/types';
+import { ProjectFinancialKPIs } from '@budget-bot/core';
 import { SeverityBadge } from './SeverityBadge';
 
 interface MarginGaugeProps {

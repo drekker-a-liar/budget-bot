@@ -14,7 +14,7 @@ import {
   Receipt,
   FileText
 } from 'lucide-react';
-import { CardProfile } from '@/lib/types';
+import { CardProfile } from '@budget-bot/core';
 
 interface NavigationProps {
   unassignedCount?: number;

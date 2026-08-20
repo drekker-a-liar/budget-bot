@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { calculateProjectKPIs } from '@/lib/metricsEngine';
+import { calculateProjectKPIs } from '@budget-bot/core';
 
 export async function GET(
   req: Request,

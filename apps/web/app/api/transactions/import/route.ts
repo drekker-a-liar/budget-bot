@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { categorizeVendor } from '@/lib/categorizer';
-import { ExpenseCategory, ExpenseTransaction } from '@/lib/types';
+import { categorizeVendor, ExpenseCategory, ExpenseTransaction } from '@budget-bot/core';
 
 export async function POST(req: Request) {
   try {
