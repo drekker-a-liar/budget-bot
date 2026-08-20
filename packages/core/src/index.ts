@@ -1,3 +1,4 @@
+export * from './money';
 export * from './types';
 export * from './categorizer';
 export * from './metrics/thresholds';
