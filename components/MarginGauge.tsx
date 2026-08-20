@@ -1,0 +1,144 @@
+'use client';
+
+import React from 'react';
+import { ProjectFinancialKPIs } from '@/lib/types';
+import { SeverityBadge } from './SeverityBadge';
+
+interface MarginGaugeProps {
+  kpi: ProjectFinancialKPIs;
+  showLabels?: boolean;
+}
+
+export function MarginGauge({ kpi, showLabels = true }: MarginGaugeProps) {
+  const revenue = kpi.revenue > 0 ? kpi.revenue : 1;
+  const materialsPct = Math.min(100, Math.round((kpi.actualMaterialsCost / revenue) * 1000) / 10);
+  const laborPct = Math.min(100 - materialsPct, Math.round((kpi.actualLaborCost / revenue) * 1000) / 10);
+  const otherPct = Math.min(
+    100 - materialsPct - laborPct,
+    Math.round(((kpi.subcontractorCost + kpi.otherDirectCosts) / revenue) * 1000) / 10
+  );
+  const profitPct = Math.max(0, 100 - materialsPct - laborPct - otherPct);
+
+  // Severity color for profit section
+  let profitColor = 'var(--severity-healthy)';
+  if (kpi.grossMarginSeverity === 'caution') profitColor = 'var(--severity-caution)';
+  if (kpi.grossMarginSeverity === 'critical') profitColor = 'var(--severity-critical)';
+
+  return (
+    <div style={{ width: '100%' }}>
+      {/* Gauge Bar */}
+      <div
+        style={{
+          width: '100%',
+          height: '14px',
+          backgroundColor: 'var(--bg-input)',
+          borderRadius: '4px',
+          overflow: 'hidden',
+          display: 'flex',
+          border: '1px solid var(--border-subtle)',
+          position: 'relative',
+        }}
+      >
+        {/* Materials Segment */}
+        {materialsPct > 0 && (
+          <div
+            style={{
+              width: `${materialsPct}%`,
+              backgroundColor: 'var(--accent-cyan)',
+              height: '100%',
+              transition: 'width 0.3s ease',
+            }}
+            title={`Materials: $${kpi.actualMaterialsCost.toLocaleString()} (${materialsPct}%)`}
+          />
+        )}
+
+        {/* Labor Segment */}
+        {laborPct > 0 && (
+          <div
+            style={{
+              width: `${laborPct}%`,
+              backgroundColor: 'var(--accent-indigo)',
+              height: '100%',
+              transition: 'width 0.3s ease',
+            }}
+            title={`Labor: $${kpi.actualLaborCost.toLocaleString()} (${laborPct}%)`}
+          />
+        )}
+
+        {/* Other / Subs Segment */}
+        {otherPct > 0 && (
+          <div
+            style={{
+              width: `${otherPct}%`,
+              backgroundColor: 'var(--text-muted)',
+              height: '100%',
+              transition: 'width 0.3s ease',
+            }}
+            title={`Subs & Disposal: $${(kpi.subcontractorCost + kpi.otherDirectCosts).toLocaleString()} (${otherPct}%)`}
+          />
+        )}
+
+        {/* Gross Profit Margin Segment */}
+        {profitPct > 0 && (
+          <div
+            style={{
+              width: `${profitPct}%`,
+              backgroundColor: profitColor,
+              height: '100%',
+              transition: 'width 0.3s ease',
+            }}
+            title={`Profit Margin: $${kpi.grossProfit.toLocaleString()} (${profitPct}%)`}
+          />
+        )}
+
+        {/* Target 45% Notch Line */}
+        <div
+          style={{
+            position: 'absolute',
+            left: '55%', // 100% - 45% = 55% direct cost threshold
+            top: 0,
+            bottom: 0,
+            width: '2px',
+            backgroundColor: '#ffffff',
+            opacity: 0.7,
+            zIndex: 2,
+          }}
+          title="Target Cost Ceiling (55% / 45% Margin)"
+        />
+      </div>
+
+      {/* Legend & Breakdown */}
+      {showLabels && (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            fontSize: '0.72rem',
+            color: 'var(--text-secondary)',
+            marginTop: '0.5rem',
+            flexWrap: 'wrap',
+            gap: '0.5rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '2px', backgroundColor: 'var(--accent-cyan)' }} />
+              Materials: <strong className="tnum" style={{ color: '#f8fafc' }}>${kpi.actualMaterialsCost.toLocaleString()}</strong> ({materialsPct}%)
+            </span>
+
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '2px', backgroundColor: 'var(--accent-indigo)' }} />
+              Labor: <strong className="tnum" style={{ color: '#f8fafc' }}>${kpi.actualLaborCost.toLocaleString()}</strong> ({laborPct}%)
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+            <span style={{ width: '8px', height: '8px', borderRadius: '2px', backgroundColor: profitColor }} />
+            Profit Margin: <strong className="tnum" style={{ color: profitColor }}>${kpi.grossProfit.toLocaleString()} ({kpi.grossMarginPct}%)</strong>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
