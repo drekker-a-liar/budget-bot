@@ -12,7 +12,8 @@ export async function GET() {
       raw.projects,
       raw.transactions,
       raw.laborEntries,
-      raw.invoices
+      raw.invoices,
+      new Date()
     );
 
     return NextResponse.json({

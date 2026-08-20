@@ -13,7 +13,8 @@ export function calculateBusinessSummary(
   projects: Project[],
   transactions: ExpenseTransaction[],
   laborEntries: LaborEntry[],
-  invoices: Invoice[]
+  invoices: Invoice[],
+  now: Date
 ): BusinessFinancialSummary {
   const kpis = projects.map((p) =>
     calculateProjectKPIs(p, transactions, laborEntries, invoices)
@@ -54,8 +55,7 @@ export function calculateBusinessSummary(
   if (overdueReceivables > 2000) receivablesSeverity = 'critical';
   else if (overdueReceivables > 500) receivablesSeverity = 'caution';
 
-  // Weekly Cash Flow (Current Week)
-  const now = new Date();
+  // Weekly Cash Flow (the seven days ending at `now`)
   const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
   const weeklyCashInflow = invoices
