@@ -36,8 +36,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# local data (apps/web/lib/db.ts writes data/db.json)
-data/
+# local data (apps/web/lib/db.ts writes apps/web/data/db.json)
+/apps/web/data/
 
 # SDD controller scratch (superpowers)
 .superpowers/
