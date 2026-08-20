@@ -103,6 +103,27 @@ const VENDOR_RULES: VendorRule[] = [
   },
 ];
 
+// Bank descriptors glue the merchant name to store numbers and punctuation
+// ("BP #4471 UNLEADED"), so keywords are matched as whole words rather than as
+// bare substrings. Without this, two-character rules like 'bp' fire on
+// "SUBPAR" and "BPS PLUMBING", and the fallback's 'oil' fires on "TOILET".
+// The rules above stay plain data; only this matcher knows about boundaries.
+function matchesKeyword(normalized: string, keyword: string): boolean {
+  return keywordPattern(keyword).test(normalized);
+}
+
+const patternCache = new Map<string, RegExp>();
+
+function keywordPattern(keyword: string): RegExp {
+  let pattern = patternCache.get(keyword);
+  if (!pattern) {
+    const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    pattern = new RegExp(`(?<![a-z0-9])${escaped}(?![a-z0-9])`);
+    patternCache.set(keyword, pattern);
+  }
+  return pattern;
+}
+
 export function categorizeVendor(rawDescription: string): {
   cleanVendor: string;
   category: ExpenseCategory;
@@ -111,7 +132,7 @@ export function categorizeVendor(rawDescription: string): {
   const normalized = rawDescription.toLowerCase();
 
   for (const rule of VENDOR_RULES) {
-    if (rule.keywords.some((kw) => normalized.includes(kw))) {
+    if (rule.keywords.some((kw) => matchesKeyword(normalized, kw))) {
       return {
         cleanVendor: rule.cleanName,
         category: rule.category,
@@ -121,10 +142,11 @@ export function categorizeVendor(rawDescription: string): {
   }
 
   // Fallback heuristic
+  const matches = (kw: string) => matchesKeyword(normalized, kw);
   let fallbackCategory: ExpenseCategory = 'overhead';
-  if (normalized.includes('hardware') || normalized.includes('supply') || normalized.includes('lumber') || normalized.includes('tile')) {
+  if (['hardware', 'supply', 'lumber', 'tile'].some(matches)) {
     fallbackCategory = 'materials';
-  } else if (normalized.includes('gas') || normalized.includes('oil') || normalized.includes('fuel')) {
+  } else if (['gas', 'oil', 'fuel'].some(matches)) {
     fallbackCategory = 'mileage_fuel';
   }
 

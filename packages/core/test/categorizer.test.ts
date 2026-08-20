@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { categorizeVendor } from '../src/categorizer';
 
-// CHARACTERIZATION: pins the behaviour of the extracted prototype categorizer
-// before any change. Matching is a plain case-insensitive substring test, so
-// short keywords fire on fragments of unrelated words.
+// CHARACTERIZATION of the rule table, except where a test is marked CHANGED:
+// matching used to be a plain case-insensitive substring test, so short
+// keywords fired on fragments of unrelated words.
 
-describe('categorizeVendor (characterization)', () => {
+describe('categorizeVendor', () => {
   const cases: Array<[string, string, string, boolean]> = [
     // descriptor, cleanVendor, category, taxDeductible
     ['THE HOME DEPOT #0421 - Schluter Kerdi Pan', 'The Home Depot', 'materials', true],
@@ -38,14 +38,27 @@ describe('categorizeVendor (characterization)', () => {
     });
   });
 
-  // The defect this task fixes: 'bp' is a 2-character substring rule.
-  it('BUG: the 2-char fuel keyword "bp" matches inside unrelated words', () => {
-    expect(categorizeVendor('BPS PLUMBING SUPPLY CO').category).toBe('mileage_fuel');
-    expect(categorizeVendor('SUBPAR CONTRACTING LLC').category).toBe('mileage_fuel');
+  // CHANGED: keywords now have to sit on a word boundary. The rule table is
+  // untouched data; only the matcher that reads it got stricter.
+  it.each([
+    // descriptor, category before the change, category after
+    ['BPS PLUMBING SUPPLY CO', 'mileage_fuel', 'materials'],
+    ['SUBPAR CONTRACTING LLC', 'mileage_fuel', 'overhead'],
+    ['MOBILE PHONE STORE 44', 'mileage_fuel', 'overhead'],
+  ])(
+    'CHANGED: %s is no longer %s, because the keyword sat mid-word',
+    (descriptor, _before, after) => {
+      expect(categorizeVendor(descriptor).category).toBe(after);
+    }
+  );
+
+  it('CHANGED: the fallback keyword "oil" no longer matches inside "TOILET"', () => {
+    expect(categorizeVendor('TOILET OUTLET WAREHOUSE').category).toBe('overhead');
   });
 
-  // Same defect class in the fallback heuristic.
-  it('BUG: the fallback keyword "oil" matches inside unrelated words', () => {
-    expect(categorizeVendor('TOILET OUTLET WAREHOUSE').category).toBe('mileage_fuel');
+  it('still matches those same keywords when they stand alone', () => {
+    expect(categorizeVendor('BP #4471 UNLEADED').category).toBe('mileage_fuel');
+    expect(categorizeVendor('MOBIL 0392 FUEL').category).toBe('mileage_fuel');
+    expect(categorizeVendor('BULK MOTOR OIL DRUM').category).toBe('mileage_fuel');
   });
 });
