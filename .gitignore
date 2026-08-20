@@ -1,17 +1,20 @@
 # dependencies
-/node_modules
-/.pnp
+node_modules
+.pnp
 .pnp.js
 
 # testing
-/coverage
+coverage
 
 # next.js
-/.next/
-/out/
+.next/
+out/
 
 # production
-/build
+build
+
+# turborepo
+.turbo
 
 # misc
 .DS_Store
@@ -33,8 +36,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# local data (lib/db.ts writes data/db.json)
-/data/
+# local data (apps/web/lib/db.ts writes data/db.json)
+data/
 
 # SDD controller scratch (superpowers)
 .superpowers/
