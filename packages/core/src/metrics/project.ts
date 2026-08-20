@@ -63,7 +63,9 @@ export function calculateProjectKPIs(
       ? Math.round((netEarnings / actualLaborHours) * 100) / 100
       : project.targetHourlyRate;
 
-  // Materials Markup % (Difference between quoted materials vs actual)
+  // Materials Markup % (Difference between quoted materials vs actual).
+  // Null when there is nothing to compare: a project that has not bought
+  // materials yet has no markup, healthy or otherwise.
   const materialsMarkupPct =
     actualMaterialsCost > 0 && project.quotedMaterials > 0
       ? Math.round(
@@ -71,7 +73,7 @@ export function calculateProjectKPIs(
             actualMaterialsCost) *
             1000
         ) / 10
-      : 20;
+      : null;
 
   // Budget Variance
   const budgetVariancePct =
@@ -93,12 +95,14 @@ export function calculateProjectKPIs(
     actualLaborHours,
     quotedLaborHours: project.quotedLaborHours,
     grossProfit,
+    netEarnings,
     grossMarginPct,
     grossMarginSeverity: getGrossMarginSeverity(grossMarginPct),
     netHourlyRealization,
     hourlySeverity: getHourlySeverity(netHourlyRealization),
     materialsMarkupPct,
-    materialsMarkupSeverity: getMaterialMarkupSeverity(materialsMarkupPct),
+    materialsMarkupSeverity:
+      materialsMarkupPct === null ? null : getMaterialMarkupSeverity(materialsMarkupPct),
     budgetVariancePct,
     budgetSeverity: getBudgetSeverity(budgetVariancePct),
     isOverBudget: totalDirectCost > project.quotedTotal,

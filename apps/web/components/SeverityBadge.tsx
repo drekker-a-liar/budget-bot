@@ -5,7 +5,8 @@ import { SeverityLevel } from '@budget-bot/core';
 import { CheckCircle2, AlertTriangle, AlertCircle, HelpCircle } from 'lucide-react';
 
 interface SeverityBadgeProps {
-  level: SeverityLevel;
+  /** Null means "no data to judge": the badge renders its neutral state. */
+  level: SeverityLevel | null;
   label?: string;
   subtext?: string;
   size?: 'sm' | 'md' | 'lg';

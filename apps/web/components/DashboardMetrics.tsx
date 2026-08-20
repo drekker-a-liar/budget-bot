@@ -55,12 +55,20 @@ export function DashboardMetrics({ summary, onOpenInbox }: DashboardMetricsProps
           <span className="swiss-label">Net Hourly Realization</span>
           <SeverityBadge
             level={summary.averageHourlySeverity}
-            label={summary.averageHourlyRealization >= 85 ? 'STRONG' : 'WATCH'}
+            label={
+              summary.averageHourlyRealization === null
+                ? undefined
+                : summary.averageHourlyRealization >= 85
+                  ? 'STRONG'
+                  : 'WATCH'
+            }
           />
         </div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.25rem' }}>
           <span className="swiss-header tnum" style={{ fontSize: '2.25rem', color: '#f8fafc' }}>
-            ${summary.averageHourlyRealization.toFixed(0)}
+            {summary.averageHourlyRealization === null
+              ? '\u2014'
+              : `$${summary.averageHourlyRealization.toFixed(0)}`}
           </span>
           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>/ billable hr</span>
         </div>

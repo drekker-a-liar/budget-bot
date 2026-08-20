@@ -34,7 +34,7 @@ describe('calculateBusinessSummary', () => {
       totalGrossProfitYTD: 5788.6,
       averageMarginPct: 31.7,
       averageMarginSeverity: 'caution',
-      averageHourlyRealization: 154.76,
+      averageHourlyRealization: 151.32,
       averageHourlySeverity: 'healthy',
       openProjectsCount: 2,
       unassignedTransactionsCount: 3,
@@ -68,17 +68,24 @@ describe('calculateBusinessSummary', () => {
     expect(summary.cashFlowSeverity).toBe('healthy');
   });
 
-  // The defects this task fixes.
-  it('BUG 2: business realization subtracts materials only, unlike the per-project figure', () => {
-    // (18250 - 4321.40) / 90 hrs. Labour, subs and other direct costs are all
-    // left in, so the business number is far rosier than any project's.
-    expect(summarize().averageHourlyRealization).toBe(154.76);
+  // CHANGED (bug 2): the business figure used to be
+  // (totalRevenue - totalMaterials) / totalHours, subtracting materials only
+  // and leaving subcontractor and other direct costs in, so it disagreed with
+  // the per-project netHourlyRealization it was supposed to summarise. It is
+  // now sum(kpi.netEarnings) / totalHours, the same definition scaled up.
+  it('CHANGED: business realization sums the same net earnings the projects report', () => {
+    // 13618.60 net earnings / 90 hrs. The old materials-only formula reported
+    // 154.76 by leaving $1,690 of subs and disposal costs in.
+    expect(summarize().averageHourlyRealization).toBe(151.32);
     expect(summarize().averageHourlySeverity).toBe('healthy');
   });
 
-  it('BUG 2: with no projects at all, realization is the fabricated $85/hr sentinel', () => {
+  // CHANGED (bug 2): with no hours logged there is no realization to report,
+  // and the old code answered 85 - exactly the HOURLY_REALIZATION.HEALTHY
+  // threshold - so an empty book of business rendered as green.
+  it('CHANGED: realization is null, not $85/hr, when no hours have been logged', () => {
     const summary = calculateBusinessSummary([], [], [], [], NOW);
-    expect(summary.averageHourlyRealization).toBe(85);
-    expect(summary.averageHourlySeverity).toBe('healthy');
+    expect(summary.averageHourlyRealization).toBeNull();
+    expect(summary.averageHourlySeverity).toBeNull();
   });
 });

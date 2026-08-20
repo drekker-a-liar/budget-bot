@@ -301,7 +301,7 @@ export default function ProjectDetailPage() {
               <SeverityBadge level={kpi.materialsMarkupSeverity} />
             </div>
             <div className="tnum swiss-header" style={{ fontSize: '1.85rem', color: '#f8fafc' }}>
-              {kpi.materialsMarkupPct}%
+              {kpi.materialsMarkupPct === null ? '\u2014' : `${kpi.materialsMarkupPct}%`}
             </div>
             <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
               Quoted Materials: ${project.quotedMaterials.toLocaleString()}

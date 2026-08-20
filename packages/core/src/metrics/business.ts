@@ -30,10 +30,13 @@ export function calculateBusinessSummary(
       ? Math.round((totalGrossProfitYTD / totalRevenueYTD) * 1000) / 10
       : 0;
 
+  // Realization uses the same net earnings each project reports, so the
+  // business figure is the per-project figure scaled up rather than a second,
+  // rosier definition. Null when there are no hours to divide by.
   const totalHours = kpis.reduce((sum, k) => sum + k.actualLaborHours, 0);
-  const totalNetEarnings = totalRevenueYTD - totalMaterialsYTD;
+  const totalNetEarnings = kpis.reduce((sum, k) => sum + k.netEarnings, 0);
   const averageHourlyRealization =
-    totalHours > 0 ? Math.round((totalNetEarnings / totalHours) * 100) / 100 : 85;
+    totalHours > 0 ? Math.round((totalNetEarnings / totalHours) * 100) / 100 : null;
 
   const openProjectsCount = projects.filter(
     (p) => p.status === 'in_progress' || p.status === 'estimating'
@@ -80,7 +83,10 @@ export function calculateBusinessSummary(
     averageMarginPct,
     averageMarginSeverity: getGrossMarginSeverity(averageMarginPct),
     averageHourlyRealization,
-    averageHourlySeverity: getHourlySeverity(averageHourlyRealization),
+    averageHourlySeverity:
+      averageHourlyRealization === null
+        ? null
+        : getHourlySeverity(averageHourlyRealization),
     openProjectsCount,
     unassignedTransactionsCount,
     unassignedTransactionsTotal,

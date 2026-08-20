@@ -104,12 +104,15 @@ export interface ProjectFinancialKPIs {
   actualLaborHours: number;
   quotedLaborHours: number;
   grossProfit: number;
+  /** Revenue less every non-labour direct cost; the numerator of realization. */
+  netEarnings: number;
   grossMarginPct: number;
   grossMarginSeverity: SeverityLevel;
   netHourlyRealization: number;
   hourlySeverity: SeverityLevel;
-  materialsMarkupPct: number;
-  materialsMarkupSeverity: SeverityLevel;
+  /** Null when no materials have been bought, or none were quoted. */
+  materialsMarkupPct: number | null;
+  materialsMarkupSeverity: SeverityLevel | null;
   budgetVariancePct: number;
   budgetSeverity: SeverityLevel;
   isOverBudget: boolean;
@@ -122,8 +125,9 @@ export interface BusinessFinancialSummary {
   totalGrossProfitYTD: number;
   averageMarginPct: number;
   averageMarginSeverity: SeverityLevel;
-  averageHourlyRealization: number;
-  averageHourlySeverity: SeverityLevel;
+  /** Null when no hours have been logged anywhere in the book of business. */
+  averageHourlyRealization: number | null;
+  averageHourlySeverity: SeverityLevel | null;
   openProjectsCount: number;
   unassignedTransactionsCount: number;
   unassignedTransactionsTotal: number;

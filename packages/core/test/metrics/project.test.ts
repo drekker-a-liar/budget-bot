@@ -33,6 +33,7 @@ describe('calculateProjectKPIs (characterization)', () => {
       actualLaborHours: 38,
       quotedLaborHours: 42,
       grossProfit: 1809.25,
+      netEarnings: 5039.25,
       grossMarginPct: 26.6,
       grossMarginSeverity: 'caution',
       netHourlyRealization: 132.61,
@@ -91,12 +92,30 @@ describe('calculateProjectKPIs (characterization)', () => {
     ).toEqual([]);
   });
 
-  it('BUG 2: with no data, sentinels fabricate healthy-looking KPIs', () => {
+  // CHANGED (bug 2): materialsMarkupPct used to fall back to 20 - exactly the
+  // MATERIAL_MARKUP.HEALTHY threshold - whenever there were no materials to
+  // measure, so a project that had bought nothing yet showed a healthy markup.
+  // With nothing to measure the answer is null, not a healthy-looking number.
+  it('CHANGED: materials markup is null when there is nothing to measure', () => {
+    const kpi = kpiFor('proj-5');
+    expect(kpi.actualMaterialsCost).toBe(0);
+    expect(kpi.materialsMarkupPct).toBeNull();
+    expect(kpi.materialsMarkupSeverity).toBeNull();
+  });
+
+  it('reports net earnings per project, the input to business-wide realization', () => {
+    expect(SEED_PROJECTS.map((p) => kpiFor(p.id).netEarnings)).toEqual([
+      5039.25, 2648.05, 1611.8, 1119.5, 3200,
+    ]);
+  });
+
+  // Deliberately unchanged: with no hours logged, per-project realization still
+  // falls back to the project's own target rate. That is the rate the estimate
+  // was priced at, not an invented constant, so it stays until a later task
+  // decides what an hours-less project should display.
+  it('per-project realization still falls back to the project target rate', () => {
     const kpi = kpiFor('proj-5');
     expect(kpi.actualLaborHours).toBe(0);
-    expect(kpi.netHourlyRealization).toBe(85); // = project.targetHourlyRate
-    expect(kpi.actualMaterialsCost).toBe(0);
-    expect(kpi.materialsMarkupPct).toBe(20); // = the MATERIAL_MARKUP.HEALTHY line
-    expect(kpi.materialsMarkupSeverity).toBe('healthy');
+    expect(kpi.netHourlyRealization).toBe(85);
   });
 });
