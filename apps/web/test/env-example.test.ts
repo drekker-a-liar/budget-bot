@@ -20,6 +20,23 @@ function keysIn(path: string): string[] {
     .sort();
 }
 
+/**
+ * The `# Required in: ...` line nearest above a variable's assignment. The
+ * file is comment-then-key throughout, so "nearest above" is what a reader
+ * takes it to mean too.
+ */
+function requiredInFor(key: string): string | undefined {
+  const lines = readFileSync(EXAMPLE, 'utf8').split('\n');
+  const index = lines.findIndex((line) => line.startsWith(`${key}=`));
+  if (index === -1) return undefined;
+  for (let i = index - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (/^([A-Z][A-Z0-9_]*)=/.test(line)) return undefined;
+    if (line.startsWith('# Required in:')) return line;
+  }
+  return undefined;
+}
+
 const documented = keysIn(EXAMPLE);
 const declared = Object.keys(envSchema.shape)
   .filter((key) => !RUNTIME_PROVIDED_ENV_KEYS.includes(key as 'NODE_ENV'))
@@ -36,6 +53,33 @@ describe('.env.example', () => {
 
   it('documents nothing the schema does not declare', () => {
     expect(documented.filter((key) => !declared.includes(key))).toEqual([]);
+  });
+
+  /**
+   * `assertProductionSecurity` fires on `NODE_ENV === 'production'`, and a
+   * Vercel *preview* deployment is built and run with exactly that. So every
+   * unconditional check applies to previews too, and a variable annotated
+   * "Required in: prod" alone sends a self-hoster to a preview that refuses to
+   * boot with no idea why.
+   */
+  it('says preview as well as prod for everything the boot assertion insists on', () => {
+    const enforced = [
+      'AUTH_SECRET',
+      'AUTH_GITHUB_ID',
+      'AUTH_GITHUB_SECRET',
+      'ALLOWED_EMAILS',
+      'BANK_TOKEN_ENCRYPTION_KEY',
+      'USE_PG',
+      // Conditional on PLAID_ENV, but conditional in preview too.
+      'CRON_SECRET',
+    ];
+
+    for (const key of enforced) {
+      const line = requiredInFor(key);
+      expect(line, `${key} has no "Required in:" line`).not.toBeUndefined();
+      expect(line, `${key}: ${line}`).toMatch(/preview/);
+      expect(line, `${key}: ${line}`).toMatch(/prod/);
+    }
   });
 
   it('leaves every secret blank', () => {

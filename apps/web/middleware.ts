@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { isPublicPath } from '@/lib/publicPaths';
+import { isPublicPath, normalizePathname } from '@/lib/publicPaths';
 
 /**
  * The cheap half of the locked door (ADR 0003, spec §7).
@@ -35,7 +35,12 @@ export function middleware(request: NextRequest): NextResponse {
 
   // A `fetch` cannot do anything useful with a 302 to an HTML page - it
   // follows it and reports success - so machine callers get a status instead.
-  if (pathname.startsWith('/api/')) {
+  //
+  // Decided by the path, deliberately, and not by `Accept`: a header is the
+  // caller's word for what it wants, while the path is what Next will route.
+  // Normalised for the same reason `isPublicPath` normalises - `/API/data` and
+  // `/api%2Fdata` reach a route handler and must not leave here as a redirect.
+  if (normalizePathname(pathname).startsWith('/api/')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

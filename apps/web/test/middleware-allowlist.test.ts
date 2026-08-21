@@ -1,9 +1,7 @@
-import { readdirSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { config } from '@/middleware';
 import { PUBLIC_PATHS, isPublicPath } from '@/lib/publicPaths';
+import { appUrlPaths } from './helpers/appRoutes';
 
 /**
  * Fail closed, checked against the routes that actually exist.
@@ -15,29 +13,9 @@ import { PUBLIC_PATHS, isPublicPath } from '@/lib/publicPaths';
  * one side or the other on purpose.
  */
 
-const APP_DIR = fileURLToPath(new URL('../app', import.meta.url));
 const MATCHER = new RegExp(`^${config.matcher[0]}$`);
 
-function routeFiles(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) return routeFiles(full);
-    return entry.name === 'route.ts' || entry.name === 'page.tsx' ? [full] : [];
-  });
-}
-
-/** `app/projects/[id]/page.tsx` -> `/projects/sample`. */
-function urlPathOf(file: string): string {
-  const segments = relative(APP_DIR, file)
-    .split(sep)
-    .slice(0, -1)
-    // Route groups - `(marketing)` - organise files without appearing in URLs.
-    .filter((segment) => !segment.startsWith('('))
-    .map((segment) => (segment.startsWith('[') ? 'sample' : segment));
-  return `/${segments.join('/')}`.replace(/\/$/, '') || '/';
-}
-
-const paths = [...new Set(routeFiles(APP_DIR).map(urlPathOf))].sort();
+const paths = appUrlPaths();
 
 describe('every route in app/', () => {
   it('was found, so this test is not silently checking nothing', () => {

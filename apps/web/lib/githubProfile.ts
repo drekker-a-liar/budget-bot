@@ -37,14 +37,18 @@ export async function fetchGithubProfile(accessToken: string): Promise<VerifiedG
     'User-Agent': 'budget-bot',
   };
 
-  const profile = (await fetch(`${GITHUB_API}/user`, { headers }).then((response) =>
-    response.json()
-  )) as GitHubProfile;
+  // Either call failing means "no verified address", never a fall back to the
+  // public profile one - that fallback is the case this function exists to
+  // close. A revoked or throttled token answers 401 here with a JSON error
+  // body, and parsing it anyway would hand the allow-list check an object to
+  // guess at, so the status is what decides.
+  const userResponse = await fetch(`${GITHUB_API}/user`, { headers });
+  const profile = (userResponse.ok ? await userResponse.json() : {}) as GitHubProfile;
 
-  // A failed list is treated as "no verified address" rather than falling back
-  // to the public one: the fallback is exactly the case this exists to close.
-  const response = await fetch(`${GITHUB_API}/user/emails`, { headers });
-  const emails = (response.ok ? await response.json() : []) as GithubEmail[];
+  const emailsResponse = userResponse.ok
+    ? await fetch(`${GITHUB_API}/user/emails`, { headers })
+    : undefined;
+  const emails = (emailsResponse?.ok ? await emailsResponse.json() : []) as GithubEmail[];
   const primary = emails.find((entry) => entry.primary && entry.verified);
 
   return { ...profile, email: primary?.email ?? null, email_verified: Boolean(primary) };

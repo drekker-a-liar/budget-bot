@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { Session } from 'next-auth';
+import { apiRoutes } from './helpers/appRoutes';
+import { isPublicPath } from '@/lib/publicPaths';
 
 /**
  * Every route handler asks `auth()`, not the middleware (ADR 0003).
@@ -51,34 +53,22 @@ const SIGNED_IN: Session = {
 
 type Handler = (request: Request, context: { params: { id: string } }) => Promise<Response>;
 
-/** Every `app/api` route, with a request each of its methods will accept. */
-const routes: Array<[string, Promise<Record<string, unknown>>, string]> = [
-  ['/api/data', import('@/app/api/data/route'), 'http://localhost/api/data'],
-  ['/api/projects', import('@/app/api/projects/route'), 'http://localhost/api/projects'],
-  [
-    '/api/projects/[id]',
-    import('@/app/api/projects/[id]/route'),
-    'http://localhost/api/projects/p1',
-  ],
-  [
-    '/api/transactions',
-    import('@/app/api/transactions/route'),
-    'http://localhost/api/transactions?id=t1',
-  ],
-  [
-    '/api/transactions/import',
-    import('@/app/api/transactions/import/route'),
-    'http://localhost/api/transactions/import',
-  ],
-  ['/api/labor', import('@/app/api/labor/route'), 'http://localhost/api/labor?id=l1'],
-  ['/api/invoices', import('@/app/api/invoices/route'), 'http://localhost/api/invoices'],
-];
+/**
+ * Every route on disk, split by whether it is public on purpose.
+ *
+ * Derived rather than listed: a list somebody types is exactly what a new
+ * `app/api/export/route.ts` would not appear on, and that route would then be
+ * the one nothing here asserts calls `auth()`.
+ */
+const routes = apiRoutes();
+const publicRoutes = routes.filter((route) => isPublicPath(route.path));
+const gatedRoutes = routes.filter((route) => !isPublicPath(route.path));
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 
-function requestFor(method: string, url: string): Request {
+function requestFor(method: string, path: string): Request {
   const hasBody = method !== 'GET' && method !== 'DELETE';
-  return new Request(url, {
+  return new Request(`http://localhost${path}?id=x`, {
     method,
     ...(hasBody && {
       headers: { 'Content-Type': 'application/json' },
@@ -88,12 +78,12 @@ function requestFor(method: string, url: string): Request {
 }
 
 const handlers: Array<[string, Handler, Request]> = [];
-for (const [path, moduleImport, url] of routes) {
-  const module = await moduleImport;
+for (const route of gatedRoutes) {
+  const module: Record<string, unknown> = await import(/* @vite-ignore */ route.file);
   for (const method of METHODS) {
     const handler = module[method];
     if (typeof handler === 'function') {
-      handlers.push([`${method} ${path}`, handler as Handler, requestFor(method, url)]);
+      handlers.push([`${method} ${route.path}`, handler as Handler, requestFor(method, route.path)]);
     }
   }
 }
@@ -104,10 +94,34 @@ beforeEach(() => {
   store.getProjects.mockClear();
 });
 
-describe('with no session', () => {
-  it('found the handlers, so this test is not checking an empty list', () => {
-    expect(handlers.length).toBeGreaterThanOrEqual(13);
+describe('the route list this test walks', () => {
+  it('came off disk, and is not empty', () => {
+    expect(routes.length).toBeGreaterThan(0);
+    expect(routes.map((route) => route.path)).toContain('/api/data');
   });
+
+  it('accounts for every route.ts under app/api, with none skipped', () => {
+    expect(publicRoutes.length + gatedRoutes.length).toBe(routes.length);
+  });
+
+  it('treats exactly two routes as reachable without a session', () => {
+    // Auth.js's own endpoints are how a session is made, and the health check
+    // exists to be asked by something that has none. Anything else appearing
+    // here is a new hole, and this is where it gets noticed.
+    expect(publicRoutes.map((route) => route.path)).toEqual([
+      '/api/auth/sample',
+      '/api/health',
+    ]);
+  });
+
+  it('found a handler for every gated route, and several methods', () => {
+    const covered = new Set(handlers.map(([name]) => name.split(' ')[1]));
+    expect([...covered].sort()).toEqual(gatedRoutes.map((route) => route.path));
+    expect(handlers.length).toBeGreaterThan(gatedRoutes.length);
+  });
+});
+
+describe('with no session', () => {
 
   it.each(handlers)('%s answers 401', async (_name, handler, request) => {
     const response = await handler(request.clone(), { params: { id: 'p1' } });

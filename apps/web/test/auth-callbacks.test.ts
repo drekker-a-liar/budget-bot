@@ -143,11 +143,15 @@ describe('resolving the GitHub address to check', () => {
    * the primary one whether or not it is verified - so this deployment asks
    * for the list every time and insists on both.
    */
-  function stubGithub(user: unknown, emails: unknown, emailsOk = true) {
+  function stubGithub(
+    user: unknown,
+    emails: unknown,
+    { emailsOk = true, userOk = true } = {}
+  ) {
     const fetchMock = vi.fn(async (url: string) =>
       url.endsWith('/user/emails')
         ? { ok: emailsOk, json: async () => emails }
-        : { ok: true, json: async () => user }
+        : { ok: userOk, json: async () => user }
     );
     vi.stubGlobal('fetch', fetchMock);
     return fetchMock;
@@ -189,12 +193,33 @@ describe('resolving the GitHub address to check', () => {
   });
 
   it('reports no address when GitHub refuses the list, rather than guessing', async () => {
-    stubGithub({ id: 42, login: 'mike', email: 'public@example.com' }, [], false);
+    stubGithub({ id: 42, login: 'mike', email: 'public@example.com' }, [], { emailsOk: false });
 
     const profile = await fetchGithubProfile('gho_token');
 
     expect(profile.email).toBeNull();
     expect(profile.email_verified).toBe(false);
+  });
+
+  it('reports no address when GitHub refuses the profile itself', async () => {
+    // A revoked or throttled token gets a 401 here. Reading the body anyway
+    // would hand the allow-list check an error object to guess at.
+    stubGithub({ message: 'Bad credentials' }, [], { userOk: false });
+
+    const profile = await fetchGithubProfile('gho_revoked');
+
+    expect(profile.email).toBeNull();
+    expect(profile.email_verified).toBe(false);
+  });
+
+  it('does not go on to ask for addresses once the profile call failed', async () => {
+    const fetchMock = stubGithub({ message: 'Bad credentials' }, [], { userOk: false });
+
+    await fetchGithubProfile('gho_revoked');
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).not.toContain(
+      'https://api.github.com/user/emails'
+    );
   });
 
   it('never sends the access token anywhere but api.github.com', async () => {
