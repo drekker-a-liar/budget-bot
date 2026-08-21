@@ -219,6 +219,19 @@ export function assertProductionSecurity(raw: RawEnv = process.env): void {
     );
   }
 
+  /**
+   * "Unset" has to mean Plaid is not configured, or the rule above has a hole
+   * in it. The provider factory builds a Sandbox client when `PLAID_ENV` does
+   * not say `production`, so credentials with no `PLAID_ENV` would reach
+   * Sandbox from production by the back door - past a check whose entire
+   * purpose is to stop that.
+   */
+  if (raw.PLAID_ENV === undefined && (raw.PLAID_CLIENT_ID || raw.PLAID_SECRET)) {
+    problems.push(
+      'PLAID_CLIENT_ID or PLAID_SECRET is set but PLAID_ENV is not. Set PLAID_ENV=production, or remove the credentials if this deployment does not use Plaid.'
+    );
+  }
+
   if (raw.PLAID_ENV === 'production') {
     if (!raw.PLAID_CLIENT_ID) {
       problems.push('PLAID_CLIENT_ID is missing, and PLAID_ENV=production means Plaid is live.');

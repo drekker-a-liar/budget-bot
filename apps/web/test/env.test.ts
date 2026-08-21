@@ -104,6 +104,22 @@ describe('assertProductionSecurity', () => {
      * other check here would pass while it did.
      */
     ['Plaid is pointed at Sandbox', { PLAID_ENV: 'sandbox' }, /PLAID_ENV/],
+    /**
+     * The same rule from the other side. The provider factory builds a
+     * Sandbox client whenever `PLAID_ENV` does not say `production`, so
+     * credentials with no `PLAID_ENV` would reach Sandbox from production
+     * without ever tripping the check above.
+     */
+    [
+      'Plaid has credentials but no environment',
+      { PLAID_ENV: undefined, PLAID_CLIENT_ID: 'id', PLAID_SECRET: 'secret' },
+      /PLAID_ENV/,
+    ],
+    [
+      'Plaid has half a credential pair and no environment',
+      { PLAID_ENV: undefined, PLAID_CLIENT_ID: 'id' },
+      /PLAID_ENV/,
+    ],
     [
       'the end-to-end sign-in door is open',
       { E2E: '1' },
