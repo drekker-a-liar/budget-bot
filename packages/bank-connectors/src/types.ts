@@ -110,6 +110,12 @@ export interface CreateLinkTokenArgs {
   redirectUri?: string;
   /** An existing connection to re-authorize rather than create. */
   accessToken?: string;
+  /**
+   * Where the provider should post updates for this connection. Optional
+   * because it is only useful once there is a public URL to post to, and a
+   * local development run has none.
+   */
+  webhookUrl?: string;
 }
 
 export interface LinkToken {
