@@ -64,6 +64,14 @@ export const envSchema = z.object({
   /** `1` seeds demo fixtures for a user the first time they sign in. */
   SEED_DEMO: flag,
 
+  /**
+   * `1` opens the password-less sign-in door the Playwright suite uses, and
+   * nothing else ever should. `assertProductionSecurity` refuses to start a
+   * production deployment that has it set, and the provider itself refuses to
+   * be constructed there (see `lib/e2eProvider.ts`).
+   */
+  E2E: flag,
+
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 });
 
@@ -185,6 +193,15 @@ export function assertProductionSecurity(raw: RawEnv = process.env): void {
 
   if (raw.PLAID_ENV === 'production' && !raw.CRON_SECRET) {
     problems.push('CRON_SECRET is missing, and PLAID_ENV=production means the sync endpoint is live.');
+  }
+
+  // Anything but absent or an explicit "0". The variable exists to let a test
+  // run sign in without a password, so the only reading of a value nobody
+  // recognises that is safe here is "the door might be open".
+  if (raw.E2E !== undefined && raw.E2E !== '0') {
+    problems.push(
+      'E2E must not be set in production; it opens a password-less sign-in door meant only for the Playwright suite. Delete it from the environment, or set it to 0.'
+    );
   }
 
   if (raw.DEV_OWNER_EMAIL) {

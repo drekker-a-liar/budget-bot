@@ -115,6 +115,24 @@ describe('the sign-in page', () => {
     expect(screen.getByRole('alert').textContent).not.toContain('script');
   });
 
+  it('shows no test sign-in, because E2E is not set for a normal run', async () => {
+    await renderLogin();
+
+    expect(screen.queryByLabelText(/end-to-end test sign-in/i)).not.toBeInTheDocument();
+  });
+
+  it('offers the test sign-in only when E2E asks for it', async () => {
+    // The Playwright suite drives this form; a deployment that has it is one
+    // that refused to boot (spec §7, apps/web/src/env.ts).
+    vi.stubEnv('E2E', '1');
+
+    await renderLogin();
+
+    expect(screen.getByLabelText(/end-to-end test sign-in/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /sign in for tests/i })).toBeInTheDocument();
+    vi.unstubAllEnvs();
+  });
+
   it('sends someone who is already signed in to the dashboard', async () => {
     authMock.mockResolvedValue(SIGNED_IN);
 

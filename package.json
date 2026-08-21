@@ -9,6 +9,7 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "e2e": "pnpm --filter web e2e",
     "check:security": "pnpm --filter web check:security",
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",

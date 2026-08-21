@@ -2,6 +2,8 @@ import { DrizzleAdapter } from '@auth/drizzle-adapter';
 import { getDb, schema, seedOwner } from '@budget-bot/db';
 import NextAuth from 'next-auth';
 import { authConfig } from '@/auth.config';
+import { isE2eSignInEnabled } from '@/lib/e2eProvider';
+import { mintE2eDatabaseSession } from '@/lib/e2eSession';
 import { env } from '@/src/env';
 
 /**
@@ -16,32 +18,47 @@ import { env } from '@/src/env';
  * importing `auth()` never opens a connection. A build, and every test that
  * mocks this module, would otherwise need a reachable database.
  */
-export const { handlers, auth, signIn, signOut } = NextAuth(() => ({
-  ...authConfig,
-
-  adapter: DrizzleAdapter(getDb(), {
+export const { handlers, auth, signIn, signOut } = NextAuth(() => {
+  const adapter = DrizzleAdapter(getDb(), {
     usersTable: schema.users,
     accountsTable: schema.accounts,
     sessionsTable: schema.sessions,
     verificationTokensTable: schema.verificationTokens,
-  }),
+  });
 
-  session: { strategy: 'database' },
+  return {
+    ...authConfig,
 
-  // Vercel and every self-hosted target put the app behind a proxy, so the
-  // forwarded host is the only host there is.
-  trustHost: true,
+    adapter,
 
-  events: {
+    session: { strategy: 'database' },
+
+    // Vercel and every self-hosted target put the app behind a proxy, so the
+    // forwarded host is the only host there is.
+    trustHost: true,
+
     /**
-     * A fresh deployment signs in to an empty dashboard, which is a poor way
-     * to find out whether anything works. `SEED_DEMO=1` fills the first
-     * sign-in with the demo fixtures; it is off unless someone asks for it,
-     * and it only ever runs for a user Auth.js has just created.
+     * Only ever reached by the E2E credentials sign-in, and only when that door
+     * is open at all: with a database strategy nothing else in Auth.js encodes a
+     * JWT. It writes a real `sessions` row and puts its token in the cookie, so
+     * the test suite exercises the same session mechanism GitHub produces rather
+     * than a JWT the app cannot read. See lib/e2eSession.ts.
      */
-    async createUser({ user }) {
-      if (env.SEED_DEMO !== '1' || !user.id) return;
-      await seedOwner(getDb(), user.id);
+    ...(isE2eSignInEnabled() && {
+      jwt: { encode: ({ token }) => mintE2eDatabaseSession(adapter, token?.email) },
+    }),
+
+    events: {
+      /**
+       * A fresh deployment signs in to an empty dashboard, which is a poor way
+       * to find out whether anything works. `SEED_DEMO=1` fills the first
+       * sign-in with the demo fixtures; it is off unless someone asks for it,
+       * and it only ever runs for a user Auth.js has just created.
+       */
+      async createUser({ user }) {
+        if (env.SEED_DEMO !== '1' || !user.id) return;
+        await seedOwner(getDb(), user.id);
+      },
     },
-  },
-}));
+  };
+});

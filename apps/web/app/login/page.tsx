@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { auth, signIn } from '@/auth';
+import { E2E_PROVIDER_ID, isE2eSignInEnabled } from '@/lib/e2eProvider';
 
 /**
  * The only page reachable without a session (spec §7).
@@ -93,6 +94,44 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             Sign in with GitHub
           </button>
         </form>
+
+        {/*
+          The Playwright suite's way in, and nothing else's: `E2E=1` is a local
+          test run, and a production deployment with it set refuses to boot
+          (spec §7, lib/e2eProvider.ts). It is rendered rather than driven
+          headlessly so the suite goes through the same page a person does.
+        */}
+        {isE2eSignInEnabled() && (
+          <form
+            action={async (formData: FormData) => {
+              'use server';
+              await signIn(E2E_PROVIDER_ID, {
+                email: String(formData.get('email') ?? ''),
+                redirectTo: callbackUrl,
+              });
+            }}
+            style={{ marginTop: '1.25rem', borderTop: '1px solid var(--border-subtle)', paddingTop: '1.25rem' }}
+          >
+            <label className="swiss-label" htmlFor="e2e-email">
+              End-to-end test sign-in
+            </label>
+            <input
+              id="e2e-email"
+              name="email"
+              type="email"
+              className="form-input"
+              placeholder="allow-listed address"
+              style={{ marginTop: '0.25rem', width: '100%' }}
+            />
+            <button
+              type="submit"
+              className="btn-secondary"
+              style={{ width: '100%', justifyContent: 'center', marginTop: '0.5rem' }}
+            >
+              Sign in for tests
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );

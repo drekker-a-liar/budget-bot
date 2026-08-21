@@ -73,8 +73,27 @@ describe('assertProductionSecurity', () => {
       { PLAID_ENV: 'production' },
       /CRON_SECRET/,
     ],
+    [
+      'the end-to-end sign-in door is open',
+      { E2E: '1' },
+      /E2E/,
+    ],
+    [
+      'the end-to-end door is set to something that is not an off switch',
+      { E2E: 'true' },
+      /E2E/,
+    ],
   ])('refuses to start when %s', (_name, overrides, expected) => {
     expect(failureFor(overrides)).toMatch(expected);
+  });
+
+  /**
+   * `.env.example` ships `E2E=0`, and a self-hoster who pastes that file into
+   * a deployment's variables should get a running deployment rather than a
+   * boot failure about a door that is shut.
+   */
+  it('lets an explicitly disabled E2E flag through', () => {
+    expect(() => assertProductionSecurity({ ...safeProduction(), E2E: '0' })).not.toThrow();
   });
 
   it('lets Plaid sandbox run without a cron secret', () => {

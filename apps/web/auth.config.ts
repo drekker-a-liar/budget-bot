@@ -1,5 +1,11 @@
 import type { NextAuthConfig } from 'next-auth';
 import GitHub from 'next-auth/providers/github';
+import {
+  E2E_PROVIDER_ID,
+  e2eCredentialsProvider,
+  isE2eEmailAllowed,
+  isE2eSignInEnabled,
+} from '@/lib/e2eProvider';
 import { fetchGithubProfile, type VerifiedGithubProfile } from '@/lib/githubProfile';
 import { env } from '@/src/env';
 
@@ -38,6 +44,11 @@ export const authConfig = {
         };
       },
     }),
+
+    // Nothing in a real deployment: `E2E=1` is a local Playwright run, and a
+    // production boot with it set throws before this line is ever reached
+    // (spec §7). See lib/e2eProvider.ts for both guards.
+    ...(isE2eSignInEnabled() ? [e2eCredentialsProvider()] : []),
   ],
 
   // Both point at the one page this app has: an error is something the visitor
@@ -55,7 +66,15 @@ export const authConfig = {
      * said this time round, so removing someone from `ALLOWED_EMAILS` locks
      * out the account they already have rather than only new ones.
      */
-    signIn({ profile }) {
+    signIn({ account, profile, user }) {
+      // The test door answers for itself: there is no GitHub profile behind a
+      // credentials sign-in, and the allow-list check below reads one. Same
+      // list, checked again after `authorize` already checked it, because this
+      // is the callback every provider passes through.
+      if (account?.provider === E2E_PROVIDER_ID) {
+        return isE2eEmailAllowed(user?.email);
+      }
+
       const github = profile as VerifiedGithubProfile | undefined;
       if (!github?.email || !github.email_verified) return false;
       return env.ALLOWED_EMAILS.includes(github.email.toLowerCase());
