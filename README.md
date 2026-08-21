@@ -1,71 +1,107 @@
-# Budget Bot // Contractor Expense, Cash Flow & Profit Margin OS
+# Budget Bot
 
-A financial operating system and project expense tracking dashboard designed specifically for trade contractors and handyman professionals.
+Job costing and cash flow for a one-person trade business: what each job
+quoted, what it has actually cost, and what that leaves per hour.
 
-Built with **Next.js 14**, **React**, and a **Swiss Graphic Design** system featuring high-contrast typography, strict dark mode, and dynamic severity thresholds.
+It is a private, single-tenant application you host yourself. Sign-in is a
+GitHub OAuth app you own, restricted to an allow list you write, and the data
+lives in a Postgres you control.
 
----
+Phase 1 of the [architecture](docs/superpowers/specs/2026-08-20-system-architecture-design.md).
+Bank connections, monthly gross margin and the production security audit are
+the sub-projects after it.
 
-## 🎯 Core Features & Financial Capabilities
+## Prerequisites
 
-### 1. Job Costing & Profit Margin Realization
-- **Gross Profit Margin Tracking**: Live margin calculation per job:
-  $$\text{Gross Margin} = \frac{\text{Revenue} - (\text{Materials} + \text{Labor} + \text{Direct Costs})}{\text{Revenue}} \times 100$$
-- **Swiss Severity Indicators**:
-  - 🟢 **Healthy**: $\ge 45\%$ margin
-  - 🟡 **Caution / Watch**: $25\% - 44\%$ margin
-  - 🔴 **Critical / Compressed**: $< 25\%$ margin
-- **Net Hourly Realization Rate**: Actual $\$ /\text{hr}$ earned on jobs after subtracting all materials, disposals, and subcontractors vs. quoted billable targets ($85–$120/hr).
-- **Materials Markup %**: Track materials markup pass-through (15–25% standard).
+- **Node 24**
+- **pnpm**, via corepack: `corepack enable`
+- **Docker**, for the local Postgres (any Postgres 16 works instead)
 
-### 2. Credit Card Ingestion & Smart Triage
-- **Connected Business Card Profile**: Direct visibility into Capital One Spark / Chase / Amex card balances and available credit.
-- **Smart Auto-Categorizer**: Automatically recognizes trade suppliers (*The Home Depot, Lowe's, Sherwin-Williams, Ferguson Plumbing, Fastenal, Harbor Freight, Shell/Exxon*).
-- **1-Click Job Matcher**: Triage hardware store receipts and assign them directly to active jobs with one click.
-- **Live Swipe Simulator & CSV Import**: Test live card swipes or paste bank statement CSVs.
+## Quickstart
 
-### 3. Day-to-Day & Weekly Cash Flow Waterfall
-- Week-to-week cash inflows (deposits, invoice payments) vs. outflows (materials, fuel, subs).
-- **Liquidity Cushion & Burn Runway**: Calculates weekly burn rate and available weeks of cash runway.
-- **Receivables Aging**: Invoice tracking with overdue alerts.
-
----
-
-## 🛠️ DevOps & Deployment Guide
-
-### Prerequisites
-- Node.js LTS (v22+)
-- Git
-
-### Local Development
 ```bash
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
-```
-Open [http://localhost:3000](http://localhost:3000) in your browser.
-
-### Vercel Deployment
-The project includes a ready-to-deploy `vercel.json` configuration.
-```bash
-# Login to Vercel
-npx vercel login
-
-# Deploy to preview
-npx vercel
-
-# Deploy to production
-npx vercel --prod
+pnpm install                  # also installs the git hooks
+pnpm db:up                    # Postgres on 127.0.0.1:5433
+cp .env.example .env
 ```
 
-### GitHub Setup
+Open `.env` and fill in three things:
+
+1. **A GitHub OAuth app.** Create one at
+   <https://github.com/settings/developers> → **New OAuth App**, with the
+   Authorization callback URL `http://localhost:3000/api/auth/callback/github`.
+   Put its client id and secret in `AUTH_GITHUB_ID` and `AUTH_GITHUB_SECRET`.
+2. **`AUTH_SECRET`** — `openssl rand -base64 32`.
+3. **`ALLOWED_EMAILS`** — your own address, the one GitHub has *verified*.
+   Nobody else can sign in, and nobody else leaves a row behind trying.
+
+Then:
+
 ```bash
-git init
-git add .
-git commit -m "feat: initial commit for Budget Bot Trade Financial OS"
-git branch -M main
-git remote add origin https://github.com/<YOUR_USERNAME>/budget-bot.git
-git push -u origin main
+pnpm --filter @budget-bot/db db:migrate
+pnpm dev                      # http://localhost:3000
 ```
+
+Sign in, then fill the account with demo data to have something to look at:
+
+```bash
+pnpm --filter @budget-bot/db db:seed --owner-email you@example.com
+```
+
+The seed needs the user to exist, which is what signing in once creates.
+
+## Working on it
+
+```bash
+pnpm lint                     # eslint, every workspace
+pnpm typecheck                # tsc --noEmit, every workspace
+pnpm test                     # vitest, every workspace
+pnpm build                    # next build
+pnpm check:security           # judge this environment as a production one
+
+pnpm --filter @budget-bot/db db:test:setup   # once: create the test database
+pnpm e2e                                     # Playwright, needs the above
+```
+
+`pnpm turbo lint typecheck test build` is what CI runs. The database suites
+skip themselves with a message when `DATABASE_URL_TEST` is unreachable, so a
+machine without Docker still gets a green `pnpm test` — and a misleadingly
+green one, which is why CI always has a database.
+
+Every variable is documented in [`.env.example`](.env.example), and a test
+fails if that file and the schema in `apps/web/src/env.ts` stop agreeing.
+
+## Security in one paragraph
+
+This deployment is private and fails closed. Only addresses on `ALLOWED_EMAILS`
+can sign in, checked against the primary *verified* address on the GitHub
+account and before any user row is created, so a stranger who completes the
+OAuth handshake leaves nothing behind. Sessions live in Postgres rather than in
+a token, so removing someone from the list locks them out on their next
+request. Middleware refuses anything but a short public allow list, and every
+page, action and route handler asks `auth()` again rather than trusting it. A
+production deployment missing `AUTH_SECRET`, the GitHub pair, a non-empty allow
+list or a 32-byte `BANK_TOKEN_ENCRYPTION_KEY` throws at boot instead of serving
+data — `pnpm check:security` says so without deploying to find out. Bank access
+tokens will be AES-256-GCM encrypted with a key that lives only in the
+environment, so a leaked database is not enough on its own. No card number is
+ever stored, processed or transmitted.
+
+## Layout
+
+| Path | What it is |
+| --- | --- |
+| `apps/web` | The Next.js 14 App Router application |
+| `packages/core` | Money, schemas and every margin calculation. No I/O |
+| `packages/db` | Drizzle schema, repositories, migrations, seed |
+| `packages/bank-connectors` | The `BankProvider` interface and the CSV one |
+| `packages/config` | Shared tsconfig, eslint and vitest bases |
+
+## Documentation
+
+- [System architecture](docs/superpowers/specs/2026-08-20-system-architecture-design.md)
+- [Architecture decisions](docs/architecture/adr/)
+- [Self-hosting on Vercel](docs/self-hosting/vercel.md)
+- [Running it locally](docs/self-hosting/local.md)
+- [Contributing](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
