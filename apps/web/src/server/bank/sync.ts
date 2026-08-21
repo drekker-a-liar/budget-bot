@@ -14,6 +14,7 @@ import {
   type BankAccount,
   type BankTransactionRow,
   type Database,
+  type SyncFailure,
   type SyncOutcome,
   type Transaction,
 } from '@budget-bot/db';
@@ -299,40 +300,44 @@ async function syncOnePage(
 }
 
 /**
- * Why the run stopped, on the connection, as a code and never a message.
+ * Why a run stopped, as a code and never a message.
  *
  * A provider's message is free text from somebody else's system and it ends up
  * on a settings screen; the code is what a screen can be written against and
- * what support asks for (spec §9).
+ * what support asks for (spec §9). Exported because two callers need the same
+ * answer: this file, which records it on the connection, and the actions,
+ * which turn it into something a person can read - and a second mapping that
+ * drifted from this one would put a different name on the same failure.
  */
+export function syncFailureOf(error: unknown): SyncFailure {
+  if (error instanceof PlaidRateLimited) return { code: RATE_LIMIT, status: 'error' };
+  if (error instanceof PlaidMutationDuringPagination) {
+    return { code: MUTATION_DURING_PAGINATION, status: 'error' };
+  }
+  if (error instanceof PlaidItemError) {
+    return {
+      code: error.code,
+      status: REAUTH_CODES.has(error.code) ? 'reauth_required' : 'error',
+    };
+  }
+  if (error instanceof PlaidRequestError) return { code: error.code, status: 'error' };
+  if (error instanceof SyncWriteShortfallError) {
+    return { code: SYNC_WRITE_SHORTFALL, status: 'error' };
+  }
+  // Something this service did not anticipate. The connection still has to
+  // say a sync failed, because a screen showing "last synced: 20 minutes
+  // ago" after a crash is a lie the user has no way to catch.
+  return { code: SYNC_FAILED, status: 'error' };
+}
+
+/** The same answer, written onto the connection. */
 async function recordFailure(
   db: Database,
   ownerId: string,
   connectionId: string,
   error: unknown
 ): Promise<void> {
-  const failure = ((): { code: string; status: 'error' | 'reauth_required' } => {
-    if (error instanceof PlaidRateLimited) return { code: RATE_LIMIT, status: 'error' };
-    if (error instanceof PlaidMutationDuringPagination) {
-      return { code: MUTATION_DURING_PAGINATION, status: 'error' };
-    }
-    if (error instanceof PlaidItemError) {
-      return {
-        code: error.code,
-        status: REAUTH_CODES.has(error.code) ? 'reauth_required' : 'error',
-      };
-    }
-    if (error instanceof PlaidRequestError) return { code: error.code, status: 'error' };
-    if (error instanceof SyncWriteShortfallError) {
-      return { code: SYNC_WRITE_SHORTFALL, status: 'error' };
-    }
-    // Something this service did not anticipate. The connection still has to
-    // say a sync failed, because a screen showing "last synced: 20 minutes
-    // ago" after a crash is a lie the user has no way to catch.
-    return { code: SYNC_FAILED, status: 'error' };
-  })();
-
-  await bankRepo.recordSyncError(db, ownerId, connectionId, failure);
+  await bankRepo.recordSyncError(db, ownerId, connectionId, syncFailureOf(error));
 }
 
 /**
