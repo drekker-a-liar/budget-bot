@@ -1,4 +1,7 @@
+import { PlaidItemError, PlaidRequestError } from '@budget-bot/bank-connectors';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { resetEnvCache } from '@/src/env';
+import type { RunSyncResult } from '@/src/server/bank/sync';
 import { loadActions } from './helpers/actionModules';
 
 /**
@@ -21,6 +24,60 @@ vi.mock('@/auth', () => ({
 const revalidatePath = vi.hoisted(() => vi.fn());
 vi.mock('next/cache', () => ({ revalidatePath }));
 
+/**
+ * The bank, as far as an action can see it: a provider, a keyring, a sync
+ * service. All three are stubbed at the module boundary, because what is under
+ * test here is the order an action puts them in and the owner it puts them in
+ * for - not whether Plaid answers.
+ */
+const bank = vi.hoisted(() => ({
+  createLinkToken: vi.fn(async (_args: { userId: string; redirectUri: string }) => ({
+    linkToken: 'link-fake',
+    expiration: '2026-08-21T12:30:00.000Z',
+  })),
+  exchangePublicToken: vi.fn(async (_publicToken: string) => ({
+    accessToken: 'access-fake',
+    itemId: 'item-fake',
+    institutionId: 'ins_fake',
+    institutionName: 'Fake Bank (E2E)',
+  })),
+  getAccounts: vi.fn(async (_accessToken: string) => [
+    { externalId: 'fake-credit', name: 'Fake Business Card', mask: '4471', type: 'credit' },
+    { externalId: 'fake-checking', name: 'Fake Business Checking', mask: '0000', type: 'depository' },
+  ]),
+  runSync: vi.fn(
+    async (
+      _db: unknown,
+      _ownerId: string,
+      _connectionId: string,
+      _deps: { maxPages?: number }
+    ): Promise<RunSyncResult> => ({
+      added: 2,
+      modified: 0,
+      removed: 0,
+      pages: 1,
+      hasMore: false,
+    })
+  ),
+}));
+
+/** Null is a supported deployment: no credentials, and the UI says so. */
+const provider = vi.hoisted(() => ({ current: null as unknown }));
+
+vi.mock('@/src/server/bank/provider', () => ({
+  getBankProvider: () => provider.current,
+  getBankProviderKind: () => (provider.current ? 'plaid' : null),
+}));
+
+vi.mock('@/src/server/bank/sync', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/src/server/bank/sync')>()),
+  runSync: bank.runSync,
+}));
+
+/** What the request said about where it arrived. Never what the caller sent. */
+const requestHeaders = vi.hoisted(() => ({ current: {} as Record<string, string> }));
+vi.mock('next/headers', () => ({ headers: async () => new Headers(requestHeaders.current) }));
+
 const repos = vi.hoisted(() => ({
   createProject: vi.fn(async (_db: unknown, _owner: string, input: object) => ({
     id: 'proj-1',
@@ -31,7 +88,7 @@ const repos = vi.hoisted(() => ({
     id: 'tx-1',
     ...input,
   })),
-  updateTransaction: vi.fn(async () => ({ id: 'tx-1' })),
+  updateTransaction: vi.fn(async (..._args: unknown[]) => ({ id: 'tx-1' })),
   deleteTransaction: vi.fn(async () => true),
   createLaborEntry: vi.fn(async (_db: unknown, _owner: string, input: object) => ({
     id: 'lab-1',
@@ -43,6 +100,34 @@ const repos = vi.hoisted(() => ({
     ...input,
   })),
   updateInvoice: vi.fn(async () => ({ id: 'inv-1', status: 'paid' })),
+  createConnection: vi.fn(async (_db: unknown, _owner: string, _input: object) => ({
+    id: 'conn-1',
+    provider: 'plaid',
+    itemId: 'item-fake',
+    institutionName: 'Fake Bank (E2E)',
+  })),
+  // Answers with what it was given, the way the repository answers with the
+  // rows it wrote: the count the owner is shown is what was stored.
+  upsertAccounts: vi.fn(async (_db: unknown, _owner: string, _id: string, accounts: unknown[]) =>
+    accounts
+  ),
+  getConnection: vi.fn(async (_db: unknown, _owner: string, id: string) => ({
+    id,
+    status: 'active',
+  })),
+  // The one function that turns a stored token back into a string. It hands
+  // the plaintext to a callback and never returns it, so the stand-in does the
+  // same thing rather than resolving to a token.
+  withAccessToken: vi.fn(
+    async (
+      _db: unknown,
+      _owner: string,
+      _id: string,
+      _keyring: unknown,
+      fn: (accessToken: string) => Promise<unknown>
+    ) => fn('access-fake')
+  ),
+  recordSyncError: vi.fn(async () => undefined),
 }));
 
 vi.mock('@budget-bot/db', async (importOriginal) => ({
@@ -59,8 +144,16 @@ vi.mock('@budget-bot/db', async (importOriginal) => ({
     deleteLaborEntry: repos.deleteLaborEntry,
   },
   invoicesRepo: { createInvoice: repos.createInvoice, updateInvoice: repos.updateInvoice },
+  bankRepo: {
+    createConnection: repos.createConnection,
+    upsertAccounts: repos.upsertAccounts,
+    getConnection: repos.getConnection,
+    withAccessToken: repos.withAccessToken,
+    recordSyncError: repos.recordSyncError,
+  },
 }));
 
+const { ConnectionAlreadyExistsError } = await import('@budget-bot/db');
 const { auth } = await import('@/auth');
 const { createProjectAction, updateProjectStatusAction } = await import(
   '@/src/server/actions/projects'
@@ -77,6 +170,9 @@ const { createLaborEntryAction, deleteLaborEntryAction } = await import(
 const { createInvoiceAction, markInvoicePaidAction } = await import(
   '@/src/server/actions/invoices'
 );
+const { createLinkTokenAction, exchangePublicTokenAction, syncNowAction } = await import(
+  '@/src/server/actions/bank'
+);
 
 /**
  * Every action there is, read off disk rather than typed out.
@@ -89,8 +185,8 @@ const { createInvoiceAction, markInvoicePaidAction } = await import(
  */
 const DERIVED_ACTIONS = await loadActions();
 
-/** Ten today. A number here means shrinkage gets noticed, not just growth. */
-const ACTION_COUNT = 10;
+/** Thirteen today. A number here means shrinkage gets noticed, not just growth. */
+const ACTION_COUNT = 13;
 
 const A_PROJECT = { name: 'Cedar Deck', clientName: 'R Henderson', quotedTotal: '4500' };
 
@@ -106,14 +202,45 @@ const EVERY_ACTION: Array<[string, (input: unknown) => Promise<unknown>, unknown
   ['deleteLaborEntry', deleteLaborEntryAction, { id: 'lab-1' }],
   ['createInvoice', createInvoiceAction, { projectId: 'proj-1', invoiceNumber: 'INV-1', amount: '1950' }],
   ['markInvoicePaid', markInvoicePaidAction, { id: 'inv-1' }],
+  ['createLinkToken', createLinkTokenAction, {}],
+  ['exchangePublicToken', exchangePublicTokenAction, { publicToken: 'public-fake' }],
+  ['syncNow', syncNowAction, { connectionId: 'conn-1' }],
 ];
+
+/**
+ * The one action that reads and writes nothing: it asks the provider for a
+ * Link token and hands it back. Named here rather than leaving the two tests
+ * below with a list of the twelve that do write, which would be the list that
+ * a thirteenth action quietly failed to join.
+ */
+const TOUCHES_NO_REPOSITORY = new Set(['createLinkToken']);
+
+const WRITING_ACTIONS = EVERY_ACTION.filter(([name]) => !TOUCHES_NO_REPOSITORY.has(name));
+
+/** Every repository call any action made, whichever repository it was. */
+function repositoryCalls(): unknown[][] {
+  return Object.values(repos).flatMap((repo) => repo.mock.calls as unknown[][]);
+}
+
+/** 32 bytes of base64 that is a sentence, so nothing here looks like a real key. */
+const TEST_KEY = Buffer.from('not-a-real-key--not-a-real-key32').toString('base64');
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.unstubAllEnvs();
+  resetEnvCache();
+  vi.stubEnv('BANK_TOKEN_ENCRYPTION_KEY', TEST_KEY);
   vi.mocked(auth).mockResolvedValue({
     user: { id: 'user-1' },
     expires: '2026-09-01',
   } as never);
+  provider.current = {
+    id: 'plaid',
+    createLinkToken: bank.createLinkToken,
+    exchangePublicToken: bank.exchangePublicToken,
+    getAccounts: bank.getAccounts,
+  };
+  requestHeaders.current = { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'app.example' };
 });
 
 describe('the actions on disk', () => {
@@ -152,28 +279,44 @@ describe('with no session', () => {
         error: 'Unauthorized',
       });
       for (const repo of Object.values(repos)) expect(repo).not.toHaveBeenCalled();
+      // The bank is a repository too, as far as this rule is concerned: an
+      // unauthenticated caller must not be able to mint a Link token or make
+      // this deployment talk to Plaid on somebody's behalf.
+      for (const call of Object.values(bank)) expect(call).not.toHaveBeenCalled();
       expect(revalidatePath).not.toHaveBeenCalled();
     }
   );
 });
 
 describe('with a session', () => {
-  it.each(EVERY_ACTION)('%s writes as the signed-in owner', async (_name, action, input) => {
-    // Not as an owner the caller named: no action takes one, and this is the
-    // assertion that would fail if any of them started to.
+  it.each(EVERY_ACTION)('%s names the signed-in owner, and no other', async (_name, action, input) => {
+    // Not an owner the caller named: no action takes one, and this is the
+    // assertion that would fail if any of them started to. Every repository
+    // call, not just the first, because an action that stores a connection and
+    // then lists its accounts makes two.
     const result = await action(input);
 
     expect(result).toMatchObject({ ok: true });
-    const called = Object.values(repos).filter((repo) => repo.mock.calls.length > 0);
-    expect(called.length).toBe(1);
-    expect(called[0]).toHaveBeenCalledWith({}, 'user-1', ...called[0].mock.calls[0].slice(2));
-    expect(called[0].mock.calls[0][1]).toBe('user-1');
+    for (const call of repositoryCalls()) expect(call[1]).toBe('user-1');
   });
 
-  it.each(EVERY_ACTION)('%s invalidates the pages that drew from it', async (_name, action, input) => {
+  it.each(WRITING_ACTIONS)('%s reaches a repository at all', async (_name, action, input) => {
+    await action(input);
+
+    expect(repositoryCalls().length).toBeGreaterThan(0);
+  });
+
+  it.each(WRITING_ACTIONS)('%s invalidates the pages that drew from it', async (_name, action, input) => {
     await action(input);
 
     expect(revalidatePath).toHaveBeenCalledWith('/', 'layout');
+  });
+
+  it('mints a Link token without invalidating anything, because nothing changed', () => {
+    // The one action that is not a write. Spelled out so that "every action
+    // revalidates" narrowing to twelve of thirteen is a decision on the record
+    // rather than a list somebody shortened.
+    expect([...TOUCHES_NO_REPOSITORY]).toEqual(['createLinkToken']);
   });
 });
 
@@ -282,6 +425,7 @@ describe('assigning a charge', () => {
     expect(repos.updateTransaction).toHaveBeenCalledWith({}, 'user-1', 'tx-1', {
       projectId: 'proj-9',
       status: 'matched',
+      userEditedAt: expect.any(String),
     });
   });
 
@@ -294,6 +438,7 @@ describe('assigning a charge', () => {
     expect(repos.updateTransaction).toHaveBeenCalledWith({}, 'user-1', 'tx-1', {
       projectId: null,
       status: 'unassigned',
+      userEditedAt: expect.any(String),
     });
   });
 
@@ -312,6 +457,40 @@ describe('assigning a charge', () => {
     const result = await assignTransactionAction({ id: 'tx-nope', projectId: '' });
 
     expect(result).toEqual({ ok: false, error: 'No such charge.', fieldErrors: undefined });
+  });
+});
+
+/**
+ * `user_edited_at` is the whole of the sync merge rule's memory (ADR 0004):
+ * once it is set, a re-sync stops overwriting the category, the vendor and
+ * whether the charge is deductible. Nothing below the action can set it - a
+ * repository is called the same way by a bank feed - so these two writes are
+ * where a correction becomes a recorded fact, and this is the test that keeps
+ * them that way.
+ */
+describe('correcting a charge', () => {
+  it('records when the user touched it, so a re-sync stops overwriting them', async () => {
+    const before = Date.now();
+
+    await updateTransactionCategoryAction({ id: 'tx-1', category: 'tools' });
+
+    expect(repos.updateTransaction).toHaveBeenCalledWith({}, 'user-1', 'tx-1', {
+      category: 'tools',
+      userEditedAt: expect.any(String),
+    });
+    const { userEditedAt } = repos.updateTransaction.mock.calls[0][3] as {
+      userEditedAt: string;
+    };
+    expect(Date.parse(userEditedAt)).toBeGreaterThanOrEqual(before);
+  });
+
+  it('records it when a charge is filed against a job as well', async () => {
+    await assignTransactionAction({ id: 'tx-1', projectId: 'proj-9' });
+
+    const { userEditedAt } = repos.updateTransaction.mock.calls[0][3] as {
+      userEditedAt: string;
+    };
+    expect(Number.isNaN(Date.parse(userEditedAt))).toBe(false);
   });
 });
 
@@ -336,5 +515,369 @@ describe('marking an invoice paid', () => {
       'inv-1',
       expect.objectContaining({ paidDate: '2026-08-11' })
     );
+  });
+});
+
+/**
+ * Connecting a bank.
+ *
+ * Two things here are security decisions rather than features. The redirect
+ * URI Plaid is told to send the browser back to is built from the request and
+ * from `AUTH_URL`, never from anything the caller sent - a caller that could
+ * name it could point a completed Link flow at a page it controls. And the
+ * access token exists in plaintext for exactly as long as it takes to encrypt
+ * it into a row: it is never returned, so it can never be logged by a caller
+ * that logged an action's result (spec §9).
+ */
+describe('connecting a bank', () => {
+  it('builds the redirect uri from the request, never from what was sent', async () => {
+    await createLinkTokenAction();
+
+    expect(bank.createLinkToken).toHaveBeenCalledWith({
+      userId: 'user-1',
+      redirectUri: 'https://app.example/plaid/oauth-return',
+    });
+  });
+
+  it('reads the host directly when nothing is forwarding, and does not assume TLS', async () => {
+    requestHeaders.current = { host: 'localhost:3000' };
+
+    await createLinkTokenAction();
+
+    expect(bank.createLinkToken).toHaveBeenCalledWith(
+      expect.objectContaining({ redirectUri: 'http://localhost:3000/plaid/oauth-return' })
+    );
+  });
+
+  it('falls back to the deployment url when the request says nothing about itself', async () => {
+    requestHeaders.current = {};
+    // Through the validated `env`, not `process.env`: one schema decides what
+    // a variable may be, and this is the last reader that was going round it.
+    // The proxy memoizes its parse, so a stubbed variable needs the reset.
+    vi.stubEnv('DATABASE_URL', 'postgres://stub/stub');
+    vi.stubEnv('AUTH_URL', 'https://books.example/');
+    resetEnvCache();
+
+    await createLinkTokenAction();
+
+    expect(bank.createLinkToken).toHaveBeenCalledWith(
+      expect.objectContaining({ redirectUri: 'https://books.example/plaid/oauth-return' })
+    );
+  });
+
+  it('hands the browser the link token and nothing else', async () => {
+    const result = await createLinkTokenAction();
+
+    expect(result).toEqual({ ok: true, data: { linkToken: 'link-fake' } });
+  });
+
+  it.each([
+    ['createLinkToken', () => createLinkTokenAction()],
+    ['exchangePublicToken', () => exchangePublicTokenAction({ publicToken: 'public-fake' })],
+    ['syncNow', () => syncNowAction({ connectionId: 'conn-1' })],
+  ])('%s says so when this deployment has no Plaid credentials', async (_name, call) => {
+    // A deployment with no credentials is a supported deployment: the screen
+    // says Plaid is not configured. None of this throws.
+    provider.current = null;
+
+    await expect(call()).resolves.toMatchObject({
+      ok: false,
+      error: 'Plaid is not configured on this deployment',
+    });
+  });
+});
+
+describe('exchanging the public token', () => {
+  it('stores the connection, loads its accounts, and runs a bounded first sync', async () => {
+    const result = await exchangePublicTokenAction({ publicToken: 'public-fake' });
+
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        connectionId: 'conn-1',
+        accounts: 2,
+        firstSync: { added: 2, modified: 0, removed: 0, pages: 1, hasMore: false },
+      },
+    });
+    expect(repos.createConnection).toHaveBeenCalledWith(
+      {},
+      'user-1',
+      expect.objectContaining({ itemId: 'item-fake', accessToken: 'access-fake' }),
+      expect.anything()
+    );
+    expect(repos.upsertAccounts).toHaveBeenCalledWith(
+      {},
+      'user-1',
+      'conn-1',
+      expect.arrayContaining([expect.objectContaining({ externalId: 'fake-credit' })])
+    );
+    // Bounded, because this one runs inside the request that Link just
+    // finished: a first sync of a long history must not hold it open.
+    expect(bank.runSync).toHaveBeenCalledWith(
+      {},
+      'user-1',
+      'conn-1',
+      expect.objectContaining({ maxPages: 5 })
+    );
+  });
+
+  it('never lets the access token out in what it returns', async () => {
+    const result = await exchangePublicTokenAction({ publicToken: 'public-fake' });
+
+    expect(JSON.stringify(result)).not.toContain('access-fake');
+  });
+
+  it('keeps the stored connection when the first sync throws', async () => {
+    // The token is already encrypted into a row by this point. Reporting the
+    // whole thing as a failure would leave a connection nobody can see and
+    // nobody can retry, so the sync's failure is a field on a success: the
+    // connections screen shows it, and "Sync now" tries again.
+    bank.runSync.mockRejectedValueOnce(new Error('the database went away mid-page'));
+
+    const result = await exchangePublicTokenAction({ publicToken: 'public-fake' });
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: { connectionId: 'conn-1', firstSync: { error: 'SYNC_FAILED' } },
+    });
+    expect(repos.createConnection).toHaveBeenCalled();
+    // The code, never the message: a provider's message is free text from
+    // somebody else's system and this one ends up on a settings screen.
+    expect(JSON.stringify(result)).not.toContain('the database went away');
+  });
+
+  it('carries the provider’s own code when the first sync is refused', async () => {
+    bank.runSync.mockRejectedValueOnce(
+      new PlaidItemError('ITEM_LOGIN_REQUIRED', 'the user must log in again')
+    );
+
+    const result = await exchangePublicTokenAction({ publicToken: 'public-fake' });
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: { firstSync: { error: 'ITEM_LOGIN_REQUIRED' } },
+    });
+  });
+
+  it('refuses an empty public token before it talks to anybody', async () => {
+    const result = await exchangePublicTokenAction({ publicToken: '' });
+
+    expect(result).toMatchObject({ ok: false, fieldErrors: { publicToken: expect.any(Array) } });
+    expect(bank.exchangePublicToken).not.toHaveBeenCalled();
+  });
+
+  it('says the bank is already connected rather than blaming the server', async () => {
+    // Re-running Link against a bank that is already linked. The public token
+    // has been spent by the time this fires, so the one thing the message must
+    // not do is tell the owner to try again: the island renders a thrown
+    // action as "Something went wrong connecting to the server. Try again.",
+    // which is advice that cannot work.
+    repos.createConnection.mockRejectedValueOnce(new ConnectionAlreadyExistsError());
+
+    const result = await exchangePublicTokenAction({ publicToken: 'public-fake' });
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'This bank is already connected. Use Sync now on the existing connection.',
+    });
+    // Nothing was written, so nothing downstream ran either.
+    expect(repos.upsertAccounts).not.toHaveBeenCalled();
+    expect(bank.runSync).not.toHaveBeenCalled();
+  });
+});
+
+describe('syncing on demand', () => {
+  it('refuses a connection this owner does not have, without saying whose it might be', async () => {
+    repos.getConnection.mockResolvedValueOnce(null as never);
+
+    const result = await syncNowAction({ connectionId: 'conn-9' });
+
+    expect(result).toMatchObject({ ok: false, error: 'Connection not found' });
+    expect(bank.runSync).not.toHaveBeenCalled();
+  });
+
+  it('pulls every page there is, because a person is waiting for all of it', async () => {
+    await syncNowAction({ connectionId: 'conn-1' });
+
+    const [, , , deps] = bank.runSync.mock.calls[0];
+    expect(deps.maxPages).toBeUndefined();
+  });
+
+  it('reports what the run actually did', async () => {
+    const result = await syncNowAction({ connectionId: 'conn-1' });
+
+    expect(result).toEqual({
+      ok: true,
+      data: { added: 2, modified: 0, removed: 0, pages: 1, hasMore: false },
+    });
+  });
+
+  it('tells the owner when to come back rather than calling a rate limit a sync', async () => {
+    // Everything the run committed stands - `runSync` returns rather than
+    // throwing - but it did not finish, and a screen saying "synced" would be
+    // a lie about a connection that is still behind.
+    bank.runSync.mockResolvedValueOnce({
+      added: 3,
+      modified: 0,
+      removed: 0,
+      pages: 2,
+      hasMore: true,
+      retryAfterSeconds: 45,
+    });
+
+    const result = await syncNowAction({ connectionId: 'conn-1' });
+
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('45 seconds') });
+  });
+
+  it('asks the owner to reconnect when the bank wants them to sign in again', async () => {
+    bank.runSync.mockRejectedValueOnce(
+      new PlaidItemError('ITEM_LOGIN_REQUIRED', 'the user must log in again')
+    );
+
+    const result = await syncNowAction({ connectionId: 'conn-1' });
+
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('sign in again') });
+    expect(JSON.stringify(result)).not.toContain('the user must log in again');
+  });
+
+  it('names the code and nothing else when the run fails some other way', async () => {
+    bank.runSync.mockRejectedValueOnce(new Error('connect ECONNREFUSED 10.0.0.4:5432'));
+
+    const result = await syncNowAction({ connectionId: 'conn-1' });
+
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('SYNC_FAILED') });
+    expect(JSON.stringify(result)).not.toContain('10.0.0.4');
+  });
+
+  it('says another sync already has the connection, rather than reporting nothing', async () => {
+    bank.runSync.mockResolvedValueOnce({ skipped: true });
+
+    const result = await syncNowAction({ connectionId: 'conn-1' });
+
+    expect(result).toMatchObject({ ok: true, data: { skipped: true } });
+  });
+});
+
+/**
+ * What happens when the bank says no.
+ *
+ * The first thing an owner does with a fresh deployment is press Connect, and
+ * the most likely thing to happen is a Plaid failure: a `redirect_uri` that is
+ * not registered against the client id, credentials from the wrong
+ * environment, a public token that has already been spent. None of those are
+ * exceptional - they are the ordinary first run - and an action that throws
+ * out of them takes the browser to an error boundary, or worse, leaves the
+ * island's `await` rejected with a button that says "Connecting…" for ever.
+ *
+ * So a provider failure is a value here, mapped by the same `syncFailureOf`
+ * the connection's recorded state uses, and rendered as the code rather than
+ * as the provider's message.
+ */
+describe('when the provider refuses', () => {
+  it('reports a refused link token rather than throwing out of the action', async () => {
+    bank.createLinkToken.mockRejectedValueOnce(
+      new PlaidRequestError('INVALID_FIELD', 'redirect_uri must be registered: https://app.example')
+    );
+
+    const result = await createLinkTokenAction();
+
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('INVALID_FIELD') });
+    // The code, not Plaid's sentence - and certainly not a URL it echoed back.
+    expect(JSON.stringify(result)).not.toContain('must be registered');
+  });
+
+  it('reports a refused exchange, and stores no connection at all', async () => {
+    bank.exchangePublicToken.mockRejectedValueOnce(
+      new PlaidRequestError('INVALID_PUBLIC_TOKEN', 'public token has already been exchanged')
+    );
+
+    const result = await exchangePublicTokenAction({ publicToken: 'public-fake' });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('INVALID_PUBLIC_TOKEN'),
+    });
+    expect(repos.createConnection).not.toHaveBeenCalled();
+    expect(bank.runSync).not.toHaveBeenCalled();
+  });
+
+  it('keeps the connection when the accounts cannot be listed, and says none were stored', async () => {
+    // The token is encrypted into a row by this point. Throwing would strand
+    // it; storing zero accounts and calling it a success would be worse still,
+    // because every synced transaction would name an account that is not there
+    // and be dropped. So: an honest count, the reason, and no sync to run.
+    bank.getAccounts.mockRejectedValueOnce(
+      new PlaidRequestError('PRODUCT_NOT_READY', 'the item is still being prepared')
+    );
+
+    const result = await exchangePublicTokenAction({ publicToken: 'public-fake' });
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: { connectionId: 'conn-1', accounts: 0, firstSync: { error: 'PRODUCT_NOT_READY' } },
+    });
+    expect(repos.createConnection).toHaveBeenCalled();
+    expect(bank.runSync).not.toHaveBeenCalled();
+  });
+
+  it('says a bank needs signing into again rather than naming a code at the owner', async () => {
+    bank.exchangePublicToken.mockRejectedValueOnce(
+      new PlaidItemError('ITEM_LOGIN_REQUIRED', 'the user must log in again')
+    );
+
+    const result = await exchangePublicTokenAction({ publicToken: 'public-fake' });
+
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('sign in again') });
+  });
+});
+
+/**
+ * Sync now refreshes the account list first.
+ *
+ * Two reasons, and the second is why it is unconditional. Balances move, and a
+ * screen showing last week's is a screen nobody trusts. And a connection that
+ * was stored without accounts - `getAccounts` failed straight after Link -
+ * cannot sync at all: every transaction names an account that is not there, so
+ * every page is dropped as `UNKNOWN_ACCOUNT` and the connection is permanently
+ * useless. Refreshing here is what heals it, without a repair path anybody has
+ * to know exists.
+ */
+describe('refreshing the accounts before a sync', () => {
+  it('lists them through the stored token and upserts them before pulling anything', async () => {
+    await syncNowAction({ connectionId: 'conn-1' });
+
+    expect(repos.withAccessToken).toHaveBeenCalledWith(
+      {},
+      'user-1',
+      'conn-1',
+      expect.anything(),
+      expect.any(Function)
+    );
+    expect(bank.getAccounts).toHaveBeenCalledWith('access-fake');
+    expect(repos.upsertAccounts).toHaveBeenCalledWith(
+      {},
+      'user-1',
+      'conn-1',
+      expect.arrayContaining([expect.objectContaining({ externalId: 'fake-credit' })])
+    );
+    expect(repos.upsertAccounts.mock.invocationCallOrder[0]).toBeLessThan(
+      bank.runSync.mock.invocationCallOrder[0]
+    );
+  });
+
+  it('records why it stopped when the refresh itself fails, so the screen agrees', async () => {
+    bank.getAccounts.mockRejectedValueOnce(
+      new PlaidItemError('ITEM_LOGIN_REQUIRED', 'the user must log in again')
+    );
+
+    const result = await syncNowAction({ connectionId: 'conn-1' });
+
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('sign in again') });
+    expect(repos.recordSyncError).toHaveBeenCalledWith({}, 'user-1', 'conn-1', {
+      code: 'ITEM_LOGIN_REQUIRED',
+      status: 'reauth_required',
+    });
+    expect(bank.runSync).not.toHaveBeenCalled();
   });
 });

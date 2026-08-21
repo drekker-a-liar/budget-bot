@@ -46,7 +46,9 @@ const CHECKED = [
   'CRON_SECRET',
   'DEV_OWNER_EMAIL',
   'E2E',
+  'PLAID_CLIENT_ID',
   'PLAID_ENV',
+  'PLAID_SECRET',
 ] as const;
 
 class UsageError extends Error {}

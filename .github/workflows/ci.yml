@@ -66,11 +66,20 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Create the test database
+      - name: Create the test databases
         # The packages/db suite drops and rebuilds its schema, so it gets a
         # database of its own. Without this it skips itself with a message,
         # which would be a green run that tested nothing.
-        run: pnpm --filter @budget-bot/db db:test:setup
+        #
+        # apps/web's sync suite gets a second one, because `turbo test` runs
+        # both packages at once and they would otherwise be truncating the same
+        # tables while the other asserted on them. The suite creates it itself
+        # if it has to; doing it here as well means a Postgres that will not
+        # cooperate turns this step red instead of turning that suite into a
+        # silent skip.
+        run: |
+          pnpm --filter @budget-bot/db db:test:setup
+          DATABASE_URL_TEST="${DATABASE_URL_TEST}_web" pnpm --filter @budget-bot/db db:test:setup
 
       # Deliberately not `--filter=...[origin/main]`. The affected-package
       # filter needs a merge base that a shallow checkout of a pull request

@@ -150,9 +150,8 @@ describe('TransactionsView', () => {
   });
 
   describe('uploading a statement', () => {
-    const file = new File(['Date,Description,Amount\n2026-08-18,LOWES,10.00'], 'aug.csv', {
-      type: 'text/csv',
-    });
+    const CSV_TEXT = 'Date,Description,Amount\n2026-08-18,LOWES,10.00';
+    const file = new File([CSV_TEXT], 'aug.csv', { type: 'text/csv' });
 
     function stubFetch(status: number, body: unknown) {
       vi.stubGlobal(
@@ -163,7 +162,7 @@ describe('TransactionsView', () => {
 
     afterEach(() => vi.unstubAllGlobals());
 
-    it('posts the file to the import route and refreshes the page', async () => {
+    it('posts the file’s text as a text/csv body and refreshes the page', async () => {
       stubFetch(200, { inserted: 1, skipped: 0, errors: [] });
       renderView();
 
@@ -173,7 +172,8 @@ describe('TransactionsView', () => {
       const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
       expect(url).toBe('/api/import/csv');
       expect(init.method).toBe('POST');
-      expect((init.body as FormData).get('file')).toBe(file);
+      expect(init.headers).toMatchObject({ 'content-type': 'text/csv' });
+      expect(init.body).toBe(CSV_TEXT);
     });
 
     it('tells the user which line was skipped and why', async () => {

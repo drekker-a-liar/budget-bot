@@ -7,10 +7,21 @@ export * as importBatchesRepo from './importBatches';
 export * as importsRepo from './imports';
 export * as ownersRepo from './owners';
 
-export { UnknownProjectError } from './errors';
+export { withSyncLock } from './sync-lock';
+
+export {
+  ConnectionAlreadyExistsError,
+  ConnectionNotFoundError,
+  UnknownProjectError,
+} from './errors';
 
 export type { NewProject, ProjectUpdate } from './projects';
 export type {
+  // The parameter type of `upsertFromBank`, `applyModified` and
+  // `reconcilePending`. The package exposes no deep path into `repos/`, so a
+  // caller that cannot name this cannot write a signature that takes a page
+  // of synced rows - which is most of what the sync service does.
+  BankTransactionRow,
   ImportProvenance,
   ImportedTransaction,
   NewTransaction,
@@ -21,4 +32,13 @@ export type { ImportBatch, ImportSource, NewImportBatch } from './importBatches'
 export type { ImportCsvBatch, ImportResult } from './imports';
 export type { NewLaborEntry } from './labor';
 export type { InvoiceUpdate, NewInvoice } from './invoices';
-export type { CardProfileUpdate } from './bank';
+export type {
+  BankAccount,
+  BankAccountInput,
+  BankConnection,
+  CardProfileUpdate,
+  NewBankConnection,
+  SyncFailure,
+  SyncOutcome,
+} from './bank';
+export type { SyncLockResult } from './sync-lock';

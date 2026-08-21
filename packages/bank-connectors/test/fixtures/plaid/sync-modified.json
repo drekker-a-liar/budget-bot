@@ -1,0 +1,85 @@
+{
+  "accounts": [
+    {
+      "account_id": "acct-credit-1",
+      "balances": {
+        "available": 2350.44,
+        "current": 2649.56,
+        "limit": 5000,
+        "iso_currency_code": "USD",
+        "unofficial_currency_code": null
+      },
+      "mask": "3210",
+      "name": "Platypus Business Card",
+      "official_name": "Platypus Business Rewards Visa",
+      "type": "credit",
+      "subtype": "credit card"
+    },
+    {
+      "account_id": "acct-checking-1",
+      "balances": {
+        "available": 12450.11,
+        "current": 12980.11,
+        "limit": null,
+        "iso_currency_code": "USD",
+        "unofficial_currency_code": null
+      },
+      "mask": "0000",
+      "name": "Platypus Business Checking",
+      "official_name": "Platypus Business Interest Checking",
+      "type": "depository",
+      "subtype": "checking"
+    }
+  ],
+  "added": [],
+  "modified": [
+    {
+      "account_id": "acct-credit-1",
+      "account_owner": null,
+      "amount": 91.07,
+      "authorized_date": "2026-08-15",
+      "authorized_datetime": "2026-08-15T12:30:52Z",
+      "date": "2026-08-16",
+      "datetime": "2026-08-16T02:14:00Z",
+      "iso_currency_code": "USD",
+      "location": {
+        "address": null,
+        "city": null,
+        "region": null,
+        "postal_code": null,
+        "country": null,
+        "lat": null,
+        "lon": null,
+        "store_number": null
+      },
+      "merchant_name": "Shell",
+      "name": "SHELL OIL 574411",
+      "payment_channel": "in store",
+      "payment_meta": {
+        "reference_number": null,
+        "ppd_id": null,
+        "payee": null,
+        "by_order_of": null,
+        "payer": null,
+        "payment_method": null,
+        "payment_processor": null,
+        "reason": null
+      },
+      "pending": false,
+      "pending_transaction_id": null,
+      "personal_finance_category": {
+        "primary": "TRANSPORTATION",
+        "detailed": "TRANSPORTATION_GAS",
+        "confidence_level": "VERY_HIGH"
+      },
+      "transaction_code": null,
+      "transaction_id": "txn-4",
+      "unofficial_currency_code": null
+    }
+  ],
+  "removed": [],
+  "next_cursor": "cursor-4",
+  "has_more": false,
+  "transactions_update_status": "HISTORICAL_UPDATE_COMPLETE",
+  "request_id": "req-sync-4"
+}

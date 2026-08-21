@@ -56,8 +56,18 @@ export const envSchema = z.object({
   /** Set during a rotation so tokens written under the old key still decrypt. */
   BANK_TOKEN_ENCRYPTION_KEY_PREVIOUS: z.string().optional(),
 
-  /** Which Plaid environment the bank connectors talk to (built in Phase 2). */
+  /**
+   * Which Plaid environment the bank connectors talk to. Optional, and with no
+   * default on purpose: absent means "Plaid is not configured", which is a
+   * deployment this application supports - the connections screen degrades to
+   * saying so rather than throwing (spec §7). A default of `sandbox` would
+   * make every unconfigured deployment claim to be pointed at Sandbox, and
+   * `assertProductionSecurity` refuses exactly that.
+   */
   PLAID_ENV: z.enum(['sandbox', 'production']).optional(),
+  /** Plaid application credentials. Both, or neither: one alone configures nothing. */
+  PLAID_CLIENT_ID: z.string().optional(),
+  PLAID_SECRET: z.string().optional(),
   /** Bearer token the scheduled sync endpoint requires (built in Phase 3). */
   CRON_SECRET: z.string().optional(),
 
@@ -191,8 +201,52 @@ export function assertProductionSecurity(raw: RawEnv = process.env): void {
     );
   }
 
-  if (raw.PLAID_ENV === 'production' && !raw.CRON_SECRET) {
-    problems.push('CRON_SECRET is missing, and PLAID_ENV=production means the sync endpoint is live.');
+  /**
+   * Sandbox is refused rather than merely discouraged.
+   *
+   * Plaid Sandbox returns fabricated transactions for fabricated accounts. A
+   * production deployment pointed at it would show them to its owner as their
+   * own money, and every other check in this function would pass while it did
+   * - so this is the one Plaid rule about a variable being *present and
+   * wrong* rather than absent. It applies to Vercel previews too: they are
+   * built and run with `NODE_ENV=production`, and there is deliberately no
+   * exemption keyed on a host-specific variable such as `VERCEL_ENV` - that
+   * would turn "production never talks to Sandbox" into a claim about a
+   * variable anyone who can set `PLAID_ENV` can also set. Previews leave the
+   * Plaid variables unset; Sandbox is for local development and the smoke
+   * script.
+   */
+  if (raw.PLAID_ENV === 'sandbox') {
+    problems.push(
+      'PLAID_ENV is sandbox: a production deployment must not talk to Plaid Sandbox, whose transactions are fabricated. Set it to production, or unset it if this deployment does not use Plaid.'
+    );
+  }
+
+  /**
+   * "Unset" has to mean Plaid is not configured, or the rule above has a hole
+   * in it. The provider factory builds a Sandbox client when `PLAID_ENV` does
+   * not say `production`, so credentials with no `PLAID_ENV` would reach
+   * Sandbox from production by the back door - past a check whose entire
+   * purpose is to stop that.
+   */
+  if (raw.PLAID_ENV === undefined && (raw.PLAID_CLIENT_ID || raw.PLAID_SECRET)) {
+    problems.push(
+      'PLAID_CLIENT_ID or PLAID_SECRET is set but PLAID_ENV is not. Set PLAID_ENV=production, or remove the credentials if this deployment does not use Plaid.'
+    );
+  }
+
+  if (raw.PLAID_ENV === 'production') {
+    if (!raw.PLAID_CLIENT_ID) {
+      problems.push('PLAID_CLIENT_ID is missing, and PLAID_ENV=production means Plaid is live.');
+    }
+    if (!raw.PLAID_SECRET) {
+      problems.push('PLAID_SECRET is missing, and PLAID_ENV=production means Plaid is live.');
+    }
+    if (!raw.CRON_SECRET) {
+      problems.push(
+        'CRON_SECRET is missing, and PLAID_ENV=production means the sync endpoint is live.'
+      );
+    }
   }
 
   // Anything but absent or an explicit "0". The variable exists to let a test

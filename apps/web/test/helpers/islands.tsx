@@ -73,10 +73,12 @@ export const SUMMARY = aSummary();
 
 /**
  * `usePathname` and `useRouter` are the framework boundary every island sits
- * on — the header reads the path, and the CSV upload refreshes the tree the
- * way an action's `revalidatePath` would.
+ * on — the header reads the path, the CSV upload refreshes the tree the way an
+ * action's `revalidatePath` would, and the OAuth return page replaces itself
+ * with the connections screen rather than pushing, so that Back does not go
+ * to a half-finished Link flow.
  */
-export const router = { refresh: vi.fn(), push: vi.fn() };
+export const router = { refresh: vi.fn(), push: vi.fn(), replace: vi.fn() };
 export const pathname = { current: '/' };
 
 export function mockNextNavigation() {

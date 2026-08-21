@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseMoney } from '@budget-bot/core';
@@ -147,15 +147,16 @@ describe('TransactionInbox', () => {
     expect(onDeleteTransaction).toHaveBeenCalledWith('tx-1');
   });
 
-  it('hands the chosen file to the page, which is what does the uploading', async () => {
+  it('hands the chosen file’s text to the page, which is what does the uploading', async () => {
     const { onImportCsv } = renderInbox();
-    const file = new File(['Date,Description,Amount\n2026-08-18,LOWES,10.00'], 'august.csv', {
-      type: 'text/csv',
-    });
+    const csv = 'Date,Description,Amount\n2026-08-18,LOWES,10.00';
+    const file = new File([csv], 'august.csv', { type: 'text/csv' });
 
     await userEvent.upload(screen.getByLabelText(/import csv statement/i), file);
 
-    expect(onImportCsv).toHaveBeenCalledWith(file);
+    // Reading the file is async - not part of the `userEvent.upload` promise
+    // it resolves inside `onChange`, so the assertion waits for it.
+    await waitFor(() => expect(onImportCsv).toHaveBeenCalledWith(csv));
   });
 
   it('shows the card a charge was made on only when the charge names one', () => {

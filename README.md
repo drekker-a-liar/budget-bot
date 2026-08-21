@@ -92,16 +92,32 @@ ever stored, processed or transmitted.
 
 | Path | What it is |
 | --- | --- |
-| `apps/web` | The Next.js 14 App Router application |
+| `apps/web` | The Next.js 15 App Router application |
 | `packages/core` | Money, schemas and every margin calculation. No I/O |
 | `packages/db` | Drizzle schema, repositories, migrations, seed |
 | `packages/bank-connectors` | The `BankProvider` interface and the CSV one |
 | `packages/config` | Shared tsconfig, eslint and vitest bases |
 
+## Connecting a bank
+
+`/settings/connections` links a bank through Plaid Link and fills the card
+inbox on its own, so charges stop having to be typed in. **Sync now** pulls
+`/transactions/sync` page by page under [ADR
+0004](docs/architecture/adr/0004-transactions-sync-over-get.md)'s merge rule: a
+transaction the bank sends again is updated only in the columns the bank owns,
+so re-syncing never undoes an afternoon of filing. The access token is
+AES-256-GCM encrypted before it reaches the database, is never returned by any
+read and never appears in a log or an error. A deployment with no Plaid
+credentials is a supported deployment — the screen says so, and CSV import and
+manual entry carry on. Setting it up is in [the Vercel
+guide](docs/self-hosting/vercel.md#9-connecting-a-bank) and [the local
+one](docs/self-hosting/local.md#connecting-a-bank-locally).
+
 ## Uploading a bank statement
 
-`POST /api/import/csv` takes a CSV export, as `multipart/form-data` with a
-`file` field or as a raw `text/csv` body, up to 5 MiB.
+`POST /api/import/csv` takes a CSV export as a raw `text/csv` body — send
+`Content-Type: text/csv` and a `Content-Length`, up to 5 MiB.
+`multipart/form-data` is refused with `415`.
 
 Columns are found by name, not position: a date column (`Date`, `Transaction
 Date`, `Posted Date`, …), a description (`Description`, `Memo`, `Payee`, …) and

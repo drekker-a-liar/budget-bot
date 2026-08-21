@@ -110,6 +110,14 @@ describe('calculateProjectKPIs', () => {
       projectId: 'proj-5',
       taxDeductible: true,
       createdAt: '2026-08-26T00:00:00.000Z',
+      postedAt: null,
+      pending: false,
+      source: 'manual',
+      provider: null,
+      externalId: null,
+      bankAccountId: null,
+      removedAt: null,
+      userEditedAt: null,
     };
     const kpi = calculateProjectKPIs(project, [subcontract], [], []);
 

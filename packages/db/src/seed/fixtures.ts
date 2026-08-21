@@ -134,7 +134,22 @@ export const SEED_CARD_PROFILE: CardProfile = {
   lastSyncedAt: '2026-08-19T18:30:00.000Z',
 };
 
-export const SEED_TRANSACTIONS: ExpenseTransaction[] = [
+/**
+ * Every fixture row below was typed in by hand; none of them came from a bank
+ * feed, so every one gets the same "nothing known" bank columns.
+ */
+const HAND_ENTERED = {
+  postedAt: null,
+  pending: false,
+  source: 'manual',
+  provider: null,
+  externalId: null,
+  bankAccountId: null,
+  removedAt: null,
+  userEditedAt: null,
+} as const;
+
+const HAND_ENTERED_ROWS: Array<Omit<ExpenseTransaction, keyof typeof HAND_ENTERED>> = [
   // Proj-1 (Bath)
   {
     id: 'tx-101',
@@ -379,6 +394,11 @@ export const SEED_TRANSACTIONS: ExpenseTransaction[] = [
     createdAt: '2026-08-19T16:00:00.000Z',
   },
 ];
+
+export const SEED_TRANSACTIONS: ExpenseTransaction[] = HAND_ENTERED_ROWS.map((transaction) => ({
+  ...HAND_ENTERED,
+  ...transaction,
+}));
 
 export const SEED_LABOR: LaborEntry[] = [
   // Proj-1 (Bath: 38 hrs total)

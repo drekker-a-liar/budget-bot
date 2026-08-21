@@ -228,3 +228,20 @@ export const MarkInvoicePaidForm = z.object({
   id: named('Which invoice?'),
   paidDate: isoDate.default(today),
 });
+
+/**
+ * What the Link flow hands back.
+ *
+ * A public token is a short-lived string minted by Plaid Link in the browser
+ * and exchanged once. Nothing on this side can tell a real one from a typo -
+ * only Plaid can - so the only thing worth checking here is that there is one,
+ * and the message is written for the case that actually happens: Link closed
+ * without completing.
+ */
+export const ExchangePublicTokenForm = z.object({
+  publicToken: named('The bank did not finish connecting. Try again.'),
+});
+
+export const SyncConnectionForm = z.object({
+  connectionId: named('Which connection?'),
+});

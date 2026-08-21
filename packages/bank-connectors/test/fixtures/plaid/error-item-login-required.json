@@ -1,0 +1,14 @@
+{
+  "status": 400,
+  "headers": {},
+  "data": {
+    "error_type": "ITEM_ERROR",
+    "error_code": "ITEM_LOGIN_REQUIRED",
+    "error_message": "the login details of this item have changed (credentials, MFA, or required user action) and a user login is required to update this information. use Link's update mode to restore the item to a good state",
+    "display_message": "The credentials were updated or MFA is required. Please reconnect this account.",
+    "request_id": "req-error-item-login-required",
+    "status": 400,
+    "documentation_url": "https://plaid.com/docs/errors/item/#item_login_required",
+    "suggested_action": null
+  }
+}

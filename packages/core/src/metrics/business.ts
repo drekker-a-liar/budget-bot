@@ -83,13 +83,19 @@ export function calculateBusinessSummary(
   // payment or a refund is both, and summing one here would *reduce* outflow
   // and make the KPI rosier than the waterfall drawn beside it on the same
   // page - two numbers about one week, from the same rows, disagreeing.
+  //
+  // `postedAt ?? date` because this is a question about a week of cash, and
+  // for a bank row the two can fall in different weeks - a Saturday card
+  // charge posts on the Monday. `postedAt` is when the money left, so it is
+  // the one that decides the bucket; a manual row, or one still pending, has
+  // none and is bucketed by its date as before (spec §2.3).
   const weeklyCashOutflowCents = addCents(
     ...transactions
       .filter(
         (t) =>
           t.status !== 'ignored' &&
           t.amountCents > 0 &&
-          new Date(t.date) >= oneWeekAgo
+          new Date(t.postedAt ?? t.date) >= oneWeekAgo
       )
       .map((t) => t.amountCents)
   );

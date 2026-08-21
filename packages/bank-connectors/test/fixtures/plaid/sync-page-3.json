@@ -1,0 +1,85 @@
+{
+  "accounts": [
+    {
+      "account_id": "acct-credit-1",
+      "balances": {
+        "available": 2350.44,
+        "current": 2649.56,
+        "limit": 5000,
+        "iso_currency_code": "USD",
+        "unofficial_currency_code": null
+      },
+      "mask": "3210",
+      "name": "Platypus Business Card",
+      "official_name": "Platypus Business Rewards Visa",
+      "type": "credit",
+      "subtype": "credit card"
+    },
+    {
+      "account_id": "acct-checking-1",
+      "balances": {
+        "available": 12450.11,
+        "current": 12980.11,
+        "limit": null,
+        "iso_currency_code": "USD",
+        "unofficial_currency_code": null
+      },
+      "mask": "0000",
+      "name": "Platypus Business Checking",
+      "official_name": "Platypus Business Interest Checking",
+      "type": "depository",
+      "subtype": "checking"
+    }
+  ],
+  "added": [
+    {
+      "account_id": "acct-checking-1",
+      "account_owner": null,
+      "amount": -4200,
+      "authorized_date": null,
+      "authorized_datetime": null,
+      "date": "2026-08-12",
+      "datetime": "2026-08-12T11:00:00Z",
+      "iso_currency_code": "USD",
+      "location": {
+        "address": null,
+        "city": null,
+        "region": null,
+        "postal_code": null,
+        "country": null,
+        "lat": null,
+        "lon": null,
+        "store_number": null
+      },
+      "merchant_name": null,
+      "name": "ACH DEPOSIT MERIDIAN BUILD LLC",
+      "payment_channel": "other",
+      "payment_meta": {
+        "reference_number": null,
+        "ppd_id": null,
+        "payee": null,
+        "by_order_of": null,
+        "payer": null,
+        "payment_method": null,
+        "payment_processor": null,
+        "reason": null
+      },
+      "pending": false,
+      "pending_transaction_id": null,
+      "personal_finance_category": {
+        "primary": "INCOME",
+        "detailed": "INCOME_OTHER_INCOME",
+        "confidence_level": "VERY_HIGH"
+      },
+      "transaction_code": null,
+      "transaction_id": "txn-6",
+      "unofficial_currency_code": null
+    }
+  ],
+  "modified": [],
+  "removed": [],
+  "next_cursor": "cursor-3",
+  "has_more": false,
+  "transactions_update_status": "HISTORICAL_UPDATE_COMPLETE",
+  "request_id": "req-sync-3"
+}

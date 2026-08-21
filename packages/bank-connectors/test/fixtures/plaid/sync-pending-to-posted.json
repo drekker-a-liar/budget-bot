@@ -1,0 +1,90 @@
+{
+  "accounts": [
+    {
+      "account_id": "acct-credit-1",
+      "balances": {
+        "available": 2350.44,
+        "current": 2649.56,
+        "limit": 5000,
+        "iso_currency_code": "USD",
+        "unofficial_currency_code": null
+      },
+      "mask": "3210",
+      "name": "Platypus Business Card",
+      "official_name": "Platypus Business Rewards Visa",
+      "type": "credit",
+      "subtype": "credit card"
+    },
+    {
+      "account_id": "acct-checking-1",
+      "balances": {
+        "available": 12450.11,
+        "current": 12980.11,
+        "limit": null,
+        "iso_currency_code": "USD",
+        "unofficial_currency_code": null
+      },
+      "mask": "0000",
+      "name": "Platypus Business Checking",
+      "official_name": "Platypus Business Interest Checking",
+      "type": "depository",
+      "subtype": "checking"
+    }
+  ],
+  "added": [
+    {
+      "account_id": "acct-credit-1",
+      "account_owner": null,
+      "amount": 214.19,
+      "authorized_date": "2026-08-19",
+      "authorized_datetime": "2026-08-19T10:12:44Z",
+      "date": "2026-08-21",
+      "datetime": "2026-08-21T03:11:07Z",
+      "iso_currency_code": "USD",
+      "location": {
+        "address": null,
+        "city": null,
+        "region": null,
+        "postal_code": null,
+        "country": null,
+        "lat": null,
+        "lon": null,
+        "store_number": null
+      },
+      "merchant_name": "Fastenal",
+      "name": "FASTENAL COMPANY01",
+      "payment_channel": "in store",
+      "payment_meta": {
+        "reference_number": null,
+        "ppd_id": null,
+        "payee": null,
+        "by_order_of": null,
+        "payer": null,
+        "payment_method": null,
+        "payment_processor": null,
+        "reason": null
+      },
+      "pending": false,
+      "pending_transaction_id": "txn-pending-1",
+      "personal_finance_category": {
+        "primary": "GENERAL_MERCHANDISE",
+        "detailed": "GENERAL_MERCHANDISE_OTHER_GENERAL_MERCHANDISE",
+        "confidence_level": "MEDIUM"
+      },
+      "transaction_code": null,
+      "transaction_id": "txn-7",
+      "unofficial_currency_code": null
+    }
+  ],
+  "modified": [],
+  "removed": [
+    {
+      "transaction_id": "txn-pending-1",
+      "account_id": "acct-credit-1"
+    }
+  ],
+  "next_cursor": "cursor-6",
+  "has_more": false,
+  "transactions_update_status": "HISTORICAL_UPDATE_COMPLETE",
+  "request_id": "req-sync-6"
+}

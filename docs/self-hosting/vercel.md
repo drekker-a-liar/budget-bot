@@ -52,8 +52,47 @@ intended outcome, and much better than a preview holding real secrets.
 | `AUTH_GITHUB_SECRET` | Production | Filled in at step 6 |
 | `ALLOWED_EMAILS` | Production | Your verified GitHub address, comma-separated for more |
 | `BANK_TOKEN_ENCRYPTION_KEY` | Production | `openssl rand -base64 32` |
-| `PLAID_ENV` | — | Leave unset until sub-project 2 |
+| `PLAID_ENV` | Production only, and only `production` | See "Connecting a bank" below |
+| `PLAID_CLIENT_ID` | Production | From the Plaid dashboard, **Production** keys |
+| `PLAID_SECRET` | Production | From the Plaid dashboard, **Production** keys |
 | `CRON_SECRET` | Production, once `PLAID_ENV=production` | `openssl rand -base64 32` |
+
+The three Plaid variables travel together, and the boot assertion enforces it
+rather than trusting you:
+
+- `PLAID_ENV=sandbox` is **refused in production**. Sandbox transactions are
+  invented, and a deployment showing invented money to its owner as their own
+  is worse than one that will not start.
+- Credentials with **no** `PLAID_ENV` are refused too. The provider factory
+  builds a Sandbox client unless `PLAID_ENV` says `production`, so "keys but no
+  environment" is the same mistake with the variable left off.
+- `PLAID_ENV=production` makes `PLAID_CLIENT_ID`, `PLAID_SECRET` and
+  `CRON_SECRET` mandatory.
+
+**Leave all three unset on Preview.** Not because a preview should not have a
+bank, but because it cannot have one under the rule above: Vercel builds and
+runs previews with `NODE_ENV=production`, so the assertion sees a preview and a
+production deployment as the same thing, and `PLAID_ENV=sandbox` on a preview
+is a preview that refuses to boot. A preview with none of the three set is a
+supported deployment - the connections screen says Plaid is not configured, and
+everything else works.
+
+This is the settled rule rather than a gap waiting to be closed. The assertion
+could be taught to allow `sandbox` when `VERCEL_ENV=preview`, and deliberately
+is not: today it makes one unconditional claim - a process with
+`NODE_ENV=production` will not talk to Sandbox - and keying that on a second
+variable demotes it to a claim about configuration. `VERCEL_ENV` is set by the
+platform, is absent everywhere else, and can be set by anyone who can set
+`PLAID_ENV`, so an env file copied from Vercel to a VPS, or a mis-wired
+"promote preview to production", would re-open exactly the hole the check
+exists to close while the check reported itself satisfied. What a Sandbox
+preview would buy over `next dev` against Sandbox plus the Playwright journey
+in CI is the ability to click Plaid's own Link UI on a shared URL, which is
+worth something and is not worth that. Sandbox keys stay on a development
+machine (see `docs/self-hosting/local.md`).
+
+Production keys on Preview is the one arrangement that must never happen:
+preview URLs are shared far more casually than production ones.
 
 **Never set `E2E`.** It adds a password-less sign-in door for the Playwright
 suite. A production deployment with it set throws at boot and serves a 500 —
@@ -171,6 +210,57 @@ So break it once, on purpose:
    `{"ok":true,"authConfigured":true}` again before you walk away.
 
 Do it while the deployment is new and holds nothing you would miss.
+
+## 9. Connecting a bank
+
+Only after the deployment is up and you can sign in — Plaid needs URLs that do
+not exist before then.
+
+### Register the redirect URI
+
+Plaid dashboard → **Developers → API → Allowed redirect URIs**. Add:
+
+```
+https://<your-host>/plaid/oauth-return
+```
+
+and, for working on this locally, a second entry:
+
+```
+http://localhost:3000/plaid/oauth-return
+```
+
+Plaid validates `redirect_uri` against that list on every `/link/token/create`,
+so an unregistered host is a Link token that is never issued — the connections
+screen shows the refusal code rather than opening Link.
+
+The application never takes that URI from the browser. It builds it from the
+request's own origin, falling back to `AUTH_URL`, so a caller cannot point a
+completed Link flow at a page it controls.
+
+### Why the page exists at all
+
+Most credit unions and a growing number of banks authenticate through OAuth:
+Link hands the browser to the bank's own site, and the bank hands it back to
+the redirect URI rather than to the tab it came from. `/plaid/oauth-return`
+is that landing page — it picks the Link session back up and finishes the
+exchange. Institutions that ask for credentials inside Link never touch it.
+
+### Going live
+
+Sandbox needs nothing but keys. **Production does not**: Plaid requires an
+application, with a description of the product and a review, before it issues
+Production access. Each self-hoster applies with their own Plaid account —
+there is no shared application to inherit, and no key in this repository.
+
+Plaid's free Trial tier covers 10 live Items at the time of writing, which is
+several more than one person's business needs. **Re-check the current
+Trial-tier limits in the Plaid dashboard before you budget on that number** -
+it is a figure Plaid sets and can change, this document is a snapshot of when
+it was written, and the dashboard is the only place it is authoritative.
+
+Until that approval lands, leave the three variables unset. The connections
+screen says Plaid is not configured, and CSV import and manual entry carry on.
 
 ## Custom domains
 

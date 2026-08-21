@@ -15,14 +15,11 @@ const nextConfig = {
   reactStrictMode: true,
   // Workspace packages ship TypeScript source rather than a build (spec §3).
   transpilePackages: ['@budget-bot/bank-connectors', '@budget-bot/core', '@budget-bot/db'],
-  experimental: {
-    // postgres.js is a Node library with its own dynamic requires; leaving it
-    // external keeps the server bundle honest.
-    serverComponentsExternalPackages: ['postgres'],
-    // Next 14 only calls `instrumentation.ts` when asked to. Without this the
-    // production boot assertion never runs. (Next 15 made it the default.)
-    instrumentationHook: true,
-  },
+  // postgres.js is a Node library with its own dynamic requires; leaving it
+  // external keeps the server bundle honest. (Next 15 promoted this out of
+  // `experimental`, along with the instrumentation hook, which it now always
+  // calls - so the boot assertion no longer needs a flag to run.)
+  serverExternalPackages: ['postgres'],
 };
 
 export default nextConfig;

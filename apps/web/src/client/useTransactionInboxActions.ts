@@ -23,14 +23,16 @@ import type { ActionResult } from '@/src/server/actions/result';
  *
  * The CSV upload is a `fetch` rather than an action because the route is the
  * one thing here that takes a file (spec §6); `router.refresh()` is what an
- * action's `revalidatePath` would have done.
+ * action's `revalidatePath` would have done. It posts the file's text as a
+ * raw `text/csv` body - the browser computes `Content-Length` for a string
+ * body on its own, so nothing here needs to.
  */
 
 export interface TransactionInboxActions {
   onAssignProject: (transactionId: string, projectId: string) => void;
   onUpdateCategory: (transactionId: string, category: ExpenseCategory) => void;
   onDeleteTransaction: (transactionId: string) => void;
-  onImportCsv: (file: File) => void;
+  onImportCsv: (text: string) => void;
   /** What went wrong with the last write, for the page to show. */
   error: string | null;
   pending: boolean;
@@ -56,12 +58,14 @@ export function useTransactionInboxActions(): TransactionInboxActions {
     onUpdateCategory: (id, category) =>
       run(() => updateTransactionCategoryAction({ id, category })),
     onDeleteTransaction: (id) => run(() => deleteTransactionAction({ id })),
-    onImportCsv: (file) => {
+    onImportCsv: (text) => {
       setError(null);
       startTransition(async () => {
-        const body = new FormData();
-        body.set('file', file);
-        const response = await fetch('/api/import/csv', { method: 'POST', body });
+        const response = await fetch('/api/import/csv', {
+          method: 'POST',
+          headers: { 'content-type': 'text/csv' },
+          body: text,
+        });
         const result = await response.json();
         if (!response.ok) {
           setError(result.error ?? 'That file could not be imported.');

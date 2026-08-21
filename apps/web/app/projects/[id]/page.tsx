@@ -10,9 +10,10 @@ import { ProjectDetailView } from './ProjectDetailView';
  * exist: which of the two it is would be an answer about somebody else's
  * books, and this page has nothing to say about those.
  */
-export default async function ProjectDetailPage({ params }: { params: { id: string } }) {
+export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const ownerId = await requireOwnerId();
-  const data = await getProjectDetail(ownerId, params.id);
+  const data = await getProjectDetail(ownerId, id);
   if (!data) notFound();
 
   return <ProjectDetailView {...data} />;

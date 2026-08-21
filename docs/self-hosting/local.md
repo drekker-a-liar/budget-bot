@@ -40,6 +40,13 @@ The user has to exist first — Auth.js creates it the first time that address
 signs in. Seeding twice does nothing unless `--reset` is passed. Setting
 `SEED_DEMO=1` does the same thing automatically on a user's first sign-in.
 
+`--reset` takes that owner's **linked banks** with it as well as their ledger,
+and deliberately: a connection carries a spent `/transactions/sync` cursor, so
+one left behind after a reset is a bank that will never hand over a transaction
+it has already delivered, and re-linking it collides with the row on the unique
+`(provider, item_id)`. If you have a Sandbox bank connected, expect to connect
+it again afterwards.
+
 ## Tests
 
 ```bash
@@ -105,6 +112,84 @@ on a host reachable from anywhere but your own machine, and never leave `E2E=1`
 exported in a shell you then use for ordinary development. The suite sets it on
 the server it spawns and nowhere else, which is why it is set there rather than
 in your `.env`.
+
+## Connecting a bank locally
+
+The connections screen is at `/settings/connections`. With no Plaid
+credentials it says Plaid is not configured and everything else carries on —
+that is a supported state, not a broken one.
+
+To connect a real Sandbox bank, put your Sandbox keys in `.env`:
+
+```
+PLAID_ENV=sandbox
+PLAID_CLIENT_ID=…      # https://dashboard.plaid.com/developers/keys
+PLAID_SECRET=…         # the Sandbox secret, not the Production one
+```
+
+and register `http://localhost:3000/plaid/oauth-return` under **Allowed
+redirect URIs** in the Plaid dashboard. Without it Plaid refuses to issue a
+Link token and the screen shows the refusal code.
+
+Then pick **Platypus OAuth Bank** in Link to exercise the OAuth round trip that
+most credit unions use — Link leaves the page for the bank's own site and comes
+back to `/plaid/oauth-return`. Every other Sandbox institution takes
+`user_good` / `pass_good` inside Link and never touches that page.
+
+`PLAID_ENV=sandbox` is only for a development machine. A deployment with it
+set refuses to boot, because that assertion cannot tell a preview from
+production and Sandbox money is invented (see
+[the Vercel guide](vercel.md#4-environment-variables)).
+
+### The end-to-end run never touches Plaid
+
+`E2E=1` selects a scripted bank instead — two accounts, two pages of
+transactions, no network and no credentials. The door that turns on the
+test-only sign-in is the same door that chooses it, and it wins over real
+credentials on purpose: an end-to-end run on a machine that *does* have
+Sandbox keys in its `.env` still gets the script rather than quietly making
+real Plaid calls.
+
+### The live smoke
+
+```bash
+export PLAID_CLIENT_ID=… PLAID_SECRET=…
+pnpm --filter web plaid:smoke
+```
+
+It creates a Platypus OAuth Bank Item in Sandbox, exchanges it, lists the
+accounts and pages `/transactions/sync` to exhaustion, then prints one line of
+counts and nothing else — six fields, in this shape:
+
+```json
+{"institution":"…","accounts":0,"pages":0,"added":0,"modified":0,"removed":0}
+```
+
+That is the only thing in this repository that talks to real Plaid, and it
+exists for the one claim fixtures cannot make: that the requests this
+application builds are ones Plaid accepts.
+
+Three things about how it behaves:
+
+- **It reads the environment and no file.** The same rule `check:security`
+  follows — `export` the keys, or put them in `.env` and `set -a; . ./.env;
+  set +a` first. A `.env` sitting next to it is not loaded.
+- **No keys is a success.** It prints `Plaid Sandbox keys not set
+  (PLAID_CLIENT_ID, PLAID_SECRET); skipping.` and exits 0, so it can sit in
+  the script list without being a red X on every machine that has none. CI
+  never runs it.
+- **Sandbox or nothing.** `PLAID_ENV` naming anything but `sandbox` is a
+  refusal with exit 2 and no request sent. It creates an Item on demand, which
+  is not a thing to do to a production Plaid account.
+
+A failure prints the mapped Plaid code alone — `Plaid Sandbox smoke failed:
+INVALID_FIELD` — and never a token, an item id or a transaction descriptor.
+
+Sandbox costs nothing and has no Item limit. Production does, and it is not a
+number this file can tell you: **re-check the current Trial-tier limits in the
+Plaid dashboard before you budget on the 10-Item figure**
+`docs/self-hosting/vercel.md` quotes. Plaid sets it, and both documents are
+snapshots of when they were written.
 
 ## Judging an environment before deploying it
 

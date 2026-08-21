@@ -93,17 +93,16 @@ owner column.
 
 ## Known security debt
 
-`pnpm audit --prod --audit-level=high` blocks CI, and
-[`pnpm-workspace.yaml`](pnpm-workspace.yaml) lists eight advisories it is
-allowed to pass over. All eight are fixed only in **Next 15**; this app is on
-the Next 14 App Router. Four of them cannot reach this deployment (no Pages
-Router, no i18n, no rewrites, no WebSocket upgrades, no custom server) and four
-are denial of service against a private single-user deployment.
+None. `pnpm audit --prod --audit-level=high` blocks CI and
+[`pnpm-workspace.yaml`](pnpm-workspace.yaml) carries no `auditConfig` at all:
+the eight `next` advisories that used to be allow-listed here are fixed in
+**Next 15**, which the app is now on, and the two transitive packages that
+still lag (`postcss`, `sharp`) are pulled forward by `overrides` instead.
 
-**Upgrading to Next 15 is the fix, and it is a sub-project.** Until then: the
-list is exact GHSA ids, so a *new* advisory against `next` — or against
-anything else — still turns CI red. Do not widen it to a package name or a
-severity threshold.
+An override that actually fixes the version is always preferred. If an advisory
+genuinely has to be passed over, list it by **exact GHSA id** with a one-line
+reason, so a *new* advisory against the same package still turns CI red. Do not
+widen it to a package name or a severity threshold.
 
 ## Repository settings the owner has to apply
 

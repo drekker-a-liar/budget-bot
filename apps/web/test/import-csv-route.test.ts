@@ -60,6 +60,7 @@ function textCsv(body: string): Request {
   });
 }
 
+/** What a pre-Phase-2 client, or any browser posting a `<form>`, still sends. */
 function multipart(body: string, filename = 'august.csv'): Request {
   const form = new FormData();
   form.set('file', new File([body], filename, { type: 'text/csv' }));
@@ -94,8 +95,16 @@ beforeEach(() => {
 });
 
 describe('POST /api/import/csv', () => {
-  it('imports an uploaded file and reports what it could not read', async () => {
+  it('refuses multipart now that the client sends text/csv', async () => {
     const { status, body } = await post(multipart(CSV));
+
+    expect(status).toBe(415);
+    expect(body.error).toMatch(/text\/csv/i);
+    expect(db.importCsvBatch).not.toHaveBeenCalled();
+  });
+
+  it('imports an uploaded file and reports what it could not read', async () => {
+    const { status, body } = await post(textCsv(CSV));
 
     expect(status).toBe(200);
     expect(body).toMatchObject({
@@ -133,13 +142,6 @@ describe('POST /api/import/csv', () => {
     });
   });
 
-  it('accepts a raw text/csv body as well, for a caller with no form to post', async () => {
-    const { status, body } = await post(textCsv(CSV));
-
-    expect(status).toBe(200);
-    expect(body).toMatchObject({ inserted: 2, skipped: 1 });
-  });
-
   it('categorises what it imports rather than filing everything as overhead', async () => {
     await post(textCsv('Date,Description,Amount\n2026-08-18,BP #4471 UNLEADED,64.37'));
 
@@ -168,13 +170,15 @@ describe('POST /api/import/csv', () => {
     ]);
   });
 
-  it('records the batch under the signed-in owner, with the file it came from', async () => {
-    await post(multipart(CSV, 'capital-one-august.csv'));
+  it('records the batch under the signed-in owner', async () => {
+    await post(textCsv(CSV));
 
     expect(db.importCsvBatch).toHaveBeenCalledWith({}, 'user-1', expect.any(Object));
     expect(batchWritten()).toEqual({
       source: 'csv',
-      filename: 'capital-one-august.csv',
+      // A raw text/csv body carries no filename - there is no form field to
+      // read one from, unlike the multipart upload this replaced.
+      filename: null,
       rowCount: 3,
       insertedCount: 2,
       skippedCount: 1,
@@ -286,21 +290,6 @@ describe('POST /api/import/csv', () => {
       expect(status).toBe(413);
       expect(db.importCsvBatch).not.toHaveBeenCalled();
     });
-
-    it('refuses an uploaded file that is over the cap', async () => {
-      const form = new FormData();
-      form.set('file', new File(['x'.repeat(CAP + 1)], 'huge.csv', { type: 'text/csv' }));
-      const request = new Request('http://localhost/api/import/csv', {
-        method: 'POST',
-        body: form,
-      });
-      request.headers.set('Content-Length', String(CAP - 1));
-
-      const { status } = await post(request);
-
-      expect(status).toBe(413);
-      expect(db.importCsvBatch).not.toHaveBeenCalled();
-    });
   });
 
   it('refuses a request with no file at all', async () => {
@@ -309,20 +298,6 @@ describe('POST /api/import/csv', () => {
     expect(status).toBe(400);
     expect(body.error).toMatch(/no csv file/i);
     expect(db.importCsvBatch).not.toHaveBeenCalled();
-  });
-
-  it('refuses a form that carries no file field', async () => {
-    const form = new FormData();
-    form.set('notes', 'oops');
-    const request = new Request('http://localhost/api/import/csv', {
-      method: 'POST',
-      body: form,
-    });
-    request.headers.set('Content-Length', '512');
-
-    const { status } = await post(request);
-
-    expect(status).toBe(400);
   });
 
   it('explains a file whose columns it cannot identify', async () => {

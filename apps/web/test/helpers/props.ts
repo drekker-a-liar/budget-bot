@@ -53,6 +53,14 @@ export function aTransaction(
     status: 'unassigned',
     taxDeductible: true,
     createdAt: '2026-08-18T14:30:00.000Z',
+    postedAt: null,
+    pending: false,
+    source: 'manual',
+    provider: null,
+    externalId: null,
+    bankAccountId: null,
+    removedAt: null,
+    userEditedAt: null,
     ...overrides,
   };
 }

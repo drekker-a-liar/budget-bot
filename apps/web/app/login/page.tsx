@@ -27,14 +27,15 @@ function messageFor(error: string | undefined): string | null {
 }
 
 interface LoginPageProps {
-  searchParams: { error?: string; callbackUrl?: string };
+  searchParams: Promise<{ error?: string; callbackUrl?: string }>;
 }
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   if (await auth()) redirect('/');
 
-  const message = messageFor(searchParams.error);
-  const callbackUrl = searchParams.callbackUrl ?? '/';
+  const params = await searchParams;
+  const message = messageFor(params.error);
+  const callbackUrl = params.callbackUrl ?? '/';
 
   return (
     <div
