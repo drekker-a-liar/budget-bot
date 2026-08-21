@@ -8,7 +8,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { cents, createdAt, ownerId, updatedAt } from './columns';
+import { cents, createdAt, ownerId, ownerIdNullable, updatedAt } from './columns';
 
 /**
  * The bank-feed tables (spec §5, ADR 0002, ADR 0004). They are created now and
@@ -98,12 +98,16 @@ export const bankAccounts = pgTable(
  * Replay protection for provider webhooks: the body hash is unique, so a
  * redelivered payload is recognised rather than re-applied (spec §7). Rows are
  * kept 30 days.
+ *
+ * The owner is nullable here and nowhere else - a payload is recorded when it
+ * arrives, which is before its item has been resolved to an owner, and some
+ * payloads name an item this deployment has never seen. See `ownerIdNullable`.
  */
 export const webhookEvents = pgTable(
   'webhook_events',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    ownerId: ownerId(),
+    ownerId: ownerIdNullable(),
     provider: text('provider').notNull().default('plaid'),
     itemId: text('item_id'),
     webhookType: text('webhook_type'),

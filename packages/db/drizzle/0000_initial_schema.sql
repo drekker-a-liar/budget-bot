@@ -174,7 +174,7 @@ CREATE TABLE "bank_connections" (
 --> statement-breakpoint
 CREATE TABLE "webhook_events" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"owner_id" text NOT NULL,
+	"owner_id" text,
 	"provider" text DEFAULT 'plaid' NOT NULL,
 	"item_id" text,
 	"webhook_type" text,

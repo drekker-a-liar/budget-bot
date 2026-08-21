@@ -1,5 +1,5 @@
 {
-  "id": "1836f8e6-1ac7-4f6f-8830-7296dfb0dc5a",
+  "id": "3c308314-dfe4-41b1-af3d-8ad018915911",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -1485,7 +1485,7 @@
           "name": "owner_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "provider": {
           "name": "provider",

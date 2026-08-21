@@ -14,6 +14,17 @@ export const ownerId = () =>
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' });
 
+/**
+ * The one exception to "every row has an owner": `webhook_events`. Its body
+ * hash is the replay defence, and it has to be recorded the moment a payload
+ * arrives - before the item has been resolved to an owner, and for payloads
+ * whose item this deployment does not recognise at all. Requiring the owner
+ * first would mean the unrecognised payloads are the ones with no replay
+ * protection, which is exactly backwards.
+ */
+export const ownerIdNullable = () =>
+  text('owner_id').references(() => users.id, { onDelete: 'cascade' });
+
 export const createdAt = () =>
   timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow();
 
