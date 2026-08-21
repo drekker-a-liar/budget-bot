@@ -19,7 +19,17 @@ import { failed, invalid, ok, unauthorized, type ActionResult } from './result';
  * that is not this owner's. From the caller's side that is indistinguishable
  * from a project that does not exist, and either way it is their mistake, so
  * it comes back as a failed result rather than as a thrown error.
+ *
+ * The two actions that correct a synced row stamp `userEditedAt`. That column
+ * is what the sync merge rule reads (ADR 0004), and it can only be set here:
+ * a repository sees a write, not who asked for it, and a bank feed writes
+ * through the same repository. Every write below that a person initiated
+ * carries the stamp, so "the user has touched this row" is a fact recorded at
+ * the moment it becomes true rather than inferred afterwards.
  */
+
+/** Stamped on every correction a person makes, for the merge rule to read. */
+const editedNow = () => new Date().toISOString();
 
 export async function createTransactionAction(
   input: unknown
@@ -62,7 +72,7 @@ export async function assignTransactionAction(
       getDb(),
       ownerId,
       parsed.data.id,
-      { projectId, status: projectId ? 'matched' : 'unassigned' }
+      { projectId, status: projectId ? 'matched' : 'unassigned', userEditedAt: editedNow() }
     );
     if (!transaction) return failed('No such charge.');
     revalidateApp();
@@ -86,7 +96,7 @@ export async function updateTransactionCategoryAction(
     getDb(),
     ownerId,
     parsed.data.id,
-    { category: parsed.data.category }
+    { category: parsed.data.category, userEditedAt: editedNow() }
   );
   if (!transaction) return failed('No such charge.');
 

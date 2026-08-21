@@ -31,7 +31,7 @@ const repos = vi.hoisted(() => ({
     id: 'tx-1',
     ...input,
   })),
-  updateTransaction: vi.fn(async () => ({ id: 'tx-1' })),
+  updateTransaction: vi.fn(async (..._args: unknown[]) => ({ id: 'tx-1' })),
   deleteTransaction: vi.fn(async () => true),
   createLaborEntry: vi.fn(async (_db: unknown, _owner: string, input: object) => ({
     id: 'lab-1',
@@ -282,6 +282,7 @@ describe('assigning a charge', () => {
     expect(repos.updateTransaction).toHaveBeenCalledWith({}, 'user-1', 'tx-1', {
       projectId: 'proj-9',
       status: 'matched',
+      userEditedAt: expect.any(String),
     });
   });
 
@@ -294,6 +295,7 @@ describe('assigning a charge', () => {
     expect(repos.updateTransaction).toHaveBeenCalledWith({}, 'user-1', 'tx-1', {
       projectId: null,
       status: 'unassigned',
+      userEditedAt: expect.any(String),
     });
   });
 
@@ -312,6 +314,40 @@ describe('assigning a charge', () => {
     const result = await assignTransactionAction({ id: 'tx-nope', projectId: '' });
 
     expect(result).toEqual({ ok: false, error: 'No such charge.', fieldErrors: undefined });
+  });
+});
+
+/**
+ * `user_edited_at` is the whole of the sync merge rule's memory (ADR 0004):
+ * once it is set, a re-sync stops overwriting the category, the vendor and
+ * whether the charge is deductible. Nothing below the action can set it - a
+ * repository is called the same way by a bank feed - so these two writes are
+ * where a correction becomes a recorded fact, and this is the test that keeps
+ * them that way.
+ */
+describe('correcting a charge', () => {
+  it('records when the user touched it, so a re-sync stops overwriting them', async () => {
+    const before = Date.now();
+
+    await updateTransactionCategoryAction({ id: 'tx-1', category: 'tools' });
+
+    expect(repos.updateTransaction).toHaveBeenCalledWith({}, 'user-1', 'tx-1', {
+      category: 'tools',
+      userEditedAt: expect.any(String),
+    });
+    const { userEditedAt } = repos.updateTransaction.mock.calls[0][3] as {
+      userEditedAt: string;
+    };
+    expect(Date.parse(userEditedAt)).toBeGreaterThanOrEqual(before);
+  });
+
+  it('records it when a charge is filed against a job as well', async () => {
+    await assignTransactionAction({ id: 'tx-1', projectId: 'proj-9' });
+
+    const { userEditedAt } = repos.updateTransaction.mock.calls[0][3] as {
+      userEditedAt: string;
+    };
+    expect(Number.isNaN(Date.parse(userEditedAt))).toBe(false);
   });
 });
 
