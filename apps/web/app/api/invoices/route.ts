@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { parseMoney } from '@budget-bot/core';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -30,8 +31,8 @@ export async function POST(req: Request) {
     const inv = db.createInvoice({
       projectId,
       invoiceNumber: invoiceNumber || `INV-${Date.now().toString().slice(-6)}`,
-      amount: Number(amount),
-      depositAmount: Number(depositAmount) || 0,
+      amountCents: parseMoney(Number(amount) || 0),
+      depositAmountCents: parseMoney(Number(depositAmount) || 0),
       dateIssued: dateIssued || new Date().toISOString().slice(0, 10),
       dueDate: dueDate || new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
       status: status || 'sent',

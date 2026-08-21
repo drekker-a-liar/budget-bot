@@ -6,6 +6,7 @@ import {
   LaborEntry,
   Invoice,
   CardProfile,
+  parseMoney,
 } from '@budget-bot/core';
 import {
   SEED_PROJECTS,
@@ -27,6 +28,80 @@ interface DatabaseSchema {
 const DB_DIR = path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DB_DIR, 'db.json');
 
+// TEMP: removed in Task 5, when Postgres replaces this JSON store.
+//
+// The file on disk is still the prototype's shape - float dollars under the
+// pre-cents field names - so that an existing data/db.json keeps working. The
+// domain above this line is integer cents. These two functions are the only
+// place the two shapes meet: dollars in on read, dollars out on write.
+type LegacyRecord = Record<string, unknown>;
+
+const LEGACY_MONEY_FIELDS = {
+  project: { quotedTotal: 'quotedTotalCents', quotedMaterials: 'quotedMaterialsCents', targetHourlyRate: 'targetHourlyRateCents' },
+  transaction: { amount: 'amountCents' },
+  labor: { hourlyRate: 'hourlyRateCents' },
+  invoice: { amount: 'amountCents', depositAmount: 'depositAmountCents' },
+  card: { currentBalance: 'currentBalanceCents', creditLimit: 'creditLimitCents' },
+} as const;
+
+type FieldMap = Record<string, string>;
+
+function centsFromLegacy<T>(record: LegacyRecord, fields: FieldMap): T {
+  const converted: LegacyRecord = { ...record };
+  for (const [dollarField, centsField] of Object.entries(fields)) {
+    converted[centsField] = parseMoney(Number(converted[dollarField]) || 0);
+    delete converted[dollarField];
+  }
+  return converted as T;
+}
+
+function legacyFromCents<T extends object>(record: T, fields: FieldMap): LegacyRecord {
+  const converted = { ...record } as LegacyRecord;
+  for (const [dollarField, centsField] of Object.entries(fields)) {
+    converted[dollarField] = (Number(converted[centsField]) || 0) / 100;
+    delete converted[centsField];
+  }
+  return converted;
+}
+
+function fromLegacyFile(raw: string): DatabaseSchema {
+  const parsed = JSON.parse(raw) as {
+    projects: LegacyRecord[];
+    transactions: LegacyRecord[];
+    laborEntries: LegacyRecord[];
+    invoices: LegacyRecord[];
+    cardProfile: LegacyRecord;
+    version: number;
+  };
+  const { project, transaction, labor, invoice, card } = LEGACY_MONEY_FIELDS;
+  return {
+    projects: parsed.projects.map((p) => centsFromLegacy<Project>(p, project)),
+    transactions: parsed.transactions.map((t) =>
+      centsFromLegacy<ExpenseTransaction>(t, transaction)
+    ),
+    laborEntries: parsed.laborEntries.map((l) => centsFromLegacy<LaborEntry>(l, labor)),
+    invoices: parsed.invoices.map((i) => centsFromLegacy<Invoice>(i, invoice)),
+    cardProfile: centsFromLegacy<CardProfile>(parsed.cardProfile, card),
+    version: parsed.version,
+  };
+}
+
+function toLegacyFile(data: DatabaseSchema): string {
+  const { project, transaction, labor, invoice, card } = LEGACY_MONEY_FIELDS;
+  return JSON.stringify(
+    {
+      projects: data.projects.map((p) => legacyFromCents(p, project)),
+      transactions: data.transactions.map((t) => legacyFromCents(t, transaction)),
+      laborEntries: data.laborEntries.map((l) => legacyFromCents(l, labor)),
+      invoices: data.invoices.map((i) => legacyFromCents(i, invoice)),
+      cardProfile: legacyFromCents(data.cardProfile, card),
+      version: data.version,
+    },
+    null,
+    2
+  );
+}
+
 function ensureDb(): DatabaseSchema {
   try {
     if (!fs.existsSync(DB_DIR)) {
@@ -42,12 +117,11 @@ function ensureDb(): DatabaseSchema {
         cardProfile: SEED_CARD_PROFILE,
         version: 1,
       };
-      fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2), 'utf-8');
+      fs.writeFileSync(DB_FILE, toLegacyFile(initialData), 'utf-8');
       return initialData;
     }
 
-    const raw = fs.readFileSync(DB_FILE, 'utf-8');
-    return JSON.parse(raw);
+    return fromLegacyFile(fs.readFileSync(DB_FILE, 'utf-8'));
   } catch (err) {
     console.error('Error reading DB, falling back to seed memory:', err);
     return {
@@ -66,7 +140,7 @@ function writeDb(data: DatabaseSchema): void {
     if (!fs.existsSync(DB_DIR)) {
       fs.mkdirSync(DB_DIR, { recursive: true });
     }
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
+    fs.writeFileSync(DB_FILE, toLegacyFile(data), 'utf-8');
   } catch (err) {
     console.error('Failed to write to DB file:', err);
   }

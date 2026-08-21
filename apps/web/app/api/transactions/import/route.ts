@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { categorizeVendor, ExpenseCategory, ExpenseTransaction } from '@budget-bot/core';
+import { categorizeVendor, ExpenseTransaction, multiplyCents, parseMoney } from '@budget-bot/core';
 
 export async function POST(req: Request) {
   try {
@@ -14,7 +14,7 @@ export async function POST(req: Request) {
           date: new Date().toISOString().slice(0, 10),
           description: 'THE HOME DEPOT #0421 - 3" Deck Screws, Level & Sandpaper',
           vendor: 'The Home Depot',
-          amount: 114.75,
+          amountCents: parseMoney(114.75),
           category: 'materials',
           paymentMethod: 'card',
           cardLast4: '4892',
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
           date: new Date().toISOString().slice(0, 10),
           description: 'SHERWIN-WILLIAMS - 2 Gal ProMar 200 Eggshell & Rollers',
           vendor: 'Sherwin-Williams Paints',
-          amount: 146.30,
+          amountCents: parseMoney(146.30),
           category: 'materials',
           paymentMethod: 'card',
           cardLast4: '4892',
@@ -56,15 +56,17 @@ export async function POST(req: Request) {
         // Expect Date, Description, Amount
         const dateStr = parts[0] || new Date().toISOString().slice(0, 10);
         const desc = parts[1] || 'Card Purchase';
-        const amountNum = Math.abs(parseFloat(parts[2] || '0'));
+        // Banks write refunds as negatives; expenses are stored as magnitudes.
+        const signedCents = parseMoney(parts[2] || '0');
+        const amountCents = signedCents < 0 ? multiplyCents(signedCents, -1) : signedCents;
 
-        if (!isNaN(amountNum) && amountNum > 0) {
+        if (amountCents > 0) {
           const auto = categorizeVendor(desc);
           imported.push({
             date: dateStr,
             description: desc,
             vendor: auto.cleanVendor,
-            amount: amountNum,
+            amountCents,
             category: auto.category,
             paymentMethod: 'card',
             cardLast4: '4892',

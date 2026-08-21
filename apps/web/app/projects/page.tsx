@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Project, ProjectFinancialKPIs, BusinessFinancialSummary } from '@budget-bot/core';
 import { Navigation } from '@/components/Navigation';
 import { JobCostCard } from '@/components/JobCostCard';
-import { QuickAddModal } from '@/components/QuickAddModal';
+import { QuickAddModal, NewProjectPayload } from '@/components/QuickAddModal';
 import { SeverityBadge } from '@/components/SeverityBadge';
 import { Plus, Filter, Search, ArrowRight, Clock, Hammer } from 'lucide-react';
 import Link from 'next/link';
@@ -55,7 +55,7 @@ export default function ProjectsPage() {
     return true;
   });
 
-  const handleCreateProject = async (proj: Partial<Project>) => {
+  const handleCreateProject = async (proj: NewProjectPayload) => {
     await fetch('/api/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

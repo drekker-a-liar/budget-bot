@@ -4,13 +4,26 @@ import React, { useState, useEffect } from 'react';
 import { Project, ExpenseCategory, PricingType, ProjectStatus } from '@budget-bot/core';
 import { Receipt, Clock, Hammer, FileText, X } from 'lucide-react';
 
+/**
+ * What the project form posts to /api/projects: dollars as the user typed
+ * them, not cents. The route runs them through parseMoney (ADR 0007).
+ */
+export type NewProjectPayload = Omit<
+  Partial<Project>,
+  'quotedTotalCents' | 'quotedMaterialsCents' | 'targetHourlyRateCents'
+> & {
+  quotedTotal: number;
+  quotedMaterials: number;
+  targetHourlyRate: number;
+};
+
 interface QuickAddModalProps {
   initialTab?: 'project' | 'expense' | 'labor' | 'invoice';
   initialProjectId?: string;
   projects: Project[];
   isOpen: boolean;
   onClose: () => void;
-  onCreateProject: (data: Partial<Project>) => Promise<void>;
+  onCreateProject: (data: NewProjectPayload) => Promise<void>;
   onCreateExpense: (data: any) => Promise<void>;
   onCreateLabor: (data: any) => Promise<void>;
   onCreateInvoice: (data: any) => Promise<void>;

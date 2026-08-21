@@ -1,7 +1,13 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ExpenseTransaction, Project, ExpenseCategory } from '@budget-bot/core';
+import {
+  addCents,
+  formatCents,
+  ExpenseTransaction,
+  Project,
+  ExpenseCategory,
+} from '@budget-bot/core';
 import {
   CreditCard,
   Check,
@@ -52,16 +58,17 @@ export function TransactionInbox({
       return (
         t.description.toLowerCase().includes(q) ||
         t.vendor.toLowerCase().includes(q) ||
-        t.amount.toString().includes(q)
+        // Amount as typed, without the currency chrome: "1420.75".
+        formatCents(t.amountCents).replace(/[$,]/g, '').includes(q)
       );
     }
     return true;
   });
 
   const unassignedCount = transactions.filter((t) => t.status === 'unassigned').length;
-  const unassignedTotal = transactions
-    .filter((t) => t.status === 'unassigned')
-    .reduce((sum, t) => sum + t.amount, 0);
+  const unassignedTotalCents = addCents(
+    ...transactions.filter((t) => t.status === 'unassigned').map((t) => t.amountCents)
+  );
 
   const handleSimulate = async () => {
     setIsSimulating(true);
@@ -132,7 +139,7 @@ export function TransactionInbox({
             <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
               {unassignedCount > 0 ? (
                 <span>
-                  <strong className="tnum" style={{ color: 'var(--severity-caution)' }}>${unassignedTotal.toFixed(2)}</strong> pending assignment to jobs. Assign them to keep gross profit margins accurate.
+                  <strong className="tnum" style={{ color: 'var(--severity-caution)' }}>{formatCents(unassignedTotalCents)}</strong> pending assignment to jobs. Assign them to keep gross profit margins accurate.
                 </span>
               ) : (
                 <span>100% of material purchases and operating expenses are mapped to active contracts.</span>
@@ -296,7 +303,7 @@ export function TransactionInbox({
 
                     {/* Amount */}
                     <td className="tnum" style={{ textAlign: 'right', fontWeight: 700, fontSize: '0.9rem', color: '#f8fafc' }}>
-                      ${t.amount.toFixed(2)}
+                      {formatCents(t.amountCents)}
                     </td>
 
                     {/* Project Matcher Dropdown */}

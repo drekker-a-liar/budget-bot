@@ -1,10 +1,18 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { BusinessFinancialSummary, ExpenseTransaction, Invoice, CardProfile, Project } from '@budget-bot/core';
+import {
+  addCents,
+  formatCents,
+  BusinessFinancialSummary,
+  ExpenseTransaction,
+  Invoice,
+  CardProfile,
+  Project,
+} from '@budget-bot/core';
 import { Navigation } from '@/components/Navigation';
 import { CashFlowWaterfall } from '@/components/CashFlowWaterfall';
-import { QuickAddModal } from '@/components/QuickAddModal';
+import { QuickAddModal, NewProjectPayload } from '@/components/QuickAddModal';
 import { SeverityBadge } from '@/components/SeverityBadge';
 import {
   TrendingUp,
@@ -81,7 +89,7 @@ export default function CashFlowPage() {
     await fetchData();
   };
 
-  const handleCreateProject = async (proj: any) => {
+  const handleCreateProject = async (proj: NewProjectPayload) => {
     await fetch('/api/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -122,7 +130,8 @@ export default function CashFlowPage() {
   }
 
   // Category breakdown calculation
-  const totalSpend = data.transactions.reduce((s, t) => s + t.amount, 0) || 1;
+  const totalSpendCents = addCents(...data.transactions.map((t) => t.amountCents));
+  const spendDenominator = totalSpendCents || 1;
   const categories = [
     { name: 'Materials & Lumber', key: 'materials', color: 'var(--accent-cyan)' },
     { name: 'Tools & Equipment', key: 'tools', color: 'var(--severity-caution)' },
@@ -176,17 +185,19 @@ export default function CashFlowPage() {
                   YTD Spend by Expense Category
                 </h3>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                  Total Disbursed: <strong className="tnum" style={{ color: '#f8fafc' }}>${totalSpend.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong>
+                  Total Disbursed: <strong className="tnum" style={{ color: '#f8fafc' }}>{formatCents(totalSpendCents)}</strong>
                 </div>
               </div>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', marginTop: '1rem' }}>
               {categories.map((cat) => {
-                const amount = data.transactions
-                  .filter((t) => t.category === cat.key)
-                  .reduce((s, t) => s + t.amount, 0);
-                const pct = Math.round((amount / totalSpend) * 1000) / 10;
+                const amountCents = addCents(
+                  ...data.transactions
+                    .filter((t) => t.category === cat.key)
+                    .map((t) => t.amountCents)
+                );
+                const pct = Math.round((amountCents / spendDenominator) * 1000) / 10;
 
                 return (
                   <div key={cat.key}>
@@ -196,7 +207,7 @@ export default function CashFlowPage() {
                         {cat.name}
                       </span>
                       <span className="tnum" style={{ color: 'var(--text-secondary)' }}>
-                        <strong style={{ color: '#f8fafc' }}>${amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong> ({pct}%)
+                        <strong style={{ color: '#f8fafc' }}>{formatCents(amountCents)}</strong> ({pct}%)
                       </span>
                     </div>
 
@@ -224,7 +235,7 @@ export default function CashFlowPage() {
                   Receivables & Invoice Aging
                 </h3>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                  Uncollected Cash: <strong className="tnum" style={{ color: 'var(--severity-caution)' }}>${data.summary.outstandingReceivables.toLocaleString()}</strong>
+                  Uncollected Cash: <strong className="tnum" style={{ color: 'var(--severity-caution)' }}>{formatCents(data.summary.outstandingReceivablesCents)}</strong>
                 </div>
               </div>
             </div>
@@ -261,7 +272,7 @@ export default function CashFlowPage() {
                           {inv.dueDate}
                         </td>
                         <td className="tnum" style={{ textAlign: 'right', fontWeight: 700, fontSize: '0.85rem' }}>
-                          ${inv.amount.toLocaleString()}
+                          {formatCents(inv.amountCents)}
                         </td>
                         <td>
                           {inv.status === 'paid' ? (

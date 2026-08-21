@@ -1,7 +1,16 @@
 'use client';
 
 import React from 'react';
-import { ExpenseTransaction, Invoice, CardProfile } from '@budget-bot/core';
+import {
+  addCents,
+  formatCents,
+  multiplyCents,
+  parseMoney,
+  subtractCents,
+  ExpenseTransaction,
+  Invoice,
+  CardProfile,
+} from '@budget-bot/core';
 import {
   TrendingUp,
   ArrowUpRight,
@@ -24,21 +33,24 @@ export function CashFlowWaterfall({
 }: CashFlowWaterfallProps) {
   // Aggregate last 4 weeks of data
   const weeks = [
-    { label: 'Week 1 (Jul 27 - Aug 02)', inflow: 2500, outflow: 1450.65, net: 1049.35 },
-    { label: 'Week 2 (Aug 03 - Aug 09)', inflow: 6800, outflow: 2162.20, net: 4637.80 },
-    { label: 'Week 3 (Aug 10 - Aug 16)', inflow: 1950, outflow: 1124.60, net: 825.40 },
-    { label: 'Current Week (Aug 17 - 23)', inflow: 1800, outflow: 1188.75, net: 611.25 },
+    { label: 'Week 1 (Jul 27 - Aug 02)', inflow: parseMoney(2500), outflow: parseMoney(1450.65), net: parseMoney(1049.35) },
+    { label: 'Week 2 (Aug 03 - Aug 09)', inflow: parseMoney(6800), outflow: parseMoney(2162.20), net: parseMoney(4637.80) },
+    { label: 'Week 3 (Aug 10 - Aug 16)', inflow: parseMoney(1950), outflow: parseMoney(1124.60), net: parseMoney(825.40) },
+    { label: 'Current Week (Aug 17 - 23)', inflow: parseMoney(1800), outflow: parseMoney(1188.75), net: parseMoney(611.25) },
   ];
 
-  const totalInflow = weeks.reduce((s, w) => s + w.inflow, 0);
-  const totalOutflow = weeks.reduce((s, w) => s + w.outflow, 0);
-  const netCashPeriod = totalInflow - totalOutflow;
+  const totalInflow = addCents(...weeks.map((w) => w.inflow));
+  const totalOutflow = addCents(...weeks.map((w) => w.outflow));
+  const netCashPeriod = subtractCents(totalInflow, totalOutflow);
 
   // Operating cash runway calculation
-  const weeklyBurn = totalOutflow / 4;
-  const availableCredit = cardProfile ? cardProfile.creditLimit - cardProfile.currentBalance : 15000;
-  const estimatedLiquidCash = 18450; // Cash reserve in checking
-  const runwayWeeks = Math.round(((estimatedLiquidCash + availableCredit) / (weeklyBurn || 1)) * 10) / 10;
+  const weeklyBurn = multiplyCents(totalOutflow, 1 / weeks.length);
+  const availableCredit = cardProfile
+    ? subtractCents(cardProfile.creditLimitCents, cardProfile.currentBalanceCents)
+    : parseMoney(15000);
+  const estimatedLiquidCash = parseMoney(18450); // Cash reserve in checking
+  const runwayWeeks =
+    Math.round((addCents(estimatedLiquidCash, availableCredit) / (weeklyBurn || 1)) * 10) / 10;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
@@ -54,7 +66,7 @@ export function CashFlowWaterfall({
           <span className="swiss-label">Estimated Liquid Buffer</span>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.25rem' }}>
             <span className="swiss-header tnum" style={{ fontSize: '2rem', color: '#f8fafc' }}>
-              ${estimatedLiquidCash.toLocaleString()}
+              {formatCents(estimatedLiquidCash, { showCents: false })}
             </span>
           </div>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
@@ -66,11 +78,12 @@ export function CashFlowWaterfall({
           <span className="swiss-label">Available Card Credit</span>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.25rem' }}>
             <span className="swiss-header tnum" style={{ fontSize: '2rem', color: 'var(--accent-cyan)' }}>
-              ${availableCredit.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              {formatCents(availableCredit, { showCents: false })}
             </span>
           </div>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-            Capital One Spark (Limit ${cardProfile?.creditLimit.toLocaleString()})
+            Capital One Spark (Limit{' '}
+            {cardProfile ? formatCents(cardProfile.creditLimitCents, { showCents: false }) : '\u2014'})
           </div>
         </div>
 
@@ -78,7 +91,7 @@ export function CashFlowWaterfall({
           <span className="swiss-label">Average Weekly Outflow</span>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.25rem' }}>
             <span className="swiss-header tnum" style={{ fontSize: '2rem', color: '#f8fafc' }}>
-              ${weeklyBurn.toFixed(0)}
+              {formatCents(weeklyBurn, { showCents: false })}
             </span>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>/ week</span>
           </div>
@@ -113,13 +126,13 @@ export function CashFlowWaterfall({
             </div>
           </div>
           <div className="badge-healthy">
-            NET +${netCashPeriod.toLocaleString()} (30-DAY)
+            NET +{formatCents(netCashPeriod, { showCents: false })} (30-DAY)
           </div>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
           {weeks.map((w, idx) => {
-            const maxVal = 7000;
+            const maxVal = parseMoney(7000);
             const inflowWidth = Math.min(100, (w.inflow / maxVal) * 100);
             const outflowWidth = Math.min(100, (w.outflow / maxVal) * 100);
 
@@ -138,7 +151,7 @@ export function CashFlowWaterfall({
                     {w.label}
                   </div>
                   <div className="tnum" style={{ fontWeight: 700, fontSize: '0.85rem', color: w.net >= 0 ? 'var(--severity-healthy)' : 'var(--severity-critical)' }}>
-                    Net: {w.net >= 0 ? '+' : ''}${w.net.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    Net: {w.net >= 0 ? '+' : ''}{formatCents(w.net)}
                   </div>
                 </div>
 
@@ -146,7 +159,7 @@ export function CashFlowWaterfall({
                 <div style={{ marginBottom: '0.35rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>
                     <span>Client Inflows (Deposits/Invoices)</span>
-                    <span className="tnum" style={{ color: 'var(--severity-healthy)', fontWeight: 600 }}>+${w.inflow.toLocaleString()}</span>
+                    <span className="tnum" style={{ color: 'var(--severity-healthy)', fontWeight: 600 }}>+{formatCents(w.inflow)}</span>
                   </div>
                   <div style={{ height: '8px', background: 'var(--bg-input)', borderRadius: '4px', overflow: 'hidden' }}>
                     <div
@@ -164,7 +177,7 @@ export function CashFlowWaterfall({
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>
                     <span>Card Expenses (Materials/Gas/Tools)</span>
-                    <span className="tnum" style={{ color: 'var(--severity-critical)', fontWeight: 600 }}>-${w.outflow.toLocaleString()}</span>
+                    <span className="tnum" style={{ color: 'var(--severity-critical)', fontWeight: 600 }}>-{formatCents(w.outflow)}</span>
                   </div>
                   <div style={{ height: '8px', background: 'var(--bg-input)', borderRadius: '4px', overflow: 'hidden' }}>
                     <div

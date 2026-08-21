@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
+  formatCents,
+  multiplyCents,
   Project,
   ProjectFinancialKPIs,
   ExpenseTransaction,
@@ -248,10 +250,10 @@ export default function ProjectDetailPage() {
           <div className="swiss-card">
             <span className="swiss-label">Contract Revenue</span>
             <div className="tnum swiss-header" style={{ fontSize: '1.85rem', color: '#f8fafc', marginTop: '0.2rem' }}>
-              ${kpi.revenue.toLocaleString()}
+              {formatCents(kpi.revenueCents)}
             </div>
             <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
-              Quoted: ${kpi.quotedTotal.toLocaleString()}
+              Quoted: {formatCents(kpi.quotedTotalCents)}
             </div>
           </div>
 
@@ -259,10 +261,11 @@ export default function ProjectDetailPage() {
           <div className="swiss-card">
             <span className="swiss-label">Total Direct Cost</span>
             <div className="tnum swiss-header" style={{ fontSize: '1.85rem', color: 'var(--accent-cyan)', marginTop: '0.2rem' }}>
-              ${kpi.totalDirectCost.toLocaleString()}
+              {formatCents(kpi.totalDirectCostCents)}
             </div>
             <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
-              Materials: ${kpi.actualMaterialsCost.toLocaleString()} &bull; Labor: ${kpi.actualLaborCost.toLocaleString()}
+              Materials: {formatCents(kpi.actualMaterialsCostCents)} &bull; Labor:{' '}
+              {formatCents(kpi.actualLaborCostCents)}
             </div>
           </div>
 
@@ -276,7 +279,7 @@ export default function ProjectDetailPage() {
               {kpi.grossMarginPct}%
             </div>
             <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
-              Gross Profit: <strong className="tnum" style={{ color: 'var(--severity-healthy)' }}>${kpi.grossProfit.toLocaleString()}</strong>
+              Gross Profit: <strong className="tnum" style={{ color: 'var(--severity-healthy)' }}>{formatCents(kpi.grossProfitCents)}</strong>
             </div>
           </div>
 
@@ -287,10 +290,11 @@ export default function ProjectDetailPage() {
               <SeverityBadge level={kpi.hourlySeverity} />
             </div>
             <div className="tnum swiss-header" style={{ fontSize: '1.85rem', color: '#f8fafc' }}>
-              ${kpi.netHourlyRealization.toFixed(0)}<span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>/hr</span>
+              {formatCents(kpi.netHourlyRealizationCents, { showCents: false })}<span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>/hr</span>
             </div>
             <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
-              Target: ${project.targetHourlyRate}/hr &bull; {kpi.actualLaborHours} hrs worked
+              Target: {formatCents(project.targetHourlyRateCents, { showCents: false })}/hr &bull;{' '}
+              {kpi.actualLaborHours} hrs worked
             </div>
           </div>
 
@@ -304,7 +308,7 @@ export default function ProjectDetailPage() {
               {kpi.materialsMarkupPct === null ? '\u2014' : `${kpi.materialsMarkupPct}%`}
             </div>
             <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
-              Quoted Materials: ${project.quotedMaterials.toLocaleString()}
+              Quoted Materials: {formatCents(project.quotedMaterialsCents)}
             </div>
           </div>
         </div>
@@ -362,7 +366,7 @@ export default function ProjectDetailPage() {
                         <span className="badge-materials" style={{ fontSize: '0.65rem' }}>{t.category.toUpperCase()}</span>
                       </td>
                       <td className="tnum" style={{ textAlign: 'right', fontWeight: 700, fontSize: '0.85rem' }}>
-                        ${t.amount.toFixed(2)}
+                        {formatCents(t.amountCents)}
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <button
@@ -387,7 +391,7 @@ export default function ProjectDetailPage() {
                   Labor Hours Log ({laborEntries.length})
                 </h3>
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                  Total: {kpi.actualLaborHours} hrs (${kpi.actualLaborCost.toLocaleString()})
+                  Total: {kpi.actualLaborHours} hrs ({formatCents(kpi.actualLaborCostCents)})
                 </div>
               </div>
               <button onClick={() => openQuickAdd('labor')} className="btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem' }}>
@@ -422,7 +426,7 @@ export default function ProjectDetailPage() {
                         {l.hours} hrs
                       </td>
                       <td className="tnum" style={{ textAlign: 'right', fontWeight: 600, fontSize: '0.85rem', color: 'var(--accent-indigo)' }}>
-                        ${(l.hours * l.hourlyRate).toFixed(0)}
+                        {formatCents(multiplyCents(l.hourlyRateCents, l.hours), { showCents: false })}
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <button
@@ -479,7 +483,7 @@ export default function ProjectDetailPage() {
                     <td className="tnum" style={{ color: 'var(--text-secondary)' }}>{inv.dateIssued}</td>
                     <td className="tnum" style={{ color: 'var(--text-secondary)' }}>{inv.dueDate}</td>
                     <td className="tnum" style={{ textAlign: 'right', fontWeight: 700 }}>
-                      ${inv.amount.toLocaleString()}
+                      {formatCents(inv.amountCents)}
                     </td>
                     <td>
                       {inv.status === 'paid' ? (

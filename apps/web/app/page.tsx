@@ -15,7 +15,7 @@ import { DashboardMetrics } from '@/components/DashboardMetrics';
 import { JobCostCard } from '@/components/JobCostCard';
 import { TransactionInbox } from '@/components/TransactionInbox';
 import { CashFlowWaterfall } from '@/components/CashFlowWaterfall';
-import { QuickAddModal } from '@/components/QuickAddModal';
+import { QuickAddModal, NewProjectPayload } from '@/components/QuickAddModal';
 import { SeverityBadge } from '@/components/SeverityBadge';
 import {
   Hammer,
@@ -150,7 +150,7 @@ export default function HomePage() {
     }
   };
 
-  const handleCreateProject = async (proj: Partial<Project>) => {
+  const handleCreateProject = async (proj: NewProjectPayload) => {
     await fetch('/api/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

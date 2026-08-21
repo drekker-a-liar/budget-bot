@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Project, ProjectFinancialKPIs } from '@budget-bot/core';
+import { formatCents, Project, ProjectFinancialKPIs } from '@budget-bot/core';
 import { SeverityBadge } from './SeverityBadge';
 import { MarginGauge } from './MarginGauge';
 import {
@@ -96,14 +96,14 @@ export function JobCostCard({
         <div>
           <div className="swiss-label" style={{ fontSize: '0.65rem' }}>Quoted Price</div>
           <div className="tnum" style={{ fontSize: '1rem', fontWeight: 700, color: '#f8fafc' }}>
-            ${kpi.quotedTotal.toLocaleString()}
+            {formatCents(kpi.quotedTotalCents)}
           </div>
         </div>
 
         <div>
           <div className="swiss-label" style={{ fontSize: '0.65rem' }}>Direct Costs</div>
           <div className="tnum" style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--accent-cyan)' }}>
-            ${kpi.totalDirectCost.toLocaleString()}
+            {formatCents(kpi.totalDirectCostCents)}
           </div>
         </div>
 
@@ -114,17 +114,17 @@ export function JobCostCard({
             style={{
               fontSize: '1rem',
               fontWeight: 700,
-              color: kpi.grossProfit >= 0 ? 'var(--severity-healthy)' : 'var(--severity-critical)',
+              color: kpi.grossProfitCents >= 0 ? 'var(--severity-healthy)' : 'var(--severity-critical)',
             }}
           >
-            ${kpi.grossProfit.toLocaleString()}
+            {formatCents(kpi.grossProfitCents)}
           </div>
         </div>
 
         <div>
           <div className="swiss-label" style={{ fontSize: '0.65rem' }}>Realized Rate</div>
           <div className="tnum" style={{ fontSize: '1rem', fontWeight: 700, color: '#f8fafc' }}>
-            ${kpi.netHourlyRealization.toFixed(0)}<span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>/hr</span>
+            {formatCents(kpi.netHourlyRealizationCents, { showCents: false })}<span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>/hr</span>
           </div>
         </div>
       </div>

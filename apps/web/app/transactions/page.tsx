@@ -1,10 +1,18 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { ExpenseTransaction, Project, CardProfile, BusinessFinancialSummary, ExpenseCategory } from '@budget-bot/core';
+import {
+  formatCents,
+  subtractCents,
+  ExpenseTransaction,
+  Project,
+  CardProfile,
+  BusinessFinancialSummary,
+  ExpenseCategory,
+} from '@budget-bot/core';
 import { Navigation } from '@/components/Navigation';
 import { TransactionInbox } from '@/components/TransactionInbox';
-import { QuickAddModal } from '@/components/QuickAddModal';
+import { QuickAddModal, NewProjectPayload } from '@/components/QuickAddModal';
 import { CreditCard, Zap, Shield, Sparkles } from 'lucide-react';
 
 export default function TransactionsPage() {
@@ -116,7 +124,7 @@ export default function TransactionsPage() {
     await fetchData();
   };
 
-  const handleCreateProject = async (proj: any) => {
+  const handleCreateProject = async (proj: NewProjectPayload) => {
     await fetch('/api/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -201,17 +209,22 @@ export default function TransactionsPage() {
             <div>
               <span className="swiss-label">Current Card Balance</span>
               <div className="tnum swiss-header" style={{ fontSize: '1.75rem', color: '#f8fafc', marginTop: '0.1rem' }}>
-                ${data.cardProfile.currentBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                {formatCents(data.cardProfile.currentBalanceCents)}
               </div>
               <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                Credit Limit: ${data.cardProfile.creditLimit.toLocaleString()}
+                Credit Limit: {formatCents(data.cardProfile.creditLimitCents, { showCents: false })}
               </div>
             </div>
 
             <div>
               <span className="swiss-label">Available Credit</span>
               <div className="tnum swiss-header" style={{ fontSize: '1.75rem', color: 'var(--severity-healthy)', marginTop: '0.1rem' }}>
-                ${(data.cardProfile.creditLimit - data.cardProfile.currentBalance).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                {formatCents(
+                  subtractCents(
+                    data.cardProfile.creditLimitCents,
+                    data.cardProfile.currentBalanceCents
+                  )
+                )}
               </div>
               <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
                 Revolving working buffer

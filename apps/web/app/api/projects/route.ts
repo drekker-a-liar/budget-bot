@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { parseMoney } from '@budget-bot/core';
 
 export async function GET() {
   const projects = db.getProjects();
@@ -39,13 +40,13 @@ export async function POST(req: Request) {
       description: description || '',
       status: status || 'estimating',
       pricingType: pricingType || 'fixed',
-      quotedTotal: Number(quotedTotal) || 0,
-      quotedMaterials: Number(quotedMaterials) || 0,
+      quotedTotalCents: parseMoney(Number(quotedTotal) || 0),
+      quotedMaterialsCents: parseMoney(Number(quotedMaterials) || 0),
       quotedLaborHours: Number(quotedLaborHours) || 0,
-      targetHourlyRate: Number(targetHourlyRate) || 85,
+      targetHourlyRateCents: parseMoney(Number(targetHourlyRate) || 85),
       targetMarginPct: Number(targetMarginPct) || 45,
       startDate: startDate || new Date().toISOString().slice(0, 10),
-      deadlineDate: deadlineDate || '',
+      deadlineDate: deadlineDate || undefined,
       notes: notes || '',
     });
 

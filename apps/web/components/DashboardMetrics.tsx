@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { BusinessFinancialSummary } from '@budget-bot/core';
+import { BusinessFinancialSummary, formatCents, multiplyCents } from '@budget-bot/core';
 import { SeverityBadge } from './SeverityBadge';
 import {
   TrendingUp,
@@ -45,7 +45,7 @@ export function DashboardMetrics({ summary, onOpenInbox }: DashboardMetricsProps
         </div>
         <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.5rem' }}>
           <span>Target: <strong style={{ color: '#f8fafc' }}>45.0%</strong></span>
-          <span>YTD Profit: <strong className="tnum" style={{ color: 'var(--severity-healthy)' }}>${summary.totalGrossProfitYTD.toLocaleString()}</strong></span>
+          <span>YTD Profit: <strong className="tnum" style={{ color: 'var(--severity-healthy)' }}>{formatCents(summary.totalGrossProfitYTDCents)}</strong></span>
         </div>
       </div>
 
@@ -56,9 +56,9 @@ export function DashboardMetrics({ summary, onOpenInbox }: DashboardMetricsProps
           <SeverityBadge
             level={summary.averageHourlySeverity}
             label={
-              summary.averageHourlyRealization === null
+              summary.averageHourlyRealizationCents === null
                 ? undefined
-                : summary.averageHourlyRealization >= 85
+                : summary.averageHourlyRealizationCents >= 8500
                   ? 'STRONG'
                   : 'WATCH'
             }
@@ -66,9 +66,9 @@ export function DashboardMetrics({ summary, onOpenInbox }: DashboardMetricsProps
         </div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.25rem' }}>
           <span className="swiss-header tnum" style={{ fontSize: '2.25rem', color: '#f8fafc' }}>
-            {summary.averageHourlyRealization === null
+            {summary.averageHourlyRealizationCents === null
               ? '\u2014'
-              : `$${summary.averageHourlyRealization.toFixed(0)}`}
+              : formatCents(summary.averageHourlyRealizationCents, { showCents: false })}
           </span>
           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>/ billable hr</span>
         </div>
@@ -84,7 +84,7 @@ export function DashboardMetrics({ summary, onOpenInbox }: DashboardMetricsProps
           <span className="swiss-label">Weekly Net Cash Flow</span>
           <SeverityBadge
             level={summary.cashFlowSeverity}
-            label={summary.weeklyNetCashFlow >= 0 ? 'POSITIVE' : 'DEFICIT'}
+            label={summary.weeklyNetCashFlowCents >= 0 ? 'POSITIVE' : 'DEFICIT'}
           />
         </div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.25rem' }}>
@@ -92,16 +92,22 @@ export function DashboardMetrics({ summary, onOpenInbox }: DashboardMetricsProps
             className="swiss-header tnum"
             style={{
               fontSize: '2.25rem',
-              color: summary.weeklyNetCashFlow >= 0 ? 'var(--severity-healthy)' : 'var(--severity-critical)',
+              color: summary.weeklyNetCashFlowCents >= 0 ? 'var(--severity-healthy)' : 'var(--severity-critical)',
             }}
           >
-            {summary.weeklyNetCashFlow >= 0 ? '+' : ''}${Math.abs(summary.weeklyNetCashFlow).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            {summary.weeklyNetCashFlowCents >= 0 ? '+' : ''}
+            {formatCents(
+              summary.weeklyNetCashFlowCents < 0
+                ? multiplyCents(summary.weeklyNetCashFlowCents, -1)
+                : summary.weeklyNetCashFlowCents,
+              { showCents: false }
+            )}
           </span>
           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>last 7 days</span>
         </div>
         <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.5rem' }}>
-          <span style={{ color: 'var(--severity-healthy)' }}>+{summary.weeklyCashInflow.toLocaleString()} in</span>
-          <span style={{ color: 'var(--severity-critical)' }}>-{summary.weeklyCashOutflow.toLocaleString()} out</span>
+          <span style={{ color: 'var(--severity-healthy)' }}>+{formatCents(summary.weeklyCashInflowCents)} in</span>
+          <span style={{ color: 'var(--severity-critical)' }}>-{formatCents(summary.weeklyCashOutflowCents)} out</span>
         </div>
       </div>
 
@@ -125,7 +131,7 @@ export function DashboardMetrics({ summary, onOpenInbox }: DashboardMetricsProps
         </div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.25rem' }}>
           <span className="swiss-header tnum" style={{ fontSize: '2.25rem', color: '#f8fafc' }}>
-            ${summary.unassignedTransactionsTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+            {formatCents(summary.unassignedTransactionsTotalCents)}
           </span>
           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>unlinked spend</span>
         </div>
@@ -154,17 +160,17 @@ export function DashboardMetrics({ summary, onOpenInbox }: DashboardMetricsProps
           <span className="swiss-label">Outstanding Receivables</span>
           <SeverityBadge
             level={summary.receivablesSeverity}
-            label={summary.overdueReceivables > 0 ? `${summary.overdueReceivables > 0 ? 'OVERDUE' : 'PENDING'}` : 'CURRENT'}
+            label={summary.overdueReceivablesCents > 0 ? 'OVERDUE' : 'CURRENT'}
           />
         </div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.25rem' }}>
           <span className="swiss-header tnum" style={{ fontSize: '2.25rem', color: '#f8fafc' }}>
-            ${summary.outstandingReceivables.toLocaleString()}
+            {formatCents(summary.outstandingReceivablesCents)}
           </span>
           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>invoiced</span>
         </div>
         <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.5rem' }}>
-          <span>Overdue: <strong className="tnum" style={{ color: summary.overdueReceivables > 0 ? 'var(--severity-critical)' : '#f8fafc' }}>${summary.overdueReceivables.toLocaleString()}</strong></span>
+          <span>Overdue: <strong className="tnum" style={{ color: summary.overdueReceivablesCents > 0 ? 'var(--severity-critical)' : '#f8fafc' }}>{formatCents(summary.overdueReceivablesCents)}</strong></span>
           <span>{summary.openProjectsCount} active jobs</span>
         </div>
       </div>

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { categorizeVendor } from '@budget-bot/core';
+import { categorizeVendor, multiplyCents, parseMoney } from '@budget-bot/core';
 
 export async function GET() {
   const transactions = db.getTransactions();
@@ -29,6 +29,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing required description or amount' }, { status: 400 });
     }
 
+    // Refunds arrive as negatives; expenses are stored as magnitudes.
+    const signedCents = parseMoney(amount);
+    const amountCents = signedCents < 0 ? multiplyCents(signedCents, -1) : signedCents;
+
     // Auto-categorize if not provided
     const auto = categorizeVendor(description);
     const resolvedVendor = vendor || auto.cleanVendor;
@@ -39,7 +43,7 @@ export async function POST(req: Request) {
     const tx = db.createTransaction({
       description,
       vendor: resolvedVendor,
-      amount: Math.abs(Number(amount)),
+      amountCents,
       category: resolvedCategory,
       paymentMethod: paymentMethod || 'card',
       cardLast4: cardLast4 || '4892',

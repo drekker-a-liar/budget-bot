@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { parseMoney } from '@budget-bot/core';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -21,7 +22,7 @@ export async function POST(req: Request) {
       projectId,
       date: date || new Date().toISOString().slice(0, 10),
       hours: Number(hours),
-      hourlyRate: Number(hourlyRate) || 85,
+      hourlyRateCents: parseMoney(Number(hourlyRate) || 85),
       workerName: workerName || 'Mike (Owner/Lead)',
       notes: notes || '',
     });

@@ -14,7 +14,7 @@ import {
   Receipt,
   FileText
 } from 'lucide-react';
-import { CardProfile } from '@budget-bot/core';
+import { CardProfile, formatCents } from '@budget-bot/core';
 
 interface NavigationProps {
   unassignedCount?: number;
@@ -153,7 +153,7 @@ export function Navigation({
               <div>
                 <span style={{ color: 'var(--text-secondary)' }}>Spark ••• {cardProfile.last4}:</span>{' '}
                 <span className="tnum" style={{ fontWeight: 700, color: '#f8fafc' }}>
-                  ${cardProfile.currentBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  {formatCents(cardProfile.currentBalanceCents)}
                 </span>
               </div>
             </div>
