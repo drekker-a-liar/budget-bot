@@ -1,7 +1,12 @@
 'use client';
 
 import React from 'react';
-import { BusinessFinancialSummary, formatCents, multiplyCents } from '@budget-bot/core';
+import {
+  formatCents,
+  multiplyCents,
+  BusinessFinancialSummary,
+  THRESHOLDS,
+} from '@budget-bot/core';
 import { SeverityBadge } from './SeverityBadge';
 import {
   TrendingUp,
@@ -58,7 +63,8 @@ export function DashboardMetrics({ summary, onOpenInbox }: DashboardMetricsProps
             label={
               summary.averageHourlyRealizationCents === null
                 ? undefined
-                : summary.averageHourlyRealizationCents >= 8500
+                : summary.averageHourlyRealizationCents >=
+                    THRESHOLDS.HOURLY_REALIZATION.HEALTHY
                   ? 'STRONG'
                   : 'WATCH'
             }
