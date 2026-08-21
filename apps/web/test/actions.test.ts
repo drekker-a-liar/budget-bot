@@ -153,6 +153,7 @@ vi.mock('@budget-bot/db', async (importOriginal) => ({
   },
 }));
 
+const { ConnectionAlreadyExistsError } = await import('@budget-bot/db');
 const { auth } = await import('@/auth');
 const { createProjectAction, updateProjectStatusAction } = await import(
   '@/src/server/actions/projects'
@@ -663,6 +664,25 @@ describe('exchanging the public token', () => {
 
     expect(result).toMatchObject({ ok: false, fieldErrors: { publicToken: expect.any(Array) } });
     expect(bank.exchangePublicToken).not.toHaveBeenCalled();
+  });
+
+  it('says the bank is already connected rather than blaming the server', async () => {
+    // Re-running Link against a bank that is already linked. The public token
+    // has been spent by the time this fires, so the one thing the message must
+    // not do is tell the owner to try again: the island renders a thrown
+    // action as "Something went wrong connecting to the server. Try again.",
+    // which is advice that cannot work.
+    repos.createConnection.mockRejectedValueOnce(new ConnectionAlreadyExistsError());
+
+    const result = await exchangePublicTokenAction({ publicToken: 'public-fake' });
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'This bank is already connected. Use Sync now on the existing connection.',
+    });
+    // Nothing was written, so nothing downstream ran either.
+    expect(repos.upsertAccounts).not.toHaveBeenCalled();
+    expect(bank.runSync).not.toHaveBeenCalled();
   });
 });
 

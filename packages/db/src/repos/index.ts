@@ -9,7 +9,11 @@ export * as ownersRepo from './owners';
 
 export { withSyncLock } from './sync-lock';
 
-export { ConnectionNotFoundError, UnknownProjectError } from './errors';
+export {
+  ConnectionAlreadyExistsError,
+  ConnectionNotFoundError,
+  UnknownProjectError,
+} from './errors';
 
 export type { NewProject, ProjectUpdate } from './projects';
 export type {

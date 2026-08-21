@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import {
+  ConnectionAlreadyExistsError,
   ConnectionNotFoundError,
   UnknownProjectError,
   withSyncLock,
@@ -38,6 +39,9 @@ type Names<T> = (value: T) => void;
 it('exports the value half of the surface, not just its types', () => {
   expect(typeof withSyncLock).toBe('function');
   expect(new ConnectionNotFoundError()).toBeInstanceOf(Error);
+  // The one a caller has to be able to `instanceof`: `exchangePublicTokenAction`
+  // branches on it to say "already connected" rather than blaming the server.
+  expect(new ConnectionAlreadyExistsError()).toBeInstanceOf(Error);
   expect(new UnknownProjectError()).toBeInstanceOf(Error);
 });
 

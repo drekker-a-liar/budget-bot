@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { expect, it } from 'vitest';
 import type { Database } from '../../src/client';
 import { loadKeysFromEnv } from '../../src/crypto';
-import { bankRepo } from '../../src/repos';
+import { ConnectionAlreadyExistsError, bankRepo } from '../../src/repos';
 import { bankAccounts, bankConnections } from '../../src/schema';
 import { createOwner, describeDb, useTestDb } from '../helpers/db';
 
@@ -234,11 +234,37 @@ describeDb('bankRepo.createConnection', () => {
     // duplicate that would otherwise leave a row with an empty ciphertext.
     await expect(
       bankRepo.createConnection(db, ownerId, newConnection({ itemId }), KEYRING)
-    ).rejects.toThrow();
+    ).rejects.toBeInstanceOf(ConnectionAlreadyExistsError);
 
     const rows = await db.select().from(bankConnections);
     expect(rows).toHaveLength(1);
     expect(rows[0].accessTokenCiphertext).not.toBe('');
+  });
+
+  it('answers the same way when the Item is already linked by somebody else', async () => {
+    const db = getDb();
+    const alice = await createOwner(db);
+    const bob = await createOwner(db);
+    const itemId = `item-${crypto.randomUUID()}`;
+    await bankRepo.createConnection(db, alice, newConnection({ itemId }), KEYRING);
+
+    // The constraint is `(provider, item_id)` with no owner in it, and that is
+    // correct: a Plaid Item id identifies one login at one institution across
+    // the whole of Plaid, so the same id arriving for a second owner means the
+    // same linked login, not a collision between two unrelated banks. Two
+    // owners cannot reach it in practice - an Item is minted by the Link flow
+    // the owner just completed - so the honest answer is the one Alice gets.
+    await expect(
+      bankRepo.createConnection(db, bob, newConnection({ itemId }), KEYRING)
+    ).rejects.toBeInstanceOf(ConnectionAlreadyExistsError);
+
+    // And it says nothing about who has it: no owner id, no item id.
+    const thrown = await bankRepo
+      .createConnection(db, bob, newConnection({ itemId }), KEYRING)
+      .then(() => null)
+      .catch((error: unknown) => error as Error);
+    expect(thrown?.message).not.toContain(alice);
+    expect(thrown?.message).not.toContain(itemId);
   });
 });
 

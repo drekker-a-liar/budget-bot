@@ -72,6 +72,57 @@ export async function rejectingForeignProject<T>(
   }
 }
 
+/** Postgres `unique_violation`. */
+const UNIQUE_VIOLATION = '23505';
+
+/** `UNIQUE(provider, item_id)` on `bank_connections`. */
+const CONNECTION_ITEM_CONSTRAINT = 'bank_connections_provider_item_key';
+
+/**
+ * This provider item already has a connection.
+ *
+ * Note what the constraint does *not* carry: an owner. That is deliberate and
+ * it is why this error is not owner-scoped either. A Plaid Item id names one
+ * login at one institution across the whole of Plaid, so the same id arriving
+ * a second time is the same linked login however it arrives - re-running Link
+ * against a bank that is already connected, which is the case a person can
+ * actually reach.
+ *
+ * Like `ConnectionNotFoundError`, the message names nothing: whose connection
+ * holds the item is not a thing to say to whoever asked.
+ */
+export class ConnectionAlreadyExistsError extends Error {
+  constructor() {
+    super('That bank is already connected');
+    this.name = 'ConnectionAlreadyExistsError';
+  }
+}
+
+function isDuplicateConnection(error: unknown): boolean {
+  const driver = driverError(error);
+  return (
+    driver?.code === UNIQUE_VIOLATION &&
+    driver.constraint_name === CONNECTION_ITEM_CONSTRAINT
+  );
+}
+
+/**
+ * Runs a write, translating a re-linked provider item into
+ * `ConnectionAlreadyExistsError` and leaving every other failure alone.
+ *
+ * Keyed on the constraint name rather than on 23505 alone, for the same
+ * reason `rejectingForeignProject` is: a second unique index added to these
+ * tables later would otherwise start reporting itself as "already connected".
+ */
+export async function rejectingDuplicateConnection<T>(write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } catch (error) {
+    if (isDuplicateConnection(error)) throw new ConnectionAlreadyExistsError();
+    throw error;
+  }
+}
+
 /**
  * No connection with that id belongs to this owner.
  *

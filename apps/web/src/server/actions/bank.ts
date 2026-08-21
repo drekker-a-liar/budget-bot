@@ -1,6 +1,6 @@
 'use server';
 
-import { bankRepo, getDb, type BankAccount } from '@budget-bot/db';
+import { ConnectionAlreadyExistsError, bankRepo, getDb, type BankAccount } from '@budget-bot/db';
 import { loadKeysFromEnv } from '@budget-bot/db/crypto';
 import { headers } from 'next/headers';
 import { currentOwnerId } from '@/lib/ownerSession';
@@ -185,18 +185,34 @@ export async function exchangePublicTokenAction(
     return failed(readable(error, EXCHANGE_REFUSED));
   }
 
-  const connection = await bankRepo.createConnection(
-    db,
-    ownerId,
-    {
-      provider: provider.id,
-      itemId: item.itemId,
-      accessToken: item.accessToken,
-      institutionId: item.institutionId ?? null,
-      institutionName: item.institutionName ?? null,
-    },
-    keyring
-  );
+  let connection;
+  try {
+    connection = await bankRepo.createConnection(
+      db,
+      ownerId,
+      {
+        provider: provider.id,
+        itemId: item.itemId,
+        accessToken: item.accessToken,
+        institutionId: item.institutionId ?? null,
+        institutionName: item.institutionName ?? null,
+      },
+      keyring
+    );
+  } catch (error) {
+    // `createConnection` is one transaction, so a failure here has stored
+    // nothing - which is what makes a refusal the right answer rather than a
+    // success with a caveat. The case worth naming is the reachable one:
+    // Link run a second time against a bank that is already connected. The
+    // public token is spent by now, so "try again" would send the owner back
+    // through Link to the same dead end; the existing connection and its
+    // **Sync now** are what they actually want. Re-linking properly - one
+    // connection, a new token - is Phase 3.
+    if (error instanceof ConnectionAlreadyExistsError) {
+      return failed('This bank is already connected. Use Sync now on the existing connection.');
+    }
+    return failed(readable(error, EXCHANGE_REFUSED));
+  }
 
   // Past this line the token is stored, and every failure below is reported as
   // a field on a success. Turning one into `failed` would strand an encrypted

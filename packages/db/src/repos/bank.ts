@@ -3,7 +3,7 @@ import { and, asc, eq, sql } from 'drizzle-orm';
 import type { Database, Executor } from '../client';
 import { decryptToken, encryptToken, type TokenKeyring } from '../crypto';
 import { bankAccounts, bankConnections } from '../schema';
-import { ConnectionNotFoundError } from './errors';
+import { ConnectionNotFoundError, rejectingDuplicateConnection } from './errors';
 import { isUuid, toIso, toIsoOrNull } from './rows';
 
 /**
@@ -273,6 +273,12 @@ function toAccount(row: typeof bankAccounts.$inferSelect): BankAccount {
  * id, encrypt against it, update. The empty ciphertext the first statement
  * writes never outlives the transaction - a failure anywhere in here rolls
  * both statements back rather than leaving a connection nothing can read.
+ *
+ * Linking a bank that is already linked is the one failure a person can reach
+ * on purpose, and it arrives here as a raw `unique_violation` on
+ * `(provider, item_id)`. It leaves as `ConnectionAlreadyExistsError` so the
+ * caller has something to say: by this point the public token has been spent,
+ * so "try again" is advice that cannot work.
  */
 export async function createConnection(
   db: Database,
@@ -280,35 +286,37 @@ export async function createConnection(
   input: NewBankConnection,
   keyring: TokenKeyring
 ): Promise<BankConnection> {
-  return db.transaction(async (tx) => {
-    const [inserted] = await tx
-      .insert(bankConnections)
-      .values({
-        ownerId,
-        provider: input.provider ?? 'plaid',
-        itemId: input.itemId,
-        institutionId: input.institutionId ?? null,
-        institutionName: input.institutionName ?? null,
-        accessTokenCiphertext: '',
-        encryptionKeyId: keyring.current.keyId,
-      })
-      .returning({ id: bankConnections.id });
+  return rejectingDuplicateConnection(() =>
+    db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(bankConnections)
+        .values({
+          ownerId,
+          provider: input.provider ?? 'plaid',
+          itemId: input.itemId,
+          institutionId: input.institutionId ?? null,
+          institutionName: input.institutionName ?? null,
+          accessTokenCiphertext: '',
+          encryptionKeyId: keyring.current.keyId,
+        })
+        .returning({ id: bankConnections.id });
 
-    const [row] = await tx
-      .update(bankConnections)
-      .set({
-        accessTokenCiphertext: encryptToken(input.accessToken, {
-          keyId: keyring.current.keyId,
-          key: keyring.current.key,
-          aad: inserted.id,
-        }),
-        updatedAt: new Date(),
-      })
-      .where(eq(bankConnections.id, inserted.id))
-      .returning(CONNECTION_COLUMNS);
+      const [row] = await tx
+        .update(bankConnections)
+        .set({
+          accessTokenCiphertext: encryptToken(input.accessToken, {
+            keyId: keyring.current.keyId,
+            key: keyring.current.key,
+            aad: inserted.id,
+          }),
+          updatedAt: new Date(),
+        })
+        .where(eq(bankConnections.id, inserted.id))
+        .returning(CONNECTION_COLUMNS);
 
-    return toConnection(row);
-  });
+      return toConnection(row);
+    })
+  );
 }
 
 /**
