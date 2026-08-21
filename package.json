@@ -8,7 +8,12 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "test": "turbo run test"
+    "test": "turbo run test",
+    "db:up": "docker compose up -d --wait",
+    "db:down": "docker compose down",
+    "db:generate": "pnpm --filter @budget-bot/db db:generate",
+    "db:migrate": "pnpm --filter @budget-bot/db db:migrate",
+    "db:seed": "pnpm --filter @budget-bot/db db:seed"
   },
   "devDependencies": {
     "turbo": "^2.10.11"
