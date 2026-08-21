@@ -46,7 +46,7 @@ export function ConnectBankButton({ kind }: ConnectBankButtonProps) {
  * it deliberately says nothing about what: the component does not know, and
  * inventing a reason is worse than admitting there is not one.
  */
-const UNREACHABLE = 'Something went wrong connecting to the server. Try again.';
+export const UNREACHABLE = 'Something went wrong connecting to the server. Try again.';
 
 /** What both flows do with a public token once they have one. */
 function useExchange() {

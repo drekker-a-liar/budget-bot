@@ -211,6 +211,24 @@ describe('syncing on demand', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('try again in 45 seconds');
     expect(router.refresh).not.toHaveBeenCalled();
   });
+
+  it('gives the button back when the call itself never comes back', async () => {
+    // An action can fail as an exception rather than as a value: the
+    // deployment is down, or `syncNowAction` throws before its own guards -
+    // `loadKeysFromEnv()` runs outside every `try` in it. Without a catch the
+    // rejection is unhandled, `setSyncing(null)` never runs, and the button
+    // reads "Syncing…" until the next navigation.
+    vi.mocked(syncNowAction).mockRejectedValueOnce(new Error('the deployment went away'));
+    renderView();
+
+    await userEvent.click(screen.getByRole('button', { name: /sync now/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/something went wrong/i);
+    expect(await screen.findByRole('button', { name: /sync now/i })).toBeEnabled();
+    // And it says nothing about what: the component does not know, and the
+    // thrown message is not a sentence anybody wrote for a screen.
+    expect(screen.getByRole('alert')).not.toHaveTextContent('the deployment went away');
+  });
 });
 
 describe('a deployment with no Plaid credentials', () => {

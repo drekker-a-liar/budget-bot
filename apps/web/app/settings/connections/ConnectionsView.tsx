@@ -8,7 +8,7 @@ import { Navigation } from '@/components/Navigation';
 import { syncNowAction } from '@/src/server/actions/bank';
 import type { RunSyncResult } from '@/src/server/bank/sync';
 import type { ConnectionView } from '@/src/server/queries/connections';
-import { ConnectBankButton } from './ConnectBankButton';
+import { ConnectBankButton, UNREACHABLE } from './ConnectBankButton';
 
 /**
  * The interactive half of `/settings/connections`.
@@ -103,16 +103,28 @@ export function ConnectionsView({
     setOutcome(null);
     setSyncing(connectionId);
     startTransition(async () => {
-      const result = await syncNowAction({ connectionId });
-      setSyncing(null);
-      setOutcome({
-        connectionId,
-        ok: result.ok,
-        message: result.ok ? describeSync(result.data) : result.error,
-      });
-      // Only on success: a refused sync has nothing new to draw, and
-      // re-rendering the page under a message is a good way to lose it.
-      if (result.ok) router.refresh();
+      try {
+        const result = await syncNowAction({ connectionId });
+        setOutcome({
+          connectionId,
+          ok: result.ok,
+          message: result.ok ? describeSync(result.data) : result.error,
+        });
+        // Only on success: a refused sync has nothing new to draw, and
+        // re-rendering the page under a message is a good way to lose it.
+        if (result.ok) router.refresh();
+      } catch {
+        // The same gap the connect path had: an action can fail as an
+        // exception rather than as a value - `syncNowAction` reads the
+        // keyring before its own first `try` - and this `await` is what
+        // receives it. Without this the rejection is unhandled and the
+        // `finally` never runs, which is a button that says "Syncing…" for
+        // the rest of the session. It says nothing about what went wrong,
+        // because the component does not know.
+        setOutcome({ connectionId, ok: false, message: UNREACHABLE });
+      } finally {
+        setSyncing(null);
+      }
     });
   };
 
