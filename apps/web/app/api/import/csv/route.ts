@@ -21,6 +21,12 @@ import { currentOwnerId } from '@/lib/ownerSession';
  * Parsing lives in `@budget-bot/bank-connectors`; what happens here is the
  * part that is about *this* application: whose rows these are, what they get
  * categorised as, and the batch row that makes the import undoable.
+ *
+ * Columns are matched by name and dates are accepted as `YYYY-MM-DD` or
+ * `MM/DD/YYYY` (US ordering, month first). A row written any other way comes
+ * back in `errors` with its line number and the formats that would have
+ * worked, rather than as a bare "Expected a YYYY-MM-DD date" - see
+ * `csv/dates.ts` for why `DD/MM/YYYY` is refused rather than guessed at.
  */
 
 /**

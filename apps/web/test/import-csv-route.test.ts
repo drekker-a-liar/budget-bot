@@ -40,7 +40,7 @@ const { POST } = await import('@/app/api/import/csv/route');
 const CSV = [
   'Date,Description,Amount',
   '2026-08-18,THE HOME DEPOT #0421 DECK SCREWS,114.75',
-  '08/18/2026,BAD DATE,10.00',
+  '18-Aug-2026,BAD DATE,10.00',
   '2026-08-19,AUTOPAY PAYMENT THANK YOU,-1250.00',
 ].join('\n');
 
@@ -103,6 +103,33 @@ describe('POST /api/import/csv', () => {
       skipped: 1,
       batchId: 'batch-1',
       errors: [{ line: 3, reason: expect.stringMatching(/date/i) }],
+    });
+  });
+
+  it('imports a US-dated statement, which is what a self-hoster will upload first', async () => {
+    // The dates a Chase or Capital One export carries. Before the provider
+    // normalised them, *every* row of one came back skipped, which made the
+    // first thing a new self-hoster does look like a broken product.
+    const { status, body } = await post(
+      textCsv(
+        [
+          'Transaction Date,Description,Amount',
+          '08/18/2026,THE HOME DEPOT #0421,114.75',
+          '8/19/2026,SHERWIN-WILLIAMS,146.30',
+        ].join('\n')
+      )
+    );
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ inserted: 2, skipped: 0 });
+    expect(written().map((row) => row.date)).toEqual(['2026-08-18', '2026-08-19']);
+  });
+
+  it('says which date formats it understands when a row has none of them', async () => {
+    const { body } = await post(textCsv(CSV));
+
+    expect(body).toMatchObject({
+      errors: [{ line: 3, reason: expect.stringMatching(/YYYY-MM-DD or MM\/DD\/YYYY/) }],
     });
   });
 
@@ -191,7 +218,7 @@ describe('POST /api/import/csv', () => {
     // The user needs to be told the upload happened and brought in nothing,
     // rather than being left wondering whether it was received at all.
     const { status, body } = await post(
-      textCsv('Date,Description,Amount\n08/18/2026,BAD DATE,10.00')
+      textCsv('Date,Description,Amount\n18-Aug-2026,BAD DATE,10.00')
     );
 
     expect(status).toBe(200);

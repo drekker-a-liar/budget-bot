@@ -11,6 +11,7 @@ import type {
   SyncResult,
   WebhookEvent,
 } from '../types';
+import { ACCEPTED_DATE_FORMATS, normalizeCsvDate } from './dates';
 import { readColumns, type CsvColumns } from './headers';
 import { isBlank, readRecords, stripBom, type CsvRecord } from './records';
 
@@ -150,11 +151,24 @@ function readRow(
 ): CsvRowError | null {
   const amount = amountTextFor(columns, record.fields);
 
+  // The date, in the form the domain speaks, before the schema is asked about
+  // it - a US statement writes `08/18/2026` and the schema only knows ISO, so
+  // without this every row of one came back rejected. See `dates.ts` for why
+  // `DD/MM/YYYY` is refused rather than guessed at.
+  const rawDate = cell(record.fields, columns.date);
+  const date = normalizeCsvDate(rawDate);
+  if (date === null) {
+    return {
+      line: record.line,
+      reason: `date: unrecognised date format, expected ${ACCEPTED_DATE_FORMATS}`,
+    };
+  }
+
   // One row's worth of validation, in the domain (ADR 0007): this is the
   // import boundary, so `parseMoney` runs inside the schema and nothing
   // downstream sees a decimal string again.
   const parsed = CsvRowSchema.safeParse({
-    date: cell(record.fields, columns.date),
+    date,
     description: cell(record.fields, columns.description),
     amount: amount.text,
   });

@@ -167,13 +167,58 @@ describe('CsvProvider.parse', () => {
     expect(rows[0].pending).toBe(false);
   });
 
+  /**
+   * The dates real statements carry. `normalizeCsvDate` is unit-tested next
+   * door; these are the two things the *provider* has to get right - that the
+   * normalised date is what reaches the row and its `externalId`, and that a
+   * date nobody can read is a row error naming what would have worked.
+   */
+  describe('dates as banks write them', () => {
+    it('reads a US statement whole, rather than refusing every row of it', () => {
+      const { rows, errors } = parse(
+        [
+          'Transaction Date,Description,Amount',
+          '08/18/2026,THE HOME DEPOT #0421,114.75',
+          '8/1/2026,SHERWIN-WILLIAMS,146.30',
+        ].join('\n')
+      );
+
+      expect(errors).toEqual([]);
+      expect(rows.map((r) => r.date)).toEqual(['2026-08-18', '2026-08-01']);
+    });
+
+    it('gives a row the same identity however its date was written', () => {
+      const iso = parse('Date,Description,Amount\n2026-08-18,THE HOME DEPOT,114.75');
+      const us = parse('Date,Description,Amount\n08/18/2026,THE HOME DEPOT,114.75');
+
+      expect(us.rows[0].externalId).toBe(iso.rows[0].externalId);
+    });
+
+    it('says which formats it understands when it cannot read one', () => {
+      const { rows, errors } = parse(
+        'Date,Description,Amount\n18-Aug-2026,THE HOME DEPOT,114.75'
+      );
+
+      expect(rows).toEqual([]);
+      expect(errors).toEqual([
+        { line: 2, reason: expect.stringMatching(/YYYY-MM-DD or MM\/DD\/YYYY/) },
+      ]);
+    });
+
+    it('refuses a day-first date rather than filing it in the wrong month', () => {
+      const { errors } = parse('Date,Description,Amount\n18/08/2026,THE HOME DEPOT,114.75');
+
+      expect(errors).toHaveLength(1);
+    });
+  });
+
   describe('the rows it refuses', () => {
     it('names the line in the file, not the position among the good rows', () => {
       const { rows, errors } = parse(
         [
           'Date,Description,Amount', // line 1
           '2026-08-18,GOOD ROW,10.00', // line 2
-          '08/18/2026,BAD DATE,10.00', // line 3
+          '18-Aug-2026,BAD DATE,10.00', // line 3
           '2026-08-19,UNREADABLE AMOUNT,N/A', // line 4
           '2026-08-20,ANOTHER GOOD ROW,20.00', // line 5
         ].join('\n')
@@ -195,7 +240,7 @@ describe('CsvProvider.parse', () => {
           '2026-08-18,GOOD ROW,10.00', // 3
           '   ', // 4
           ',,', // 5
-          '08/18/2026,BAD DATE,10.00', // 6
+          '18-Aug-2026,BAD DATE,10.00', // 6
         ].join('\n')
       );
 
@@ -208,7 +253,7 @@ describe('CsvProvider.parse', () => {
           'Date,Description,Amount', // 1
           '2026-08-18,"MULTI', // 2
           'LINE DESCRIPTOR",10.00', // 3
-          '08/18/2026,BAD DATE,10.00', // 4
+          '18-Aug-2026,BAD DATE,10.00', // 4
         ].join('\n')
       );
 

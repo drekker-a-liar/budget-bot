@@ -98,6 +98,21 @@ ever stored, processed or transmitted.
 | `packages/bank-connectors` | The `BankProvider` interface and the CSV one |
 | `packages/config` | Shared tsconfig, eslint and vitest bases |
 
+## Uploading a bank statement
+
+`POST /api/import/csv` takes a CSV export, as `multipart/form-data` with a
+`file` field or as a raw `text/csv` body, up to 5 MiB.
+
+Columns are found by name, not position: a date column (`Date`, `Transaction
+Date`, `Posted Date`, …), a description (`Description`, `Memo`, `Payee`, …) and
+either an `Amount` column or a `Debit`/`Credit` pair. Dates may be written
+`YYYY-MM-DD` or `MM/DD/YYYY` — **US ordering, month first**, also accepted with
+dashes (`08-18-2026`) or as `YYYY/MM/DD`. `DD/MM/YYYY` is refused rather than
+guessed at, because nothing in a file says which ordering the bank used and a
+wrong guess files a charge in the wrong month without saying so. Rows with a
+date in any other form come back in the response's `errors`, with the line
+number and what would have worked.
+
 ## Documentation
 
 - [System architecture](docs/superpowers/specs/2026-08-20-system-architecture-design.md)
