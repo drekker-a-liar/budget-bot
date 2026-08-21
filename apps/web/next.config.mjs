@@ -19,6 +19,9 @@ const nextConfig = {
     // postgres.js is a Node library with its own dynamic requires; leaving it
     // external keeps the server bundle honest.
     serverComponentsExternalPackages: ['postgres'],
+    // Next 14 only calls `instrumentation.ts` when asked to. Without this the
+    // production boot assertion never runs. (Next 15 made it the default.)
+    instrumentationHook: true,
   },
 };
 
