@@ -50,7 +50,14 @@ describe('DashboardMetrics', () => {
     expect(screen.queryByText('$0')).not.toBeInTheDocument();
   });
 
-  it('marks a deficit week as a deficit, and shows it as a magnitude', () => {
+  /**
+   * A deficit is signalled by the number, not only by the colour it is drawn
+   * in. `-$1,250` rendered as `$1,250` in red says the opposite of what
+   * happened to anyone reading it in greyscale, on a projector, or with a
+   * colour vision deficiency - and it is the same glance the whole card
+   * exists for (WCAG 1.4.1: colour is never the only carrier of meaning).
+   */
+  it('marks a deficit week as a deficit, with the sign on the number', () => {
     render(
       <DashboardMetrics
         summary={aSummary({
@@ -61,7 +68,47 @@ describe('DashboardMetrics', () => {
     );
 
     expect(screen.getByText('DEFICIT')).toBeInTheDocument();
-    expect(screen.getByText('$1,250')).toBeInTheDocument();
+    expect(screen.getByText('-$1,250')).toBeInTheDocument();
+    expect(screen.queryByText('$1,250')).not.toBeInTheDocument();
+  });
+
+  it('keeps the plus on a surplus week', () => {
+    render(
+      <DashboardMetrics
+        summary={aSummary({
+          weeklyNetCashFlowCents: parseMoney(2000),
+          cashFlowSeverity: 'healthy',
+        })}
+      />
+    );
+
+    expect(screen.getByText('POSITIVE')).toBeInTheDocument();
+    expect(screen.getByText('+$2,000')).toBeInTheDocument();
+  });
+
+  it('draws a YTD loss as a loss rather than in the healthy colour', () => {
+    // The figure was hardcoded green whatever its sign, so a year in the red
+    // rendered as a year in the black with a minus sign nobody had drawn.
+    render(
+      <DashboardMetrics
+        summary={aSummary({ totalGrossProfitYTDCents: parseMoney(-500) })}
+      />
+    );
+
+    const profit = screen.getByText('-$500.00');
+    expect(profit).toHaveStyle({ color: 'var(--severity-critical)' });
+  });
+
+  it('draws a YTD profit in the healthy colour', () => {
+    render(
+      <DashboardMetrics
+        summary={aSummary({ totalGrossProfitYTDCents: parseMoney(5550.4) })}
+      />
+    );
+
+    expect(screen.getByText('$5,550.40')).toHaveStyle({
+      color: 'var(--severity-healthy)',
+    });
   });
 
   it('counts the pending inbox when there is one', () => {

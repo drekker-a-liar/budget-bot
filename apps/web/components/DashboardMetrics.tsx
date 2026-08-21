@@ -1,12 +1,7 @@
 'use client';
 
 import React from 'react';
-import {
-  formatCents,
-  multiplyCents,
-  BusinessFinancialSummary,
-  THRESHOLDS,
-} from '@budget-bot/core';
+import { formatCents, BusinessFinancialSummary, THRESHOLDS } from '@budget-bot/core';
 import { SeverityBadge } from './SeverityBadge';
 import {
   TrendingUp,
@@ -71,7 +66,7 @@ export function DashboardMetrics({ summary, onOpenInbox }: DashboardMetricsProps
         </div>
         <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.5rem' }}>
           <span>Target: <strong style={{ color: '#f8fafc' }}>45.0%</strong></span>
-          <span>YTD Profit: <strong className="tnum" style={{ color: 'var(--severity-healthy)' }}>{formatCents(summary.totalGrossProfitYTDCents)}</strong></span>
+          <span>YTD Profit: <strong className="tnum" style={{ color: summary.totalGrossProfitYTDCents >= 0 ? 'var(--severity-healthy)' : 'var(--severity-critical)' }}>{formatCents(summary.totalGrossProfitYTDCents)}</strong></span>
         </div>
       </div>
 
@@ -122,13 +117,14 @@ export function DashboardMetrics({ summary, onOpenInbox }: DashboardMetricsProps
               color: summary.weeklyNetCashFlowCents >= 0 ? 'var(--severity-healthy)' : 'var(--severity-critical)',
             }}
           >
+            {/*
+              The sign is part of the figure, not a colour. `formatCents`
+              already writes a negative as `-$1,250`; taking the magnitude and
+              prefixing nothing rendered a deficit as a surplus to anyone not
+              reading the red (WCAG 1.4.1).
+            */}
             {summary.weeklyNetCashFlowCents >= 0 ? '+' : ''}
-            {formatCents(
-              summary.weeklyNetCashFlowCents < 0
-                ? multiplyCents(summary.weeklyNetCashFlowCents, -1)
-                : summary.weeklyNetCashFlowCents,
-              { showCents: false }
-            )}
+            {formatCents(summary.weeklyNetCashFlowCents, { showCents: false })}
           </span>
           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>last 7 days</span>
         </div>
