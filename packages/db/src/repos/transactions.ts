@@ -134,6 +134,56 @@ export async function bulkCreateTransactions(
   return rows.map(toTransaction);
 }
 
+/** A row that arrived in a file rather than being typed. */
+export type ImportedTransaction = NewTransaction & {
+  /** The provider's identity for the row, so a future sync can recognise it. */
+  externalId: string;
+  /** The bank's own text, kept verbatim beside the cleaned description. */
+  rawDescriptor?: string | null;
+};
+
+export interface ImportProvenance {
+  source: 'csv' | 'plaid';
+  provider: string;
+  importBatchId: string;
+}
+
+/**
+ * Inserts everything one import brought in, in one statement, so a file either
+ * lands or does not.
+ *
+ * `bank_account_id` stays null: a file is not a linked account, and there is
+ * nothing yet to point at. The dedupe index is
+ * `(provider, bank_account_id, external_id)`, and Postgres counts null bank
+ * accounts as distinct, so two uploads of the same statement both land. That
+ * is deliberate for now - the alternative is inventing an account id whose
+ * meaning would have to be unpicked when real ones arrive in Phase 2.
+ */
+export async function bulkCreateImported(
+  db: Database,
+  ownerId: string,
+  items: ImportedTransaction[],
+  provenance: ImportProvenance
+): Promise<ExpenseTransaction[]> {
+  if (items.length === 0) return [];
+  const rows = await rejectingForeignProject(undefined, () =>
+    db
+      .insert(transactions)
+      .values(
+        items.map((item) => ({
+          ...toInsert(ownerId, item),
+          source: provenance.source,
+          provider: provenance.provider,
+          externalId: item.externalId,
+          rawDescriptor: item.rawDescriptor ?? null,
+          importBatchId: provenance.importBatchId,
+        }))
+      )
+      .returning()
+  );
+  return rows.map(toTransaction);
+}
+
 export async function updateTransaction(
   db: Database,
   ownerId: string,

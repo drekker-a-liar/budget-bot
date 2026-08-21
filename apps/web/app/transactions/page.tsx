@@ -80,26 +80,12 @@ export default function TransactionsPage() {
     }
   };
 
-  const handleSimulateCardSwipe = async () => {
-    try {
-      await fetch('/api/transactions/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ simulatedType: 'home_depot_run' }),
-      });
-      await fetchData();
-    } catch (err) {
-      console.error('Failed to simulate swipe:', err);
-    }
-  };
 
-  const handleImportCsv = async (csvText: string) => {
+  const handleImportCsv = async (file: File) => {
     try {
-      await fetch('/api/transactions/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rawCsv: csvText }),
-      });
+      const form = new FormData();
+      form.set('file', file);
+      await fetch('/api/import/csv', { method: 'POST', body: form });
       await fetchData();
     } catch (err) {
       console.error('Failed to import CSV:', err);
@@ -249,7 +235,6 @@ export default function TransactionsPage() {
           projects={data.projects}
           onAssignProject={handleAssignProject}
           onUpdateCategory={handleUpdateCategory}
-          onSimulateCardSwipe={handleSimulateCardSwipe}
           onImportCsv={handleImportCsv}
           onDeleteTransaction={handleDeleteTransaction}
         />

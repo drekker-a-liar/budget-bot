@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@auth/drizzle-adapter": "1.11.3",
+    "@budget-bot/bank-connectors": "workspace:*",
     "@budget-bot/core": "workspace:*",
     "@budget-bot/db": "workspace:*",
     "clsx": "^2.1.1",

@@ -17,6 +17,9 @@ importers:
       '@auth/drizzle-adapter':
         specifier: 1.11.3
         version: 1.11.3
+      '@budget-bot/bank-connectors':
+        specifier: workspace:*
+        version: link:../../packages/bank-connectors
       '@budget-bot/core':
         specifier: workspace:*
         version: link:../../packages/core

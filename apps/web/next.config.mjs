@@ -14,7 +14,7 @@ try {
 const nextConfig = {
   reactStrictMode: true,
   // Workspace packages ship TypeScript source rather than a build (spec §3).
-  transpilePackages: ['@budget-bot/core', '@budget-bot/db'],
+  transpilePackages: ['@budget-bot/bank-connectors', '@budget-bot/core', '@budget-bot/db'],
   experimental: {
     // postgres.js is a Node library with its own dynamic requires; leaving it
     // external keeps the server bundle honest.
