@@ -5,6 +5,7 @@ import {
   Invoice,
   ProjectFinancialKPIs,
 } from '../types';
+import { addCents, multiplyCents, percent, subtractCents } from '../money';
 import {
   getGrossMarginSeverity,
   getHourlySeverity,
@@ -25,86 +26,92 @@ export function calculateProjectKPIs(
   const projectInvoices = invoices.filter((i) => i.projectId === project.id);
 
   // Direct Cost Breakdowns
-  const actualMaterialsCost = projectExpenses
-    .filter((t) => t.category === 'materials')
-    .reduce((sum, t) => sum + t.amount, 0);
+  const actualMaterialsCostCents = addCents(
+    ...projectExpenses.filter((t) => t.category === 'materials').map((t) => t.amountCents)
+  );
 
-  const subcontractorCost = projectExpenses
-    .filter((t) => t.category === 'subcontractor')
-    .reduce((sum, t) => sum + t.amount, 0);
+  const subcontractorCostCents = addCents(
+    ...projectExpenses
+      .filter((t) => t.category === 'subcontractor')
+      .map((t) => t.amountCents)
+  );
 
-  const otherDirectCosts = projectExpenses
-    .filter((t) => t.category !== 'materials' && t.category !== 'subcontractor')
-    .reduce((sum, t) => sum + t.amount, 0);
+  const otherDirectCostsCents = addCents(
+    ...projectExpenses
+      .filter((t) => t.category !== 'materials' && t.category !== 'subcontractor')
+      .map((t) => t.amountCents)
+  );
 
   // Labor Costs & Hours
   const actualLaborHours = projectLabor.reduce((sum, l) => sum + l.hours, 0);
-  const actualLaborCost = projectLabor.reduce(
-    (sum, l) => sum + l.hours * l.hourlyRate,
-    0
+  const actualLaborCostCents = addCents(
+    ...projectLabor.map((l) => multiplyCents(l.hourlyRateCents, l.hours))
   );
 
-  const totalDirectCost =
-    actualMaterialsCost + subcontractorCost + otherDirectCosts + actualLaborCost;
+  const totalDirectCostCents = addCents(
+    actualMaterialsCostCents,
+    subcontractorCostCents,
+    otherDirectCostsCents,
+    actualLaborCostCents
+  );
 
   // Revenue Billed / Collected
-  const totalInvoiced = projectInvoices.reduce((sum, inv) => sum + inv.amount, 0);
-  const revenue = totalInvoiced > 0 ? totalInvoiced : project.quotedTotal;
+  const totalInvoicedCents = addCents(...projectInvoices.map((inv) => inv.amountCents));
+  const revenueCents =
+    totalInvoicedCents > 0 ? totalInvoicedCents : project.quotedTotalCents;
 
   // Gross Profit & Margins
-  const grossProfit = revenue - totalDirectCost;
-  const grossMarginPct =
-    revenue > 0 ? Math.round((grossProfit / revenue) * 1000) / 10 : 0;
+  const grossProfitCents = subtractCents(revenueCents, totalDirectCostCents);
+  const grossMarginPct = percent(grossProfitCents, revenueCents) ?? 0;
 
   // Net Hourly Realization (True earnings per hour after materials and sub costs)
-  const netEarnings = revenue - actualMaterialsCost - subcontractorCost - otherDirectCosts;
-  const netHourlyRealization =
+  const netEarningsCents = subtractCents(
+    revenueCents,
+    addCents(actualMaterialsCostCents, subcontractorCostCents, otherDirectCostsCents)
+  );
+  const netHourlyRealizationCents =
     actualLaborHours > 0
-      ? Math.round((netEarnings / actualLaborHours) * 100) / 100
-      : project.targetHourlyRate;
+      ? multiplyCents(netEarningsCents, 1 / actualLaborHours)
+      : project.targetHourlyRateCents;
 
   // Materials Markup % (Difference between quoted materials vs actual).
   // Null when there is nothing to compare: a project that has not bought
   // materials yet has no markup, healthy or otherwise.
   const materialsMarkupPct =
-    actualMaterialsCost > 0 && project.quotedMaterials > 0
-      ? Math.round(
-          ((project.quotedMaterials - actualMaterialsCost) /
-            actualMaterialsCost) *
-            1000
-        ) / 10
+    actualMaterialsCostCents > 0 && project.quotedMaterialsCents > 0
+      ? percent(
+          subtractCents(project.quotedMaterialsCents, actualMaterialsCostCents),
+          actualMaterialsCostCents
+        )
       : null;
 
   // Budget Variance
-  const budgetVariancePct =
-    project.quotedTotal > 0
-      ? Math.round((totalDirectCost / project.quotedTotal) * 1000) / 10
-      : 0;
+  const budgetVariancePct = percent(totalDirectCostCents, project.quotedTotalCents) ?? 0;
 
   return {
     projectId: project.id,
     projectName: project.name,
     status: project.status,
-    revenue,
-    quotedTotal: project.quotedTotal,
-    actualMaterialsCost,
-    actualLaborCost,
-    subcontractorCost,
-    otherDirectCosts,
-    totalDirectCost,
+    revenueCents,
+    quotedTotalCents: project.quotedTotalCents,
+    actualMaterialsCostCents,
+    actualLaborCostCents,
+    subcontractorCostCents,
+    otherDirectCostsCents,
+    totalDirectCostCents,
     actualLaborHours,
     quotedLaborHours: project.quotedLaborHours,
-    grossProfit,
-    netEarnings,
+    grossProfitCents,
+    netEarningsCents,
     grossMarginPct,
     grossMarginSeverity: getGrossMarginSeverity(grossMarginPct),
-    netHourlyRealization,
-    hourlySeverity: getHourlySeverity(netHourlyRealization),
+    netHourlyRealizationCents,
+    hourlySeverity: getHourlySeverity(netHourlyRealizationCents),
     materialsMarkupPct,
     materialsMarkupSeverity:
       materialsMarkupPct === null ? null : getMaterialMarkupSeverity(materialsMarkupPct),
     budgetVariancePct,
     budgetSeverity: getBudgetSeverity(budgetVariancePct),
-    isOverBudget: totalDirectCost > project.quotedTotal,
+    isOverBudget: totalDirectCostCents > project.quotedTotalCents,
   };
 }

@@ -7,36 +7,34 @@ import {
   SEED_INVOICES,
 } from '../fixtures';
 
-// CHARACTERIZATION: pins calculateProjectKPIs against the prototype seed data
-// exactly as it behaved when packages/core was extracted, float dollars and
-// all. Values with visible binary drift (268.0500000000002) are deliberate:
-// they are the evidence that motivates the integer-cents conversion.
+// CHARACTERIZATION of calculateProjectKPIs against the prototype seed data,
+// except where a test is marked CHANGED. Every money figure is integer cents.
 
 const kpiFor = (projectId: string) => {
   const project = SEED_PROJECTS.find((p) => p.id === projectId)!;
   return calculateProjectKPIs(project, SEED_TRANSACTIONS, SEED_LABOR, SEED_INVOICES);
 };
 
-describe('calculateProjectKPIs (characterization)', () => {
+describe('calculateProjectKPIs', () => {
   it('proj-1: invoiced project, revenue comes from invoices', () => {
     expect(kpiFor('proj-1')).toEqual({
       projectId: 'proj-1',
       projectName: 'Master Bath Tile & Double Vanity Remodel',
       status: 'completed',
-      revenue: 6800,
-      quotedTotal: 6800,
-      actualMaterialsCost: 1450.75,
-      actualLaborCost: 3230,
-      subcontractorCost: 0,
-      otherDirectCosts: 310,
-      totalDirectCost: 4990.75,
+      revenueCents: 680_000,
+      quotedTotalCents: 680_000,
+      actualMaterialsCostCents: 145_075,
+      actualLaborCostCents: 323_000,
+      subcontractorCostCents: 0,
+      otherDirectCostsCents: 31_000,
+      totalDirectCostCents: 499_075,
       actualLaborHours: 38,
       quotedLaborHours: 42,
-      grossProfit: 1809.25,
-      netEarnings: 5039.25,
+      grossProfitCents: 180_925,
+      netEarningsCents: 503_925,
       grossMarginPct: 26.6,
       grossMarginSeverity: 'caution',
-      netHourlyRealization: 132.61,
+      netHourlyRealizationCents: 13_261,
       hourlySeverity: 'healthy',
       materialsMarkupPct: 51.6,
       materialsMarkupSeverity: 'healthy',
@@ -46,9 +44,16 @@ describe('calculateProjectKPIs (characterization)', () => {
     });
   });
 
-  it('proj-2: float drift is visible in gross profit', () => {
+  // CHANGED: in float dollars this gross profit was 268.0500000000002 and this
+  // materials cost was 338.20000000000005. Sums of cents are exact.
+  it('CHANGED: sums that used to drift in float are exact', () => {
+    expect(kpiFor('proj-2').grossProfitCents).toBe(26_805);
+    expect(kpiFor('proj-3').actualMaterialsCostCents).toBe(33_820);
+    expect(kpiFor('proj-3').grossProfitCents).toBe(47_180);
+  });
+
+  it('proj-2: a job whose lumber overran the quote', () => {
     const kpi = kpiFor('proj-2');
-    expect(kpi.grossProfit).toBe(268.0500000000002);
     expect(kpi.grossMarginPct).toBe(6);
     expect(kpi.grossMarginSeverity).toBe('critical');
     expect(kpi.materialsMarkupPct).toBe(-5.5);
@@ -56,24 +61,22 @@ describe('calculateProjectKPIs (characterization)', () => {
     expect(kpi.budgetSeverity).toBe('caution');
   });
 
-  it('proj-3: float drift is visible in materials cost', () => {
+  it('proj-3: emergency callout billed at the higher rate', () => {
     const kpi = kpiFor('proj-3');
-    expect(kpi.actualMaterialsCost).toBe(338.20000000000005);
-    expect(kpi.grossProfit).toBe(471.79999999999995);
     expect(kpi.grossMarginPct).toBe(24.2);
-    expect(kpi.netHourlyRealization).toBe(134.32);
+    expect(kpi.netHourlyRealizationCents).toBe(13_432);
   });
 
   it('proj-4: partially invoiced work uses the invoiced amount, not the quote', () => {
     const kpi = kpiFor('proj-4');
-    expect(kpi.revenue).toBe(1800);
-    expect(kpi.quotedTotal).toBe(3600);
+    expect(kpi.revenueCents).toBe(180_000);
+    expect(kpi.quotedTotalCents).toBe(360_000);
     expect(kpi.budgetVariancePct).toBe(48.9);
   });
 
   it('proj-5: with no invoices, revenue falls back to the quoted total', () => {
     const kpi = kpiFor('proj-5');
-    expect(kpi.revenue).toBe(3200);
+    expect(kpi.revenueCents).toBe(320_000);
     expect(kpi.grossMarginPct).toBe(100);
   });
 
@@ -98,14 +101,14 @@ describe('calculateProjectKPIs (characterization)', () => {
   // With nothing to measure the answer is null, not a healthy-looking number.
   it('CHANGED: materials markup is null when there is nothing to measure', () => {
     const kpi = kpiFor('proj-5');
-    expect(kpi.actualMaterialsCost).toBe(0);
+    expect(kpi.actualMaterialsCostCents).toBe(0);
     expect(kpi.materialsMarkupPct).toBeNull();
     expect(kpi.materialsMarkupSeverity).toBeNull();
   });
 
   it('reports net earnings per project, the input to business-wide realization', () => {
-    expect(SEED_PROJECTS.map((p) => kpiFor(p.id).netEarnings)).toEqual([
-      5039.25, 2648.05, 1611.8, 1119.5, 3200,
+    expect(SEED_PROJECTS.map((p) => kpiFor(p.id).netEarningsCents)).toEqual([
+      503_925, 264_805, 161_180, 111_950, 320_000,
     ]);
   });
 
@@ -116,6 +119,6 @@ describe('calculateProjectKPIs (characterization)', () => {
   it('per-project realization still falls back to the project target rate', () => {
     const kpi = kpiFor('proj-5');
     expect(kpi.actualLaborHours).toBe(0);
-    expect(kpi.netHourlyRealization).toBe(85);
+    expect(kpi.netHourlyRealizationCents).toBe(8_500);
   });
 });

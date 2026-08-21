@@ -6,8 +6,15 @@ import {
   BusinessFinancialSummary,
   SeverityLevel,
 } from '../types';
+import { addCents, multiplyCents, percent, subtractCents } from '../money';
 import { getGrossMarginSeverity, getHourlySeverity } from './thresholds';
 import { calculateProjectKPIs } from './project';
+
+/** $2,000 and $500 of overdue receivables, in cents. */
+const OVERDUE_CRITICAL_CENTS = 200_000;
+const OVERDUE_CAUTION_CENTS = 50_000;
+/** A week $500 in the red, in cents. */
+const WEEKLY_CASH_CRITICAL_CENTS = -50_000;
 
 export function calculateBusinessSummary(
   projects: Project[],
@@ -20,23 +27,21 @@ export function calculateBusinessSummary(
     calculateProjectKPIs(p, transactions, laborEntries, invoices)
   );
 
-  const totalRevenueYTD = kpis.reduce((sum, k) => sum + k.revenue, 0);
-  const totalMaterialsYTD = kpis.reduce((sum, k) => sum + k.actualMaterialsCost, 0);
-  const totalLaborYTD = kpis.reduce((sum, k) => sum + k.actualLaborCost, 0);
-  const totalGrossProfitYTD = kpis.reduce((sum, k) => sum + k.grossProfit, 0);
+  const totalRevenueYTDCents = addCents(...kpis.map((k) => k.revenueCents));
+  const totalMaterialsYTDCents = addCents(...kpis.map((k) => k.actualMaterialsCostCents));
+  const totalLaborYTDCents = addCents(...kpis.map((k) => k.actualLaborCostCents));
+  const totalGrossProfitYTDCents = addCents(...kpis.map((k) => k.grossProfitCents));
 
   const averageMarginPct =
-    totalRevenueYTD > 0
-      ? Math.round((totalGrossProfitYTD / totalRevenueYTD) * 1000) / 10
-      : 0;
+    percent(totalGrossProfitYTDCents, totalRevenueYTDCents) ?? 0;
 
   // Realization uses the same net earnings each project reports, so the
   // business figure is the per-project figure scaled up rather than a second,
   // rosier definition. Null when there are no hours to divide by.
   const totalHours = kpis.reduce((sum, k) => sum + k.actualLaborHours, 0);
-  const totalNetEarnings = kpis.reduce((sum, k) => sum + k.netEarnings, 0);
-  const averageHourlyRealization =
-    totalHours > 0 ? Math.round((totalNetEarnings / totalHours) * 100) / 100 : null;
+  const totalNetEarningsCents = addCents(...kpis.map((k) => k.netEarningsCents));
+  const averageHourlyRealizationCents =
+    totalHours > 0 ? multiplyCents(totalNetEarningsCents, 1 / totalHours) : null;
 
   const openProjectsCount = projects.filter(
     (p) => p.status === 'in_progress' || p.status === 'estimating'
@@ -44,58 +49,69 @@ export function calculateBusinessSummary(
 
   const unassigned = transactions.filter((t) => t.status === 'unassigned');
   const unassignedTransactionsCount = unassigned.length;
-  const unassignedTransactionsTotal = unassigned.reduce((s, t) => s + t.amount, 0);
+  const unassignedTransactionsTotalCents = addCents(
+    ...unassigned.map((t) => t.amountCents)
+  );
 
   // Invoices & Receivables
-  const unpaidInvoices = invoices.filter(
-    (i) => i.status === 'sent' || i.status === 'overdue'
+  const outstandingReceivablesCents = addCents(
+    ...invoices
+      .filter((i) => i.status === 'sent' || i.status === 'overdue')
+      .map((i) => i.amountCents)
   );
-  const outstandingReceivables = unpaidInvoices.reduce((s, i) => s + i.amount, 0);
-  const overdueInvoices = invoices.filter((i) => i.status === 'overdue');
-  const overdueReceivables = overdueInvoices.reduce((s, i) => s + i.amount, 0);
+  const overdueReceivablesCents = addCents(
+    ...invoices.filter((i) => i.status === 'overdue').map((i) => i.amountCents)
+  );
 
   let receivablesSeverity: SeverityLevel = 'healthy';
-  if (overdueReceivables > 2000) receivablesSeverity = 'critical';
-  else if (overdueReceivables > 500) receivablesSeverity = 'caution';
+  if (overdueReceivablesCents > OVERDUE_CRITICAL_CENTS) receivablesSeverity = 'critical';
+  else if (overdueReceivablesCents > OVERDUE_CAUTION_CENTS) receivablesSeverity = 'caution';
 
   // Weekly Cash Flow (the seven days ending at `now`)
   const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-  const weeklyCashInflow = invoices
-    .filter((i) => i.status === 'paid' && i.paidDate && new Date(i.paidDate) >= oneWeekAgo)
-    .reduce((s, i) => s + i.amount, 0);
+  const weeklyCashInflowCents = addCents(
+    ...invoices
+      .filter(
+        (i) => i.status === 'paid' && i.paidDate && new Date(i.paidDate) >= oneWeekAgo
+      )
+      .map((i) => i.amountCents)
+  );
 
-  const weeklyCashOutflow = transactions
-    .filter((t) => new Date(t.date) >= oneWeekAgo)
-    .reduce((s, t) => s + t.amount, 0);
+  const weeklyCashOutflowCents = addCents(
+    ...transactions.filter((t) => new Date(t.date) >= oneWeekAgo).map((t) => t.amountCents)
+  );
 
-  const weeklyNetCashFlow = weeklyCashInflow - weeklyCashOutflow;
+  const weeklyNetCashFlowCents = subtractCents(
+    weeklyCashInflowCents,
+    weeklyCashOutflowCents
+  );
 
   let cashFlowSeverity: SeverityLevel = 'healthy';
-  if (weeklyNetCashFlow < -500) cashFlowSeverity = 'critical';
-  else if (weeklyNetCashFlow < 0) cashFlowSeverity = 'caution';
+  if (weeklyNetCashFlowCents < WEEKLY_CASH_CRITICAL_CENTS) cashFlowSeverity = 'critical';
+  else if (weeklyNetCashFlowCents < 0) cashFlowSeverity = 'caution';
 
   return {
-    totalRevenueYTD,
-    totalMaterialsYTD,
-    totalLaborYTD,
-    totalGrossProfitYTD,
+    totalRevenueYTDCents,
+    totalMaterialsYTDCents,
+    totalLaborYTDCents,
+    totalGrossProfitYTDCents,
     averageMarginPct,
     averageMarginSeverity: getGrossMarginSeverity(averageMarginPct),
-    averageHourlyRealization,
+    averageHourlyRealizationCents,
     averageHourlySeverity:
-      averageHourlyRealization === null
+      averageHourlyRealizationCents === null
         ? null
-        : getHourlySeverity(averageHourlyRealization),
+        : getHourlySeverity(averageHourlyRealizationCents),
     openProjectsCount,
     unassignedTransactionsCount,
-    unassignedTransactionsTotal,
-    outstandingReceivables,
-    overdueReceivables,
+    unassignedTransactionsTotalCents,
+    outstandingReceivablesCents,
+    overdueReceivablesCents,
     receivablesSeverity,
-    weeklyCashInflow,
-    weeklyCashOutflow,
-    weeklyNetCashFlow,
+    weeklyCashInflowCents,
+    weeklyCashOutflowCents,
+    weeklyNetCashFlowCents,
     cashFlowSeverity,
   };
 }

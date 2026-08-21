@@ -28,25 +28,33 @@ afterEach(() => {
 describe('calculateBusinessSummary', () => {
   it('aggregates the seed book of business at a given instant', () => {
     expect(summarize()).toEqual({
-      totalRevenueYTD: 18250,
-      totalMaterialsYTD: 4321.4,
-      totalLaborYTD: 7830,
-      totalGrossProfitYTD: 5788.6,
+      totalRevenueYTDCents: 1_825_000,
+      totalMaterialsYTDCents: 432_140,
+      totalLaborYTDCents: 783_000,
+      totalGrossProfitYTDCents: 578_860,
       averageMarginPct: 31.7,
       averageMarginSeverity: 'caution',
-      averageHourlyRealization: 151.32,
+      averageHourlyRealizationCents: 15_132,
       averageHourlySeverity: 'healthy',
       openProjectsCount: 2,
       unassignedTransactionsCount: 3,
-      unassignedTransactionsTotal: 372.84999999999997,
-      outstandingReceivables: 4500,
-      overdueReceivables: 0,
+      unassignedTransactionsTotalCents: 37_285,
+      outstandingReceivablesCents: 450_000,
+      overdueReceivablesCents: 0,
       receivablesSeverity: 'healthy',
-      weeklyCashInflow: 3750,
-      weeklyCashOutflow: 1391.5500000000002,
-      weeklyNetCashFlow: 2358.45,
+      weeklyCashInflowCents: 375_000,
+      weeklyCashOutflowCents: 139_155,
+      weeklyNetCashFlowCents: 235_845,
       cashFlowSeverity: 'healthy',
     });
+  });
+
+  // CHANGED: in float dollars these two totals came out as 372.84999999999997
+  // and 1391.5500000000002. Sums of cents are exact.
+  it('CHANGED: totals that used to drift in float are exact', () => {
+    const summary = summarize();
+    expect(summary.unassignedTransactionsTotalCents).toBe(37_285);
+    expect(summary.weeklyCashOutflowCents).toBe(139_155);
   });
 
   // CHANGED: `now` used to be read from the wall clock inside the function.
@@ -55,16 +63,16 @@ describe('calculateBusinessSummary', () => {
     vi.setSystemTime(new Date('2031-05-05T00:00:00.000Z'));
 
     const summary = summarize(NOW);
-    expect(summary.weeklyCashInflow).toBe(3750);
-    expect(summary.weeklyCashOutflow).toBe(1391.5500000000002);
-    expect(summary.weeklyNetCashFlow).toBe(2358.45);
+    expect(summary.weeklyCashInflowCents).toBe(375_000);
+    expect(summary.weeklyCashOutflowCents).toBe(139_155);
+    expect(summary.weeklyNetCashFlowCents).toBe(235_845);
   });
 
   it('CHANGED: a different `now` moves the weekly cash-flow window', () => {
     const summary = summarize(new Date('2027-01-01T00:00:00.000Z'));
-    expect(summary.weeklyCashInflow).toBe(0);
-    expect(summary.weeklyCashOutflow).toBe(0);
-    expect(summary.weeklyNetCashFlow).toBe(0);
+    expect(summary.weeklyCashInflowCents).toBe(0);
+    expect(summary.weeklyCashOutflowCents).toBe(0);
+    expect(summary.weeklyNetCashFlowCents).toBe(0);
     expect(summary.cashFlowSeverity).toBe('healthy');
   });
 
@@ -72,11 +80,11 @@ describe('calculateBusinessSummary', () => {
   // (totalRevenue - totalMaterials) / totalHours, subtracting materials only
   // and leaving subcontractor and other direct costs in, so it disagreed with
   // the per-project netHourlyRealization it was supposed to summarise. It is
-  // now sum(kpi.netEarnings) / totalHours, the same definition scaled up.
+  // now sum(kpi.netEarningsCents) / totalHours, the same definition scaled up.
   it('CHANGED: business realization sums the same net earnings the projects report', () => {
-    // 13618.60 net earnings / 90 hrs. The old materials-only formula reported
-    // 154.76 by leaving $1,690 of subs and disposal costs in.
-    expect(summarize().averageHourlyRealization).toBe(151.32);
+    // $13,618.60 net earnings / 90 hrs. The old materials-only formula reported
+    // $154.76/hr by leaving $1,690 of subs and disposal costs in.
+    expect(summarize().averageHourlyRealizationCents).toBe(15_132);
     expect(summarize().averageHourlySeverity).toBe('healthy');
   });
 
@@ -85,7 +93,7 @@ describe('calculateBusinessSummary', () => {
   // threshold - so an empty book of business rendered as green.
   it('CHANGED: realization is null, not $85/hr, when no hours have been logged', () => {
     const summary = calculateBusinessSummary([], [], [], [], NOW);
-    expect(summary.averageHourlyRealization).toBeNull();
+    expect(summary.averageHourlyRealizationCents).toBeNull();
     expect(summary.averageHourlySeverity).toBeNull();
   });
 });

@@ -1,3 +1,4 @@
+import type { Cents } from '../money';
 import { SeverityLevel } from '../types';
 
 // Severity Threshold Constants
@@ -6,9 +7,10 @@ export const THRESHOLDS = {
     HEALTHY: 45, // >= 45% is green
     CAUTION: 25, // 25% - 44% is yellow, < 25% is red
   },
+  // Rates are cents per hour, like every other money value (ADR 0007).
   HOURLY_REALIZATION: {
-    HEALTHY: 85, // >= $85/hr is green
-    CAUTION: 50, // $50 - $84/hr is yellow, < $50 is red
+    HEALTHY: 8500, // >= $85.00/hr is green
+    CAUTION: 5000, // $50.00 - $84.99/hr is yellow, < $50.00 is red
   },
   MATERIAL_MARKUP: {
     HEALTHY: 20, // >= 20% is green
@@ -30,9 +32,9 @@ export function getGrossMarginSeverity(marginPct: number): SeverityLevel {
   return 'critical';
 }
 
-export function getHourlySeverity(hourlyRate: number): SeverityLevel {
-  if (hourlyRate >= THRESHOLDS.HOURLY_REALIZATION.HEALTHY) return 'healthy';
-  if (hourlyRate >= THRESHOLDS.HOURLY_REALIZATION.CAUTION) return 'caution';
+export function getHourlySeverity(hourlyRateCents: Cents): SeverityLevel {
+  if (hourlyRateCents >= THRESHOLDS.HOURLY_REALIZATION.HEALTHY) return 'healthy';
+  if (hourlyRateCents >= THRESHOLDS.HOURLY_REALIZATION.CAUTION) return 'caution';
   return 'critical';
 }
 

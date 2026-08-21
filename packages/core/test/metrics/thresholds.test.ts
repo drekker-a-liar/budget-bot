@@ -6,6 +6,7 @@ import {
   getMaterialMarkupSeverity,
   getBudgetSeverity,
 } from '../../src/metrics/thresholds';
+import { parseMoney } from '../../src/money';
 
 // CHARACTERIZATION: severity thresholds are the product's contract and must
 // not move. Boundaries are asserted on both sides.
@@ -24,13 +25,17 @@ describe('severity thresholds (characterization)', () => {
     expect(getGrossMarginSeverity(pct)).toBe(expected);
   });
 
+  it('states the hourly realization thresholds in cents per hour', () => {
+    expect(THRESHOLDS.HOURLY_REALIZATION).toEqual({ HEALTHY: 8500, CAUTION: 5000 });
+  });
+
   it.each([
-    [85, 'healthy'],
-    [84.9, 'caution'],
-    [50, 'caution'],
-    [49.9, 'critical'],
+    ['85.00', 'healthy'],
+    ['84.99', 'caution'],
+    ['50.00', 'caution'],
+    ['49.99', 'critical'],
   ])('hourly realization $%s/hr -> %s', (rate, expected) => {
-    expect(getHourlySeverity(rate)).toBe(expected);
+    expect(getHourlySeverity(parseMoney(rate))).toBe(expected);
   });
 
   it.each([
