@@ -208,6 +208,38 @@ describe('calculateBusinessSummary', () => {
       expect(summary.weeklyCashOutflowCents).toBe(100_000);
     });
 
+    /**
+     * Spec §2.3: `postedAt ?? date` starts doing real work.
+     *
+     * `date` is the transaction date a bank reports and `posted_at` is when
+     * the money actually left, and they are not always the same week - a
+     * Saturday card charge posts on the Monday. The KPI is about a week of
+     * cash, so the posting instant is the one that decides which week it is
+     * in; a row that never came from a bank has no `postedAt` and falls back
+     * to its `date`, which is every case above.
+     */
+    it('buckets a bank row by when it posted, not by when it was dated', () => {
+      const posted = {
+        ...expense(500, '2026-08-12'),
+        postedAt: '2026-08-19T10:00:00.000Z',
+      };
+
+      expect(
+        calculateBusinessSummary([], [posted], [], [], NOW).weeklyCashOutflowCents
+      ).toBe(50_000);
+    });
+
+    it('leaves out a row dated this week that posted before it', () => {
+      const posted = {
+        ...expense(500, '2026-08-19'),
+        postedAt: '2026-08-11T10:00:00.000Z',
+      };
+
+      expect(
+        calculateBusinessSummary([], [posted], [], [], NOW).weeklyCashOutflowCents
+      ).toBe(0);
+    });
+
     it('agrees with the waterfall about which rows are spending', () => {
       // The same rows through `spendByCategory`'s rule, spelled out here
       // because the two live in different packages and drifted apart once.
