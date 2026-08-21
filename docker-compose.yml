@@ -13,9 +13,15 @@ services:
       POSTGRES_USER: budget_bot
       POSTGRES_PASSWORD: budget_bot
       POSTGRES_DB: budget_bot
-    # 5433 on the host: a Homebrew Postgres already owns 5432 on many machines.
+    # Bound to the loopback address on purpose. These credentials are the
+    # weakest possible pair and this database will hold financial data, so it
+    # is reachable from this machine and from nowhere else - a bare "5433:5432"
+    # publishes on 0.0.0.0 and offers it to the whole network.
+    #
+    # 5433 rather than 5432: a Homebrew Postgres already owns 5432 on many
+    # machines.
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - budget-bot-pgdata:/var/lib/postgresql/data
     healthcheck:
