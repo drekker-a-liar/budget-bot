@@ -2,6 +2,7 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   PlaidItemError,
+  PlaidMutationDuringPagination,
   PlaidProvider,
   PlaidRateLimited,
   PlaidRequestError,
@@ -61,7 +62,17 @@ export const SMOKE_INSTITUTION_ID = 'ins_127287';
  */
 export const SMOKE_MAX_PAGES = 50;
 
-const USAGE = 'Usage: plaid-smoke (no arguments; reads PLAID_CLIENT_ID, PLAID_SECRET, PLAID_ENV)';
+/**
+ * The whole of what a misuse prints.
+ *
+ * It says what is wrong without repeating what was typed, because
+ * `pnpm plaid:smoke $PLAID_SECRET` is a plausible slip and the value would
+ * land in terminal scrollback - the exact place this file's header promises
+ * nothing secret goes.
+ */
+const USAGE =
+  'plaid-smoke takes no arguments. Usage: pnpm --filter web plaid:smoke ' +
+  '(reads PLAID_CLIENT_ID, PLAID_SECRET and PLAID_ENV from the environment).';
 
 /**
  * The Plaid client, plus the one Sandbox-only endpoint the application itself
@@ -140,6 +151,12 @@ export function decide(raw: RawEnv): SmokeDecision {
  */
 export function codeOf(error: unknown): string {
   if (error instanceof PlaidRateLimited) return 'RATE_LIMIT_EXCEEDED';
+  // Spelled out because the class carries no `code`: it is the only Plaid
+  // code it can ever mean, and it is the one worth reading - it says the data
+  // moved mid-pagination and the run should start again from its cursor.
+  if (error instanceof PlaidMutationDuringPagination) {
+    return 'TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION';
+  }
   if (error instanceof PlaidItemError) return error.code;
   if (error instanceof PlaidRequestError) return error.code;
   return 'UNKNOWN';
@@ -216,7 +233,7 @@ export async function main({
   err = (line: string) => console.error(line),
 }: SmokeIo = {}): Promise<number> {
   if (argv.length > 0) {
-    err(`Unrecognised argument '${argv[0]}'. ${USAGE}`);
+    err(USAGE);
     return 2;
   }
 

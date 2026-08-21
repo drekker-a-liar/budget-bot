@@ -3,10 +3,17 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  PlaidItemError,
+  PlaidMutationDuringPagination,
+  PlaidRateLimited,
+  PlaidRequestError,
+} from '@budget-bot/bank-connectors';
 import { describe, expect, it } from 'vitest';
 import {
   SMOKE_INSTITUTION_ID,
   SMOKE_MAX_PAGES,
+  codeOf,
   decide,
   main,
   type SandboxClient,
@@ -299,11 +306,33 @@ describe('the live run, against a fake Plaid', () => {
     expect(err.join('\n')).not.toContain(ACCESS_TOKEN);
   });
 
-  it('refuses an argument it does not understand', async () => {
-    const { code, err } = await runMain(KEYS, fakeClient([]), ['--production']);
+  it('refuses an argument it does not understand, without repeating it', async () => {
+    // `pnpm plaid:smoke $PLAID_SECRET` is a plausible slip, and echoing the
+    // argument back would put the secret in the terminal scrollback that ends
+    // up in a bug report - out of a file whose header promises it prints none.
+    // So the refusal is the usage line and nothing else.
+    const { code, err } = await runMain(KEYS, fakeClient([]), [KEYS.PLAID_SECRET]);
 
     expect(code).toBe(2);
     expect(err.join('\n')).toContain('plaid-smoke');
+    expect(err.join('\n')).not.toContain(KEYS.PLAID_SECRET);
+  });
+});
+
+describe('naming a failure', () => {
+  it('maps every class the connector throws to the code a person can act on', () => {
+    expect(codeOf(new PlaidRateLimited('slow down', 60))).toBe('RATE_LIMIT_EXCEEDED');
+    expect(codeOf(new PlaidItemError('ITEM_LOGIN_REQUIRED', 'log in again'))).toBe(
+      'ITEM_LOGIN_REQUIRED'
+    );
+    expect(codeOf(new PlaidRequestError('INVALID_FIELD', 'bad field'))).toBe('INVALID_FIELD');
+    // The one that used to print UNKNOWN, which is the worst possible answer
+    // for it: this code means "the data moved under you, start again from your
+    // cursor", and UNKNOWN reads as "nobody knows what happened".
+    expect(codeOf(new PlaidMutationDuringPagination('the data moved'))).toBe(
+      'TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION'
+    );
+    expect(codeOf(new Error('something else entirely'))).toBe('UNKNOWN');
   });
 });
 
