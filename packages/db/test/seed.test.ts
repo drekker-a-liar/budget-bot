@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
-import { invoicesRepo, laborRepo, projectsRepo, transactionsRepo } from '../src/repos';
+import { bankRepo, invoicesRepo, laborRepo, projectsRepo, transactionsRepo } from '../src/repos';
+import { bankAccounts, bankConnections } from '../src/schema';
 import { SEED_PROJECTS, SEED_TRANSACTIONS, seedOwner } from '../src/seed';
 import { createOwner, describeDb, useTestDb } from './helpers/db';
 
@@ -66,6 +67,34 @@ describeDb('seedOwner', () => {
 
     expect(again.seeded).toBe(true);
     expect(await projectsRepo.listProjects(db, ownerId)).toHaveLength(SEED_PROJECTS.length);
+  });
+
+  it('takes the linked banks with it, so a reset owner can link again', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const [connection] = await db
+      .insert(bankConnections)
+      .values({
+        ownerId,
+        itemId: 'item-reset',
+        institutionName: 'Fake Bank',
+        accessTokenCiphertext: 'v1:k2:aaaa:bbbb:cccc',
+        encryptionKeyId: 'k2',
+        cursor: 'spent',
+      })
+      .returning({ id: bankConnections.id });
+    await db.insert(bankAccounts).values({
+      ownerId,
+      connectionId: connection.id,
+      externalAccountId: 'acct-reset',
+      name: 'Fake Business Card',
+    });
+
+    await seedOwner(db, ownerId, { reset: true });
+
+    // Both, and the accounts by the cascade rather than a second delete.
+    expect(await bankRepo.listConnections(db, ownerId)).toEqual([]);
+    expect(await bankRepo.getCardProfile(db, ownerId)).toBeNull();
   });
 
   it('seeds one owner without touching another', async () => {

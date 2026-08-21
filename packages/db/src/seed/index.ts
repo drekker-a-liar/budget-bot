@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import type { Database, Executor } from '../client';
-import { invoices, laborEntries, projects, transactions } from '../schema';
+import { bankConnections, invoices, laborEntries, projects, transactions } from '../schema';
 import {
   SEED_INVOICES,
   SEED_LABOR,
@@ -39,10 +39,23 @@ const EMPTY = { projects: 0, transactions: 0, laborEntries: 0, invoices: 0 };
 async function deleteOwnerData(db: Executor, ownerId: string): Promise<void> {
   // Transactions first: they reference projects with ON DELETE SET NULL, so
   // dropping the projects would keep them as orphans rather than remove them.
+  // They also reference `bank_accounts`, which is the other reason they go
+  // first.
   await db.delete(transactions).where(eq(transactions.ownerId, ownerId));
   await db.delete(invoices).where(eq(invoices.ownerId, ownerId));
   await db.delete(laborEntries).where(eq(laborEntries.ownerId, ownerId));
   await db.delete(projects).where(eq(projects.ownerId, ownerId));
+  // The linked banks too, and the accounts behind them by the cascade.
+  //
+  // Leaving them was the tempting half-measure and it is the wrong one: a
+  // connection carries a *spent* `/transactions/sync` cursor, so a reset owner
+  // keeps a bank that will never hand over another transaction it has already
+  // delivered - the ledger is empty, the connection says "last synced two
+  // minutes ago", and pressing Sync now truthfully reports nothing. Worse,
+  // `(provider, item_id)` is unique, so linking the same bank again to refill
+  // the inbox collides with the row nobody wanted. A reset that cannot be
+  // followed by a working link is not a reset.
+  await db.delete(bankConnections).where(eq(bankConnections.ownerId, ownerId));
 }
 
 export async function seedOwner(
