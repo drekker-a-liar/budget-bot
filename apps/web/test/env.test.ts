@@ -150,9 +150,9 @@ describe('assertProductionSecurity', () => {
    * connections screen degrades to its not-configured state rather than
    * throwing (spec §7), so nothing about banking is required. `production` is
    * "Plaid is live", which drags in the credentials and the cron secret. And
-   * `sandbox` in production is refused outright - previews stay on Sandbox by
-   * scoping the variable to the preview environment, not by letting a
-   * production boot accept it.
+   * `sandbox` in production is refused outright, previews included (they boot
+   * with `NODE_ENV=production` and get no exemption): a preview leaves the
+   * Plaid variables unset, and Sandbox is for local development only.
    */
   it('accepts a production deployment that is not using Plaid at all', () => {
     const raw = safeProduction();

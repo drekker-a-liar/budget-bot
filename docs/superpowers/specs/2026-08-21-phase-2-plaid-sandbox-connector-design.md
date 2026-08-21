@@ -84,7 +84,7 @@ runSync(ownerId, connectionId, { maxPages? }) →
 - **Reconnecting a bank that is already linked** returns a readable refusal — `UNIQUE(provider, item_id)` becomes `ConnectionAlreadyExistsError` and the action answers "This bank is already connected. Use Sync now on the existing connection." The public token is spent by then, so the one thing the message must not do is say "try again". Re-auth as an upsert on the existing row is Phase 3.
 - **Every new island ships with its colocated test** (the structural test enforces it).
 
-*Amended after final review (2026-08-21): the credit filter and the reconnect message were both written down here and neither was built; the code now matches, minus the Phase 3 upsert.*
+*Amended after final review (2026-08-21): the "first enabled **credit** account" rule was already specified here but the first implementation did not filter by type; the code now does. The reconnect sentence is new text added by the same amendment — reconnecting an already-linked Item returns a readable error, and the Phase 3 re-auth work decides whether it becomes an upsert.*
 
 ## 7. Environment and boot assertion
 

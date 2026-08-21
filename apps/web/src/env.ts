@@ -208,10 +208,13 @@ export function assertProductionSecurity(raw: RawEnv = process.env): void {
    * production deployment pointed at it would show them to its owner as their
    * own money, and every other check in this function would pass while it did
    * - so this is the one Plaid rule about a variable being *present and
-   * wrong* rather than absent. Previews stay on Sandbox by scoping the
-   * variable to the preview environment; they are built with
-   * `NODE_ENV=production` too, which is why "sandbox is for previews" cannot
-   * be expressed as an exemption here.
+   * wrong* rather than absent. It applies to Vercel previews too: they are
+   * built and run with `NODE_ENV=production`, and there is deliberately no
+   * exemption keyed on a host-specific variable such as `VERCEL_ENV` - that
+   * would turn "production never talks to Sandbox" into a claim about a
+   * variable anyone who can set `PLAID_ENV` can also set. Previews leave the
+   * Plaid variables unset; Sandbox is for local development and the smoke
+   * script.
    */
   if (raw.PLAID_ENV === 'sandbox') {
     problems.push(

@@ -61,6 +61,12 @@ describe('.env.example', () => {
    * unconditional check applies to previews too, and a variable annotated
    * "Required in: prod" alone sends a self-hoster to a preview that refuses to
    * boot with no idea why.
+   *
+   * What this pins is that each line *addresses* previews, not that it
+   * requires the variable there. For the unconditional five the answer is
+   * "yes, preview as well"; for the three that hang off `PLAID_ENV` the
+   * honest answer is "not on preview" (previews leave Plaid unset), and that
+   * sentence satisfies the check precisely because it says so out loud.
    */
   it('says preview as well as prod for everything the boot assertion insists on', () => {
     const enforced = [
