@@ -49,12 +49,23 @@ export function e2eDatabaseUrl(): string {
  * The environment the app under test runs in. `AUTH_SECRET` is a fixed
  * throwaway rather than a generated one so a re-run reuses the cookies of the
  * last one instead of invalidating them.
+ *
+ * `BANK_TOKEN_ENCRYPTION_KEY` is named here rather than left to the root
+ * `.env`. Connecting a bank writes an encrypted access token, so without a key
+ * the connect step cannot run at all - and on a developer machine it *did*
+ * run, because `next.config.mjs` loads the root `.env` and quietly supplied
+ * one. CI has no `.env`, so the same step would have failed there and nowhere
+ * else. The value below is the same documented dummy the CI production fixture
+ * carries (base64 of the ASCII sentence `not-a-real-key--not-a-real-key32`),
+ * which is why gitleaks does not read it as a finding: it is an exact,
+ * anchored literal in `.gitleaks.toml`. Nothing it encrypts outlives the run.
  */
 export function e2eServerEnv(): Record<string, string> {
   return {
     DATABASE_URL: e2eDatabaseUrl(),
     ALLOWED_EMAILS: E2E_EMAIL,
     AUTH_SECRET: 'end-to-end-test-secret-not-a-real-one',
+    BANK_TOKEN_ENCRYPTION_KEY: 'bm90LWEtcmVhbC1rZXktLW5vdC1hLXJlYWwta2V5MzI=',
     E2E: '1',
     SEED_DEMO: '0',
   };

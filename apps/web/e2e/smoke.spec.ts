@@ -27,9 +27,39 @@ const UNFILED_CHARGE = { text: "LOWE'S #1104", amount: '$219.00' };
 /** A seeded job, to prove the dashboard is reading the database. */
 const SEEDED_PROJECT = 'Master Bath Tile & Double Vanity Remodel';
 
+/**
+ * The scripted bank, and what it hands over. All of it comes from
+ * `src/server/bank/fake-provider.ts`, which is the only provider reachable
+ * with `E2E=1` set - no Plaid account, no credentials, no network.
+ */
+const FAKE_BANK = {
+  institution: 'Fake Bank (E2E)',
+  checkingMask: /••• 0000/,
+  cardMask: /••• 4471/,
+  cardLimit: '$5,000.00',
+  /**
+   * What the inbox draws for the card charge on the fake's first page. The
+   * *description* is the merchant name when the provider resolved one, which
+   * is what makes `raw_descriptor` ("FAKE HARDWARE 4471") a stored column
+   * rather than a rendered one; the vendor beside it is what the categoriser
+   * made of the same string.
+   */
+  charge: { description: 'Fake Hardware Supply', amount: '$114.75' },
+};
+
 test.describe('with no session', () => {
   test('the dashboard is the sign-in page', async ({ page }) => {
     await page.goto('/');
+
+    await expect(page).toHaveURL(/\/login/);
+    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  });
+
+  test('the connections screen is the sign-in page too', async ({ page }) => {
+    // Named separately from the dashboard: this page is the one that can spend
+    // a bank credential, so "it is behind the door" is worth asserting about
+    // it by name rather than inferring from the middleware's matcher.
+    await page.goto('/settings/connections');
 
     await expect(page).toHaveURL(/\/login/);
     await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
@@ -74,6 +104,17 @@ test.describe.serial('signed in through the test-only door', () => {
   test.afterAll(async () => {
     await page.close();
   });
+
+  /**
+   * The card on `/settings/connections` for the bank this run connected, and
+   * deliberately not `.first()` or `.last()`: there is exactly one, because
+   * `db:seed --reset` now takes the owner's linked banks with it. Two would
+   * mean a previous run's connection survived, which is worth failing over -
+   * its `/transactions/sync` cursor is spent, so the run after it would find
+   * an empty inbox and no explanation.
+   */
+  const connectionCard = () =>
+    page.locator('.swiss-card').filter({ hasText: FAKE_BANK.institution });
 
   test('the dashboard renders the books out of Postgres', async () => {
     await expect(
@@ -121,5 +162,57 @@ test.describe.serial('signed in through the test-only door', () => {
     await expect(card.getByText('Direct Costs').locator('..')).toContainText(
       UNFILED_CHARGE.amount
     );
+  });
+
+  test('a bank can be connected, and its accounts arrive with it', async () => {
+    await page.goto('/settings/connections');
+    await expect(page.getByRole('heading', { name: 'Where the Card Inbox Comes From' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Connect a bank' }).click();
+
+    const connection = connectionCard();
+    await expect(connection).toBeVisible();
+
+    // By text, never by index: the two accounts are written by one statement
+    // and share a `created_at`, so which of them sorts first is the tie-break
+    // on a random uuid and is not the same on two different databases.
+    const checking = connection.getByRole('row').filter({ hasText: FAKE_BANK.checkingMask });
+    const credit = connection.getByRole('row').filter({ hasText: FAKE_BANK.cardMask });
+    await expect(checking).toBeVisible();
+    await expect(credit).toBeVisible();
+    // The limit only a credit line has, which is the column that proves the
+    // account's own fields made it through rather than a shared default.
+    await expect(credit).toContainText(FAKE_BANK.cardLimit);
+  });
+
+  test('the first sync put the card charge in the inbox', async () => {
+    await page.goto('/transactions');
+
+    const row = page.getByRole('row').filter({ hasText: FAKE_BANK.charge.description });
+    await expect(row).toBeVisible();
+    await expect(row).toContainText(FAKE_BANK.charge.amount);
+    // Filed to the card it was charged to, not to the checking account that
+    // shares the connection.
+    await expect(row).toContainText(FAKE_BANK.cardMask);
+
+    // The header pill reads the linked accounts rather than a hard-coded card,
+    // so connecting a bank is what put a name in it.
+    await expect(page.getByText(/Fake Business (Card|Checking) ••• (4471|0000):/)).toBeVisible();
+  });
+
+  test('sync now runs, and says honestly that there was nothing left', async () => {
+    await page.goto('/settings/connections');
+    const connection = connectionCard();
+
+    await connection.getByRole('button', { name: 'Sync now' }).click();
+
+    // Zero is the right answer and the interesting one. The sync that runs
+    // straight after Link is bounded at five pages and the script is two, so
+    // it already reached the end; a button that reported "1 added" here would
+    // mean the committed cursor had been lost and the run replayed a page.
+    await expect(connection.getByRole('status')).toHaveText(
+      'Synced: 0 added, 0 modified, 0 removed.'
+    );
+    await expect(connection.getByText(/Last synced .* UTC/)).toBeVisible();
   });
 });
