@@ -153,13 +153,23 @@ describe('calculateProjectKPIs', () => {
     ]);
   });
 
-  // Deliberately unchanged: with no hours logged, per-project realization still
-  // falls back to the project's own target rate. That is the rate the estimate
-  // was priced at, not an invented constant, so it stays until a later task
-  // decides what an hours-less project should display.
-  it('per-project realization still falls back to the project target rate', () => {
+  // CHANGED (bug 2, second pass): with no hours logged, realization used to
+  // fall back to project.targetHourlyRateCents - $85/hr, which is exactly
+  // HOURLY_REALIZATION.HEALTHY - and was then graded, so an unstarted project
+  // rendered green. It also disagreed with the business-level figure it feeds,
+  // which was already null for the same condition. Nothing worked, so there is
+  // no rate to report.
+  it('CHANGED: realization and its severity are null when no hours are logged', () => {
     const kpi = kpiFor('proj-5');
     expect(kpi.actualLaborHours).toBe(0);
-    expect(kpi.netHourlyRealizationCents).toBe(8_500);
+    expect(kpi.netHourlyRealizationCents).toBeNull();
+    expect(kpi.hourlySeverity).toBeNull();
+  });
+
+  it('grades realization as soon as there are hours to divide by', () => {
+    const kpi = kpiFor('proj-1');
+    expect(kpi.actualLaborHours).toBe(38);
+    expect(kpi.netHourlyRealizationCents).toBe(13_261);
+    expect(kpi.hourlySeverity).toBe('healthy');
   });
 });

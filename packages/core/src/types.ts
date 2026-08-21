@@ -56,8 +56,9 @@ export interface ProjectFinancialKPIs {
   netEarningsCents: Cents;
   grossMarginPct: number;
   grossMarginSeverity: SeverityLevel;
-  netHourlyRealizationCents: Cents;
-  hourlySeverity: SeverityLevel;
+  /** Null when no hours have been logged against the project. */
+  netHourlyRealizationCents: Cents | null;
+  hourlySeverity: SeverityLevel | null;
   /** Null when no materials have been bought, or none were quoted. */
   materialsMarkupPct: number | null;
   materialsMarkupSeverity: SeverityLevel | null;

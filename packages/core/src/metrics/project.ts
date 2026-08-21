@@ -64,15 +64,16 @@ export function calculateProjectKPIs(
   const grossProfitCents = subtractCents(revenueCents, totalDirectCostCents);
   const grossMarginPct = percent(grossProfitCents, revenueCents) ?? 0;
 
-  // Net Hourly Realization (True earnings per hour after materials and sub costs)
+  // Net Hourly Realization (True earnings per hour after materials and sub
+  // costs). Null when nobody has worked on the project: there is no rate to
+  // report, and the business-level figure this feeds is null for the same
+  // reason.
   const netEarningsCents = subtractCents(
     revenueCents,
     addCents(actualMaterialsCostCents, subcontractorCostCents, otherDirectCostsCents)
   );
   const netHourlyRealizationCents =
-    actualLaborHours > 0
-      ? multiplyCents(netEarningsCents, 1 / actualLaborHours)
-      : project.targetHourlyRateCents;
+    actualLaborHours > 0 ? multiplyCents(netEarningsCents, 1 / actualLaborHours) : null;
 
   // Materials Markup % (Difference between quoted materials vs actual).
   // Null when there is nothing to compare: a project that has not bought
@@ -106,7 +107,10 @@ export function calculateProjectKPIs(
     grossMarginPct,
     grossMarginSeverity: getGrossMarginSeverity(grossMarginPct),
     netHourlyRealizationCents,
-    hourlySeverity: getHourlySeverity(netHourlyRealizationCents),
+    hourlySeverity:
+      netHourlyRealizationCents === null
+        ? null
+        : getHourlySeverity(netHourlyRealizationCents),
     materialsMarkupPct,
     materialsMarkupSeverity:
       materialsMarkupPct === null ? null : getMaterialMarkupSeverity(materialsMarkupPct),

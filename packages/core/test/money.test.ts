@@ -40,6 +40,23 @@ describe('parseMoney', () => {
     expect(parseMoney(input)).toBe(expected);
   });
 
+  // Bank and accounting exports write negatives in parentheses.
+  it.each([
+    ['(114.75)', -11475],
+    ['(1,234.56)', -123456],
+    ['($12.30)', -1230],
+    ['  ( 0.07 )  ', -7],
+  ])('reads the accounting negative %s as %d cents', (input, expected) => {
+    expect(parseMoney(input)).toBe(expected);
+  });
+
+  it.each(['(-5)', '(+5)', '(114.75', '114.75)', '()'])(
+    'rejects the malformed parenthesised amount %s',
+    (input) => {
+      expect(() => parseMoney(input)).toThrow(/money/i);
+    }
+  );
+
   it.each([
     ['1.004', 100],
     ['1.0049999', 100],

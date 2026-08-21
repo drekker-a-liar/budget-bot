@@ -62,7 +62,7 @@ export function DashboardMetrics({ summary, onOpenInbox }: DashboardMetricsProps
             level={summary.averageHourlySeverity}
             label={
               summary.averageHourlyRealizationCents === null
-                ? undefined
+                ? 'NO HOURS LOGGED'
                 : summary.averageHourlyRealizationCents >=
                     THRESHOLDS.HOURLY_REALIZATION.HEALTHY
                   ? 'STRONG'

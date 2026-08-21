@@ -13,9 +13,11 @@ interface SeverityBadgeProps {
 }
 
 export function SeverityBadge({ level, label, subtext, size = 'sm' }: SeverityBadgeProps) {
+  // A null level means there was nothing to measure, not that something went
+  // wrong reading it. Callers with a more specific reason pass their own label.
   let badgeClass = 'badge-neutral';
   let Icon = HelpCircle;
-  let defaultLabel = 'UNKNOWN';
+  let defaultLabel = 'NO DATA';
 
   if (level === 'healthy') {
     badgeClass = 'badge-healthy';

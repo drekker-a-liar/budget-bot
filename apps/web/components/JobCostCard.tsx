@@ -124,7 +124,14 @@ export function JobCostCard({
         <div>
           <div className="swiss-label" style={{ fontSize: '0.65rem' }}>Realized Rate</div>
           <div className="tnum" style={{ fontSize: '1rem', fontWeight: 700, color: '#f8fafc' }}>
-            {formatCents(kpi.netHourlyRealizationCents, { showCents: false })}<span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>/hr</span>
+            {kpi.netHourlyRealizationCents === null ? (
+              '\u2014'
+            ) : (
+              <>
+                {formatCents(kpi.netHourlyRealizationCents, { showCents: false })}
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>/hr</span>
+              </>
+            )}
           </div>
         </div>
       </div>

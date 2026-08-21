@@ -287,10 +287,20 @@ export default function ProjectDetailPage() {
           <div className="swiss-card">
             <div className="swiss-card-header">
               <span className="swiss-label">Realized Rate</span>
-              <SeverityBadge level={kpi.hourlySeverity} />
+              <SeverityBadge
+                level={kpi.hourlySeverity}
+                label={kpi.hourlySeverity === null ? 'NO HOURS LOGGED' : undefined}
+              />
             </div>
             <div className="tnum swiss-header" style={{ fontSize: '1.85rem', color: '#f8fafc' }}>
-              {formatCents(kpi.netHourlyRealizationCents, { showCents: false })}<span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>/hr</span>
+              {kpi.netHourlyRealizationCents === null ? (
+                '\u2014'
+              ) : (
+                <>
+                  {formatCents(kpi.netHourlyRealizationCents, { showCents: false })}
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>/hr</span>
+                </>
+              )}
             </div>
             <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
               Target: {formatCents(project.targetHourlyRateCents, { showCents: false })}/hr &bull;{' '}

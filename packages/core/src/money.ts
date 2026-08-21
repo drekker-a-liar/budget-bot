@@ -16,6 +16,7 @@ export interface FormatCentsOptions {
 }
 
 const DECIMAL = /^([+-])?(\d*)(?:\.(\d*))?$/;
+const PARENTHESISED = /^\((.*)\)$/;
 
 const formatters = new Map<boolean, Intl.NumberFormat>();
 
@@ -36,9 +37,11 @@ function invalid(input: string | number): Error {
  * Converts a decimal amount in dollars - a form field, a CSV cell, a Plaid
  * amount - into cents, rounding half away from zero.
  *
- * Accepts a leading sign, a `$`, thousands separators and surrounding space.
- * Digits are read out of the decimal string rather than multiplied by 100, so
- * `'1.005'` rounds up to 101 where `Math.round(1.005 * 100)` gives 100.
+ * Accepts a leading sign, a `$`, thousands separators, surrounding space, and
+ * the parenthesised negatives that bank and accounting exports write
+ * (`'(114.75)'`). Digits are read out of the decimal string rather than
+ * multiplied by 100, so `'1.005'` rounds up to 101 where
+ * `Math.round(1.005 * 100)` gives 100.
  */
 export function parseMoney(input: string | number): Cents {
   let text: string;
@@ -53,11 +56,17 @@ export function parseMoney(input: string | number): Cents {
     text = input.replace(/[$,]/g, '').trim();
   }
 
+  // Accounting notation: (114.75) is -114.75. A sign inside the parentheses
+  // is malformed rather than a double negative, so it is rejected below.
+  const parenthesised = PARENTHESISED.exec(text);
+  if (parenthesised) text = parenthesised[1].trim();
+
   const match = DECIMAL.exec(text);
   if (!match) throw invalid(input);
 
   const [, sign, whole = '', fraction = ''] = match;
   if (whole === '' && fraction === '') throw invalid(input);
+  if (parenthesised && sign) throw invalid(input);
 
   const padded = fraction.padEnd(3, '0');
   const magnitude =
@@ -67,7 +76,8 @@ export function parseMoney(input: string | number): Cents {
 
   if (!Number.isSafeInteger(magnitude)) throw invalid(input);
 
-  return (sign === '-' ? -magnitude : magnitude) as Cents;
+  const negative = sign === '-' || parenthesised !== null;
+  return (negative ? -magnitude : magnitude) as Cents;
 }
 
 /** Renders cents as en-US currency, e.g. `$1,234.56`. */
