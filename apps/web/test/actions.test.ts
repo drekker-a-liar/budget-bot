@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { loadActions } from './helpers/actionModules';
 
 /**
  * What a server action does before it writes anything.
@@ -77,6 +78,20 @@ const { createInvoiceAction, markInvoicePaidAction } = await import(
   '@/src/server/actions/invoices'
 );
 
+/**
+ * Every action there is, read off disk rather than typed out.
+ *
+ * The gating rule - no session, no write - is pinned against *this* list, so
+ * a new `src/server/actions/export.ts` that forgot `currentOwnerId()` fails
+ * here on the day it is written. The list below it, which carries an input per
+ * action so the signed-in half can call them for real, is checked against this
+ * one, so it cannot fall behind either.
+ */
+const DERIVED_ACTIONS = await loadActions();
+
+/** Ten today. A number here means shrinkage gets noticed, not just growth. */
+const ACTION_COUNT = 10;
+
 const A_PROJECT = { name: 'Cedar Deck', clientName: 'R Henderson', quotedTotal: '4500' };
 
 /** Every action, with an input that would otherwise succeed. */
@@ -101,14 +116,45 @@ beforeEach(() => {
   } as never);
 });
 
-describe('with no session', () => {
-  it.each(EVERY_ACTION)('%s refuses, and touches no repository', async (_name, action, input) => {
-    vi.mocked(auth).mockResolvedValue(null as never);
-
-    await expect(action(input)).resolves.toEqual({ ok: false, error: 'Unauthorized' });
-    for (const repo of Object.values(repos)) expect(repo).not.toHaveBeenCalled();
-    expect(revalidatePath).not.toHaveBeenCalled();
+describe('the actions on disk', () => {
+  it('were found, so the gating test below is not checking nothing', () => {
+    expect(DERIVED_ACTIONS.length).toBe(ACTION_COUNT);
   });
+
+  it('are all functions, whatever module they came from', () => {
+    const notFunctions = DERIVED_ACTIONS.filter(
+      (action) => typeof action.value !== 'function'
+    ).map((action) => `${action.module}:${action.name}`);
+
+    expect(notFunctions).toEqual([]);
+  });
+
+  it('are exactly the ones the signed-in tests below have an input for', () => {
+    // Those tests need a body per action and cannot be derived. This is what
+    // keeps the two lists the same list.
+    expect(DERIVED_ACTIONS.map((action) => action.name).sort()).toEqual(
+      EVERY_ACTION.map(([name]) => `${name}Action`).sort()
+    );
+  });
+});
+
+describe('with no session', () => {
+  it.each(DERIVED_ACTIONS.map((action) => [action.name, action.value] as const))(
+    '%s refuses, and touches no repository',
+    async (_name, action) => {
+      vi.mocked(auth).mockResolvedValue(null as never);
+
+      // Called with an empty input on purpose: `currentOwnerId()` is asked
+      // before anything is validated, so an action that refuses only because
+      // the body was wrong would be a different test passing by accident.
+      await expect((action as (input: unknown) => Promise<unknown>)({})).resolves.toEqual({
+        ok: false,
+        error: 'Unauthorized',
+      });
+      for (const repo of Object.values(repos)) expect(repo).not.toHaveBeenCalled();
+      expect(revalidatePath).not.toHaveBeenCalled();
+    }
+  );
 });
 
 describe('with a session', () => {

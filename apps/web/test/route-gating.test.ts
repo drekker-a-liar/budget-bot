@@ -17,7 +17,8 @@ import { isPublicPath } from '@/lib/publicPaths';
  * Components and writes in Server Actions (spec §6), so the only routes are
  * Auth.js's own, the health check, and the CSV upload - which is a route
  * because its caller is a file, not a person. `test/actions.test.ts` pins the
- * equivalent rule for actions.
+ * equivalent rule for actions, from a list it reads off
+ * `src/server/actions/` the same way this one reads `app/api/`.
  */
 
 vi.mock('@/auth', () => ({ auth: vi.fn(async () => null) }));
@@ -75,9 +76,9 @@ function requestFor(method: string, path: string): Request {
 
 const handlers: Array<[string, Handler, Request]> = [];
 for (const route of gatedRoutes) {
-  const module: Record<string, unknown> = await import(/* @vite-ignore */ route.file);
+  const imported: Record<string, unknown> = await import(/* @vite-ignore */ route.file);
   for (const method of METHODS) {
-    const handler = module[method];
+    const handler = imported[method];
     if (typeof handler === 'function') {
       handlers.push([`${method} ${route.path}`, handler as Handler, requestFor(method, route.path)]);
     }
