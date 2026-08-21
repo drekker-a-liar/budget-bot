@@ -49,7 +49,6 @@ function renderModal(overrides: Partial<Parameters<typeof QuickAddModal>[0]> = {
     projects: PROJECTS,
     isOpen: true,
     onClose: vi.fn(),
-    onCreated: vi.fn(),
     ...overrides,
   };
   render(<QuickAddModal {...props} />);
@@ -105,14 +104,13 @@ describe('QuickAddModal', () => {
       );
     });
 
-    it('closes and tells the page once the write has landed', async () => {
-      const { onClose, onCreated } = renderModal({ initialTab: 'expense' });
+    it('closes once the write has landed', async () => {
+      const { onClose } = renderModal({ initialTab: 'expense' });
 
       await userEvent.type(screen.getByLabelText(/amount/i), '145.50');
       await userEvent.click(screen.getByRole('button', { name: /record expense/i }));
 
       await waitFor(() => expect(onClose).toHaveBeenCalled());
-      expect(onCreated).toHaveBeenCalled();
     });
 
     it('shows what the server said was wrong, next to the field, and stays open', async () => {

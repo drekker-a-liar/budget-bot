@@ -69,7 +69,6 @@ describe('.env.example', () => {
       'AUTH_GITHUB_SECRET',
       'ALLOWED_EMAILS',
       'BANK_TOKEN_ENCRYPTION_KEY',
-      'USE_PG',
       // Conditional on PLAID_ENV, but conditional in preview too.
       'CRON_SECRET',
     ];

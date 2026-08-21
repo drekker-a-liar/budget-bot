@@ -30,16 +30,17 @@ const emailList = z
 const flag = z.enum(['0', '1']).default('0');
 
 export const envSchema = z.object({
-  /** Postgres the app reads and writes. */
+  /**
+   * Postgres the app reads and writes. Required everywhere, including a local
+   * checkout: there is no file-backed fallback any more, so `pnpm dev` without
+   * this refuses to start rather than showing an empty, unscoped dashboard.
+   */
   DATABASE_URL: z.string().min(1),
   /**
    * Postgres the `packages/db` suite runs against. Never read by the app; it
    * is declared here so `.env.example` and this schema stay a single list.
    */
   DATABASE_URL_TEST: z.string().optional(),
-
-  /** `1` while the legacy JSON file store still exists (removed in Task 5). */
-  USE_PG: flag,
 
   /** Signs and encrypts Auth.js cookies. */
   AUTH_SECRET: z.string().optional(),
@@ -184,12 +185,6 @@ export function assertProductionSecurity(raw: RawEnv = process.env): void {
 
   if (raw.PLAID_ENV === 'production' && !raw.CRON_SECRET) {
     problems.push('CRON_SECRET is missing, and PLAID_ENV=production means the sync endpoint is live.');
-  }
-
-  if (raw.USE_PG !== '1') {
-    problems.push(
-      'USE_PG must be 1 in production; the JSON file store is development scaffolding and holds one shared, unauthenticated copy of the books.'
-    );
   }
 
   if (raw.DEV_OWNER_EMAIL) {

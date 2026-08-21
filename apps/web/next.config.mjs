@@ -2,8 +2,8 @@ import { fileURLToPath } from 'node:url';
 
 // The monorepo keeps one .env at its root (see .env.example) and Next only
 // looks inside the app directory. Node's loader leaves variables that are
-// already set alone, so `USE_PG=1 pnpm dev` still wins over the file, and on
-// Vercel there is no file to read.
+// already set alone, so `DATABASE_URL=... pnpm dev` still wins over the file,
+// and on Vercel there is no file to read.
 try {
   process.loadEnvFile(fileURLToPath(new URL('../../.env', import.meta.url)));
 } catch {

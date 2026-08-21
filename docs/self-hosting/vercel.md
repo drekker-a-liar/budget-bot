@@ -5,6 +5,17 @@ When creating or configuring the Vercel project, set **Root Directory** to
 `apps/web` (Project Settings → General → Root Directory) — otherwise Vercel
 looks for `package.json` at the repo root and the build fails.
 
+## The database
+
+`DATABASE_URL` has to point at a Postgres 16 the deployment can reach - a Neon
+or Supabase connection string, or your own. There is no file-backed fallback:
+the app reads and writes Postgres and nothing else, so a deployment without
+this refuses to start, and so does `pnpm dev` in a local checkout. `pnpm db:up`
+starts a throwaway one on loopback for development.
+
+Migrations are applied by `pnpm db:migrate` as part of the build command; the
+generated SQL is committed, and `drizzle-kit push` is never used.
+
 ## The GitHub OAuth app
 
 Sign-in is a GitHub OAuth app you create and own (ADR 0003). Create it at

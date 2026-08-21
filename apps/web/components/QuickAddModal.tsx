@@ -30,12 +30,6 @@ interface QuickAddModalProps {
   projects: Project[];
   isOpen: boolean;
   onClose: () => void;
-  /**
-   * Fired after a successful write. Server-rendered pages need nothing here -
-   * the action revalidates them - so this exists only for the pages that still
-   * fetch their own data.
-   */
-  onCreated?: () => void;
 }
 
 /** The message against one field, if the server had one. */
@@ -55,7 +49,6 @@ export function QuickAddModal({
   projects,
   isOpen,
   onClose,
-  onCreated,
 }: QuickAddModalProps) {
   const [activeTab, setActiveTab] = useState<QuickAddTab>(initialTab);
   const [pending, startTransition] = useTransition();
@@ -120,8 +113,9 @@ export function QuickAddModal({
     setFieldErrors({});
     startTransition(async () => {
       const result = await action(payload);
+      // Nothing to refresh by hand: the action revalidated the tree, so the
+      // page behind this modal re-renders on the server with the new row.
       if (result.ok) {
-        onCreated?.();
         onClose();
         return;
       }

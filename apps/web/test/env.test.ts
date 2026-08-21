@@ -19,7 +19,6 @@ function safeProduction(): RawEnv {
   return {
     NODE_ENV: 'production',
     DATABASE_URL: 'postgres://user:pw@db.example.com:5432/budget_bot',
-    USE_PG: '1',
     AUTH_SECRET: 'x'.repeat(32),
     AUTH_GITHUB_ID: 'Iv1.0123456789abcdef',
     AUTH_GITHUB_SECRET: 'github-oauth-client-secret',
@@ -64,8 +63,6 @@ describe('assertProductionSecurity', () => {
       { BANK_TOKEN_ENCRYPTION_KEY: 'not base64 ***' },
       /BANK_TOKEN_ENCRYPTION_KEY/,
     ],
-    ['the JSON file store is still switched on', { USE_PG: '0' }, /USE_PG/],
-    ['the storage switch was never set', { USE_PG: undefined }, /USE_PG/],
     [
       'a development owner override is still set',
       { DEV_OWNER_EMAIL: 'mike@example.com' },
@@ -91,13 +88,11 @@ describe('assertProductionSecurity', () => {
       AUTH_SECRET: undefined,
       ALLOWED_EMAILS: undefined,
       BANK_TOKEN_ENCRYPTION_KEY: undefined,
-      USE_PG: '0',
     });
 
     expect(message).toMatch(/AUTH_SECRET/);
     expect(message).toMatch(/ALLOWED_EMAILS/);
     expect(message).toMatch(/BANK_TOKEN_ENCRYPTION_KEY/);
-    expect(message).toMatch(/USE_PG/);
   });
 
   it('never repeats a secret back in the failure message', () => {
