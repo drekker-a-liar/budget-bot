@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { parseMoney } from '@budget-bot/core';
+import { InvalidMoneyFieldError, readCents } from '@/lib/readCents';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -31,8 +31,8 @@ export async function POST(req: Request) {
     const inv = db.createInvoice({
       projectId,
       invoiceNumber: invoiceNumber || `INV-${Date.now().toString().slice(-6)}`,
-      amountCents: parseMoney(Number(amount) || 0),
-      depositAmountCents: parseMoney(Number(depositAmount) || 0),
+      amountCents: readCents(amount, 'amount'),
+      depositAmountCents: readCents(depositAmount, 'depositAmount', { optional: true }),
       dateIssued: dateIssued || new Date().toISOString().slice(0, 10),
       dueDate: dueDate || new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
       status: status || 'sent',
@@ -42,6 +42,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ success: true, invoice: inv }, { status: 201 });
   } catch (error) {
+    if (error instanceof InvalidMoneyFieldError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     return NextResponse.json({ error: 'Failed to create invoice' }, { status: 500 });
   }
 }

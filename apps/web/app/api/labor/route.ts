@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { parseMoney } from '@budget-bot/core';
+import { InvalidMoneyFieldError, readCents } from '@/lib/readCents';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -22,13 +22,19 @@ export async function POST(req: Request) {
       projectId,
       date: date || new Date().toISOString().slice(0, 10),
       hours: Number(hours),
-      hourlyRateCents: parseMoney(Number(hourlyRate) || 85),
+      hourlyRateCents: readCents(hourlyRate, 'hourlyRate', {
+        optional: true,
+        fallbackDollars: 85,
+      }),
       workerName: workerName || 'Mike (Owner/Lead)',
       notes: notes || '',
     });
 
     return NextResponse.json({ success: true, laborEntry: entry }, { status: 201 });
   } catch (error) {
+    if (error instanceof InvalidMoneyFieldError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     return NextResponse.json({ error: 'Failed to log labor entry' }, { status: 500 });
   }
 }

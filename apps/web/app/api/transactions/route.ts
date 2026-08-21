@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { categorizeVendor, multiplyCents, parseMoney } from '@budget-bot/core';
+import { categorizeVendor, multiplyCents } from '@budget-bot/core';
+import { InvalidMoneyFieldError, readCents } from '@/lib/readCents';
 
 export async function GET() {
   const transactions = db.getTransactions();
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
     }
 
     // Refunds arrive as negatives; expenses are stored as magnitudes.
-    const signedCents = parseMoney(amount);
+    const signedCents = readCents(amount, 'amount');
     const amountCents = signedCents < 0 ? multiplyCents(signedCents, -1) : signedCents;
 
     // Auto-categorize if not provided
@@ -57,6 +58,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ success: true, transaction: tx }, { status: 201 });
   } catch (error) {
+    if (error instanceof InvalidMoneyFieldError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     return NextResponse.json({ error: 'Failed to create transaction' }, { status: 500 });
   }
 }

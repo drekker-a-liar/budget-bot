@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { parseMoney } from '@budget-bot/core';
+import { InvalidMoneyFieldError, readCents } from '@/lib/readCents';
 
 export async function GET() {
   const projects = db.getProjects();
@@ -40,10 +40,13 @@ export async function POST(req: Request) {
       description: description || '',
       status: status || 'estimating',
       pricingType: pricingType || 'fixed',
-      quotedTotalCents: parseMoney(Number(quotedTotal) || 0),
-      quotedMaterialsCents: parseMoney(Number(quotedMaterials) || 0),
+      quotedTotalCents: readCents(quotedTotal, 'quotedTotal'),
+      quotedMaterialsCents: readCents(quotedMaterials, 'quotedMaterials', { optional: true }),
       quotedLaborHours: Number(quotedLaborHours) || 0,
-      targetHourlyRateCents: parseMoney(Number(targetHourlyRate) || 85),
+      targetHourlyRateCents: readCents(targetHourlyRate, 'targetHourlyRate', {
+        optional: true,
+        fallbackDollars: 85,
+      }),
       targetMarginPct: Number(targetMarginPct) || 45,
       startDate: startDate || new Date().toISOString().slice(0, 10),
       deadlineDate: deadlineDate || undefined,
@@ -52,6 +55,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ success: true, project }, { status: 201 });
   } catch (error) {
+    if (error instanceof InvalidMoneyFieldError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     return NextResponse.json({ error: 'Failed to create project' }, { status: 500 });
   }
 }
