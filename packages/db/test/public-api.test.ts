@@ -14,6 +14,7 @@ import {
   type TransactionUpdate,
 } from '@budget-bot/db';
 import type { TokenKeyring } from '@budget-bot/db/crypto';
+import { runMigrations } from '@budget-bot/db/migrate';
 
 /**
  * The surface `apps/web` builds its sync service against.
@@ -68,4 +69,15 @@ it('exports every type a caller needs to write a signature', () => {
   ];
 
   expect(surface).toHaveLength(10);
+});
+
+/**
+ * `./migrate` is an entry point because `apps/web`'s sync suite needs a real
+ * schema in a database of its own, and applying the committed migrations is
+ * the only way schema changes ever reach one (spec §5). Reaching for
+ * `drizzle-kit push` or a hand-rolled DDL in a test harness would mean the
+ * tests ran against a schema nothing else does.
+ */
+it('exports the migrator, so an app can build a database to test against', () => {
+  expect(typeof runMigrations).toBe('function');
 });
