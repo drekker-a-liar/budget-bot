@@ -1,6 +1,36 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { categorizeVendor, ExpenseTransaction, multiplyCents, parseMoney } from '@budget-bot/core';
+import {
+  categorizeVendor,
+  CsvRowSchema,
+  ExpenseTransaction,
+  multiplyCents,
+  parseMoney,
+} from '@budget-bot/core';
+
+type NewTransaction = Omit<ExpenseTransaction, 'id' | 'createdAt'>;
+
+interface SkippedRow {
+  /** 1-based line number in the uploaded file, so the user can find it. */
+  row: number;
+  reason: string;
+}
+
+function importResult(created: ExpenseTransaction[], errors: SkippedRow[]) {
+  return NextResponse.json({
+    success: true,
+    inserted: created.length,
+    skipped: errors.length,
+    errors,
+    created,
+  });
+}
+
+function describeIssues(error: { issues: { path: PropertyKey[]; message: string }[] }): string {
+  return error.issues
+    .map((issue) => `${issue.path.join('.') || 'row'}: ${issue.message}`)
+    .join('; ');
+}
 
 export async function POST(req: Request) {
   try {
@@ -9,7 +39,7 @@ export async function POST(req: Request) {
 
     // Simulated quick feed generator
     if (simulatedType === 'home_depot_run') {
-      const simulated: Omit<ExpenseTransaction, 'id' | 'createdAt'>[] = [
+      const simulated: NewTransaction[] = [
         {
           date: new Date().toISOString().slice(0, 10),
           description: 'THE HOME DEPOT #0421 - 3" Deck Screws, Level & Sandpaper',
@@ -35,58 +65,72 @@ export async function POST(req: Request) {
           notes: 'Paint order for living room job',
         },
       ];
-      const created = db.bulkImportTransactions(simulated);
-      return NextResponse.json({ success: true, count: created.length, created });
+      return importResult(db.bulkImportTransactions(simulated), []);
     }
 
-    // CSV Parse
+    // CSV Parse. One unreadable cell must not cost the user the rest of the
+    // file, so every row is validated on its own and the ones that fail are
+    // reported back rather than dropped in silence.
     if (rawCsv) {
       const lines = (rawCsv as string).split('\n').filter((l) => l.trim().length > 0);
-      const imported: Omit<ExpenseTransaction, 'id' | 'createdAt'>[] = [];
+      const imported: NewTransaction[] = [];
+      const errors: SkippedRow[] = [];
 
       for (let i = 0; i < lines.length; i++) {
+        const row = i + 1;
+
         // Skip header if contains 'date' or 'amount'
         if (i === 0 && (lines[i].toLowerCase().includes('date') || lines[i].toLowerCase().includes('amount'))) {
           continue;
         }
 
         const parts = lines[i].split(',').map((p) => p.trim().replace(/^["']|["']$/g, ''));
-        if (parts.length < 2) continue;
 
-        // Expect Date, Description, Amount
-        const dateStr = parts[0] || new Date().toISOString().slice(0, 10);
-        const desc = parts[1] || 'Card Purchase';
+        // Expect Date, Description, Amount. An absent date keeps this route's
+        // long-standing default of today; description and amount have to be
+        // there and have to be readable.
+        const parsed = CsvRowSchema.safeParse({
+          date: parts[0] || new Date().toISOString().slice(0, 10),
+          description: parts[1] ?? '',
+          amount: parts[2] ?? '',
+        });
+
+        if (!parsed.success) {
+          errors.push({ row, reason: describeIssues(parsed.error) });
+          continue;
+        }
+
         // Banks write refunds as negatives; expenses are stored as magnitudes.
-        const signedCents = parseMoney(parts[2] || '0');
+        const signedCents = parsed.data.amount;
         const amountCents = signedCents < 0 ? multiplyCents(signedCents, -1) : signedCents;
 
-        if (amountCents > 0) {
-          const auto = categorizeVendor(desc);
-          imported.push({
-            date: dateStr,
-            description: desc,
-            vendor: auto.cleanVendor,
-            amountCents,
-            category: auto.category,
-            paymentMethod: 'card',
-            cardLast4: '4892',
-            status: 'unassigned',
-            taxDeductible: auto.taxDeductible,
-            notes: 'Imported via CSV feed',
-          });
+        if (amountCents === 0) {
+          errors.push({ row, reason: 'amount: the amount is zero' });
+          continue;
         }
+
+        const auto = categorizeVendor(parsed.data.description);
+        imported.push({
+          date: parsed.data.date,
+          description: parsed.data.description,
+          vendor: auto.cleanVendor,
+          amountCents,
+          category: auto.category,
+          paymentMethod: 'card',
+          cardLast4: '4892',
+          status: 'unassigned',
+          taxDeductible: auto.taxDeductible,
+          notes: 'Imported via CSV feed',
+        });
       }
 
-      if (imported.length > 0) {
-        const created = db.bulkImportTransactions(imported);
-        return NextResponse.json({ success: true, count: created.length, created });
-      }
+      const created = imported.length > 0 ? db.bulkImportTransactions(imported) : [];
+      return importResult(created, errors);
     }
 
     // Direct items array
     if (Array.isArray(items) && items.length > 0) {
-      const created = db.bulkImportTransactions(items);
-      return NextResponse.json({ success: true, count: created.length, created });
+      return importResult(db.bulkImportTransactions(items), []);
     }
 
     return NextResponse.json({ error: 'No valid transaction data provided' }, { status: 400 });
