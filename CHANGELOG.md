@@ -71,7 +71,14 @@ deployed.
 - `pnpm check:security` no longer loads the repository's `.env` before reading
   the environment — it could print "safe to deploy to production" about a
   development environment. It reads `process.env`, or an explicit
-  `--env-file <path>`, and prints which of the two it judged.
+  `--from <path>` (resolved against the directory you typed it in), and prints
+  which of the two it judged.
+- `.gitleaks.toml` no longer allow-lists `.env.example` or
+  `ci/env.production.fixture` by path. A `paths` allow list makes gitleaks
+  skip the whole file before any rule runs — a planted token in either file
+  went unreported — so the configuration now exempts exactly two anchored
+  value literals and no path at all, and both files are pinned value by value
+  by tests.
 - The CSV importer accepts `MM/DD/YYYY` (US ordering) as well as ISO dates, so
   a real bank export no longer comes back with every row skipped. `DD/MM/YYYY`
   is refused rather than guessed at.

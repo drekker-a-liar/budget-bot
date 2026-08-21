@@ -77,11 +77,13 @@ disposable databases, and one clean migration is worth more than an audit
 trail of a schema nobody used.
 
 **That stops at the first production `pnpm db:migrate`.** From then on, every
-change is a *new numbered migration* and a committed one is never edited —
-drizzle's journal keys on the file's hash, so an amended file either re-runs or
-is silently skipped depending on what a given database has already recorded,
-and which of those you get is not something you find out until it has happened
-to production data.
+change is a *new numbered migration* and a committed one is never edited.
+Drizzle's migrator decides what to run by comparing each entry's journal
+timestamp against the newest one the database has recorded (it stores a hash
+of the file but never compares it), so an amended file is **always silently
+skipped** on any database that already applied the original. Nothing re-runs,
+nothing warns, and the first sign is a production schema missing the column
+you thought you added.
 
 Keep the tests that assert on the migration SQL as a string. The initial
 migration carries a hand-edited `ON DELETE set null ("project_id")` column list

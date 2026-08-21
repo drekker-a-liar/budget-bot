@@ -110,12 +110,12 @@ in your `.env`.
 
 ```bash
 pnpm check:security                                # judges this shell
-pnpm check:security --env-file .env.production.local   # judges that file, only it
+pnpm check:security --from .env.production.local   # judges that file, only it
 ```
 
 It runs the boot assertion with `NODE_ENV=production` forced, so it answers the
 question a deployment would ask. It has exactly one input and no hidden ones:
-without `--env-file` it reads `process.env` and nothing else, and with one it
+without `--from` it reads `process.env` and nothing else, and with one it
 reads that file *instead of* the environment, so a variable you happen to have
 exported cannot complete a file that a deployment will get incomplete. It
 prints which of the two it read and the names — never the values — of the

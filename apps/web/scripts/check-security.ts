@@ -19,14 +19,21 @@ import { assertProductionSecurity, type RawEnv } from '../src/env';
  * mistake this tool can make is saying *yes* too often, so it has exactly one
  * input and no hidden ones:
  *
- *   pnpm check:security                      # judges process.env
- *   pnpm check:security --env-file .env      # judges that file, and nothing else
+ *   pnpm check:security                  # judges process.env
+ *   pnpm check:security --from .env      # judges that file, and nothing else
  *
  * A file, when one is given, is judged *instead of* the environment rather
  * than merged with it - a variable exported in the shell must not be able to
  * complete a file that a deployment will get incomplete. Either way the source
  * and the variable names are printed before the verdict, so the operator can
  * see what was judged.
+ *
+ * The flag is `--from` rather than `--env-file` because node 24 scans the
+ * whole command line for its own `--env-file` option and reports a missing
+ * path itself, before this script runs. A relative path is resolved against
+ * the directory the command was typed in (`INIT_CWD`, which pnpm sets), not
+ * against `apps/web`, so `pnpm check:security --from .env` works from the
+ * repository root the way every document spells it.
  */
 
 /** Every variable `assertProductionSecurity` reads. Names only, ever. */
@@ -49,21 +56,21 @@ function fail(message: string): never {
   process.exit(1);
 }
 
-/** `--env-file <path>`, or nothing. Anything else is a mistake worth stopping for. */
+/** `--from <path>`, or nothing. Anything else is a mistake worth stopping for. */
 function readArgs(argv: string[]): { envFile: string | null } {
   let envFile: string | null = null;
 
   for (let i = 0; i < argv.length; i += 1) {
-    if (argv[i] !== '--env-file') {
+    if (argv[i] !== '--from') {
       throw new UsageError(
-        `Unrecognised argument '${argv[i]}'. Usage: check-security [--env-file <path>]`
+        `Unrecognised argument '${argv[i]}'. Usage: check-security [--from <path>]`
       );
     }
     const path = argv[i + 1];
     if (!path) {
-      throw new UsageError('--env-file needs a path after it, e.g. --env-file .env');
+      throw new UsageError('--from needs a path after it, e.g. --from .env');
     }
-    envFile = resolve(path);
+    envFile = resolve(process.env.INIT_CWD ?? process.cwd(), path);
     i += 1;
   }
 

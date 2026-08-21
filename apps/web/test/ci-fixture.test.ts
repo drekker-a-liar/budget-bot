@@ -56,6 +56,23 @@ describe('the CI production fixture', () => {
     expect(Object.keys(fixture).length).toBeGreaterThan(5);
   });
 
+  it('contains exactly the documented variables, every one pinned by value', () => {
+    // The header promises that changing any value here fails a test, whether
+    // or not gitleaks would recognise the replacement. That has to include
+    // the two that are not secret-shaped by name: a connection string can
+    // carry a real password, and the allow list decides who gets in.
+    expect(fixture).toEqual({
+      DATABASE_URL: 'postgres://budget_bot:budget_bot@127.0.0.1:5432/budget_bot',
+      AUTH_SECRET: EXPECTED_DUMMIES.AUTH_SECRET,
+      AUTH_GITHUB_ID: GITHUB_CLIENT_ID,
+      AUTH_GITHUB_SECRET: EXPECTED_DUMMIES.AUTH_GITHUB_SECRET,
+      ALLOWED_EMAILS: 'ci@example.com',
+      BANK_TOKEN_ENCRYPTION_KEY: EXPECTED_DUMMIES.BANK_TOKEN_ENCRYPTION_KEY,
+      PLAID_ENV: 'sandbox',
+      E2E: '0',
+    });
+  });
+
   it('holds the documented dummy for every secret-shaped variable, and no others', () => {
     const secrets = Object.keys(fixture).filter((name) => SECRET_SHAPED.test(name));
 

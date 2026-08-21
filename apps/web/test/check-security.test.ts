@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
  * `.env` sitting on the machine supplied it. A security tool whose only
  * possible error is saying *yes* too often cannot have a hidden input, so it
  * now reads `process.env` and nothing else unless it is handed an explicit
- * `--env-file`, and it says out loud which of the two it did.
+ * `--from`, and it says out loud which of the two it did.
  *
  * These run the real script in a child process, because the defect was never
  * in the assertion - it was in what the script fed it.
@@ -126,11 +126,11 @@ describe('reading the environment', () => {
   });
 });
 
-describe('reading an explicit --env-file', () => {
+describe('reading an explicit --from', () => {
   it('judges the file, and names it as the source', () => {
     const path = envFile(COMPLETE);
 
-    const run = runCheck({}, ['--env-file', path]);
+    const run = runCheck({}, ['--from', path]);
 
     expect(run.status).toBe(0);
     expect(run.stdout).toContain(`Source: ${path}`);
@@ -144,7 +144,7 @@ describe('reading an explicit --env-file', () => {
     const { ALLOWED_EMAILS: _allowed, ...withoutAllowList } = COMPLETE;
     const path = envFile(withoutAllowList);
 
-    const run = runCheck({ ALLOWED_EMAILS: 'shell@example.com' }, ['--env-file', path]);
+    const run = runCheck({ ALLOWED_EMAILS: 'shell@example.com' }, ['--from', path]);
 
     expect(run.status).toBe(1);
     expect(run.stderr).toMatch(/ALLOWED_EMAILS/);
@@ -167,32 +167,40 @@ describe('reading an explicit --env-file', () => {
       ].join('\n')
     );
 
-    const run = runCheck({}, ['--env-file', path]);
+    const run = runCheck({}, ['--from', path]);
 
     expect(run.status).toBe(0);
   });
 
-  it('refuses a file it cannot read rather than falling back to the environment', () => {
-    const run = runCheck(COMPLETE, ['--env-file', join(WEB, 'no-such-file.env')]);
+  it('resolves a relative path against where the command was typed, not against apps/web', () => {
+    // `pnpm check:security --from .env` from the repository root is how every
+    // document spells it. pnpm runs the script with `apps/web` as its working
+    // directory and records the caller's directory in `INIT_CWD`; a path
+    // resolved against the script's own cwd fails loudly on exactly the
+    // invocation the docs recommend.
+    const path = envFile(COMPLETE);
 
-    // Not `toBe(1)`: node scans the whole command line for its own
-    // `--env-file` flag and refuses to start (exit 9) when the path does not
-    // exist, before this script runs at all. Verified on node 24: the flag is
-    // still handed to the script in `process.argv` and node does *not* load it
-    // into `process.env`, so the only thing its pre-flight changes is which
-    // process reports the missing file. What matters either way is that a path
-    // that is not there is a failure and is named, never a silent fall back to
-    // whatever the shell happens to hold.
-    expect(run.status).not.toBe(0);
+    const run = runCheck({ INIT_CWD: dirname(path) }, ['--from', 'pulled.env']);
+
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain(`Source: ${path}`);
+  });
+
+  it('refuses a file it cannot read rather than falling back to the environment', () => {
+    // The flag is `--from`, not `--env-file`, precisely so that node's own
+    // `--env-file` pre-flight never gets a say: this script owns the error.
+    const run = runCheck(COMPLETE, ['--from', join(WEB, 'no-such-file.env')]);
+
+    expect(run.status).toBe(1);
     expect(run.stderr).toMatch(/no-such-file\.env/);
     expect(run.stdout).not.toContain('safe to deploy to production');
   });
 
-  it('refuses `--env-file` with no path after it', () => {
-    const run = runCheck(COMPLETE, ['--env-file']);
+  it('refuses `--from` with no path after it', () => {
+    const run = runCheck(COMPLETE, ['--from']);
 
     expect(run.status).toBe(1);
-    expect(run.stderr).toMatch(/--env-file/);
+    expect(run.stderr).toMatch(/--from/);
   });
 
   it('refuses an argument it does not recognise rather than ignoring it', () => {

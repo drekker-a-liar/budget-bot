@@ -66,10 +66,10 @@ Before deploying, run the same judgement locally against the same values:
 
 ```bash
 vercel env pull --environment=production .env.production.local
-pnpm check:security --env-file .env.production.local
+pnpm check:security --from .env.production.local
 ```
 
-`--env-file` judges that file and *only* that file: variables exported in your
+`--from` judges that file and *only* that file: variables exported in your
 shell, and any other `.env` lying about, are ignored on purpose. Without the
 flag it judges the shell's variables instead. Either way it prints which of the
 two it read, and the names — never the values — of the variables it found, so
@@ -156,11 +156,17 @@ deployment that is not protecting anything while looking healthy.
 So break it once, on purpose:
 
 1. Remove `ALLOWED_EMAILS` from the Production environment and redeploy.
-2. `curl -I https://<your-host>/` and `curl -s https://<your-host>/api/health`.
-   **Every route must return 500**, `/api/health` included — it is public, so
-   if anything still answers 200 the throw is not fatal here and the boot
-   assertion is not the guarantee this document says it is. Say so in an issue
-   rather than working around it.
+2. `curl -s -o /dev/null -w '%{http_code}\n' https://<your-host>/api/health`
+   and `curl -s -o /dev/null -w '%{http_code}\n' https://<your-host>/login`.
+   **Both must return 500.** Those two are the right probes because they
+   reach the Node runtime where `instrumentation.ts` runs: `/api/health` is
+   public and `/login` is the one page the middleware lets through. Do *not*
+   read anything into `/` — with no session cookie it is answered `302` by the
+   edge middleware before any function boots, and static assets come from the
+   CDN; a 302 or a 200 there proves nothing either way. If `/api/health` or
+   `/login` answers anything but 500, the throw is not fatal here and the boot
+   assertion is not the guarantee this document says it is. Say so in an
+   issue rather than working around it.
 3. Put `ALLOWED_EMAILS` back and redeploy. Check `/api/health` answers
    `{"ok":true,"authConfigured":true}` again before you walk away.
 

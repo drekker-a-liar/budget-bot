@@ -58,7 +58,7 @@ pnpm typecheck                # tsc --noEmit, every workspace
 pnpm test                     # vitest, every workspace
 pnpm build                    # next build
 pnpm check:security           # judge this shell's variables as a production environment
-pnpm check:security --env-file .env    # judge that file instead, and only it
+pnpm check:security --from .env    # judge that file instead, and only it
 
 pnpm --filter @budget-bot/db db:test:setup   # once: create the test database
 pnpm e2e                                     # Playwright, needs the above
