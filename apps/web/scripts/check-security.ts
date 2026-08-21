@@ -1,4 +1,5 @@
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { assertProductionSecurity, type RawEnv } from '../src/env';
 
 /**
@@ -9,20 +10,115 @@ import { assertProductionSecurity, type RawEnv } from '../src/env';
  * variables a production deployment would get - run it against the output of
  * `vercel env pull --environment=production`, or against a shell that has the
  * same variables exported.
+ *
+ * ## One input, and it is named out loud
+ *
+ * This used to load the repository's `.env` first, and could therefore print
+ * "safe to deploy to production" about an environment that was missing
+ * `ALLOWED_EMAILS`, because the developer's own `.env` supplied it. The only
+ * mistake this tool can make is saying *yes* too often, so it has exactly one
+ * input and no hidden ones:
+ *
+ *   pnpm check:security                      # judges process.env
+ *   pnpm check:security --env-file .env      # judges that file, and nothing else
+ *
+ * A file, when one is given, is judged *instead of* the environment rather
+ * than merged with it - a variable exported in the shell must not be able to
+ * complete a file that a deployment will get incomplete. Either way the source
+ * and the variable names are printed before the verdict, so the operator can
+ * see what was judged.
  */
-try {
-  process.loadEnvFile(fileURLToPath(new URL('../../../.env', import.meta.url)));
-} catch {
-  // No .env checked out; CI and `vercel env pull` put them in the environment.
+
+/** Every variable `assertProductionSecurity` reads. Names only, ever. */
+const CHECKED = [
+  'ALLOWED_EMAILS',
+  'AUTH_GITHUB_ID',
+  'AUTH_GITHUB_SECRET',
+  'AUTH_SECRET',
+  'BANK_TOKEN_ENCRYPTION_KEY',
+  'CRON_SECRET',
+  'DEV_OWNER_EMAIL',
+  'E2E',
+  'PLAID_ENV',
+] as const;
+
+class UsageError extends Error {}
+
+function fail(message: string): never {
+  console.error(message);
+  process.exit(1);
 }
 
-const environment: RawEnv = { ...process.env, NODE_ENV: 'production' };
+/** `--env-file <path>`, or nothing. Anything else is a mistake worth stopping for. */
+function readArgs(argv: string[]): { envFile: string | null } {
+  let envFile: string | null = null;
+
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] !== '--env-file') {
+      throw new UsageError(
+        `Unrecognised argument '${argv[i]}'. Usage: check-security [--env-file <path>]`
+      );
+    }
+    const path = argv[i + 1];
+    if (!path) {
+      throw new UsageError('--env-file needs a path after it, e.g. --env-file .env');
+    }
+    envFile = resolve(path);
+    i += 1;
+  }
+
+  return { envFile };
+}
+
+/**
+ * `KEY=value` lines, the way `vercel env pull` writes them: comments, blank
+ * lines, `export ` prefixes and surrounding quotes are all things a real
+ * pulled file contains. Deliberately small - this reads one file to judge it,
+ * it is not a dotenv implementation, and nothing here is loaded into
+ * `process.env`.
+ */
+function parseEnvFile(path: string): RawEnv {
+  let contents: string;
+  try {
+    contents = readFileSync(path, 'utf8');
+  } catch (error) {
+    throw new UsageError(`Cannot read ${path}: ${(error as Error).message}`);
+  }
+
+  const env: RawEnv = {};
+  for (const line of contents.split('\n')) {
+    const match = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/.exec(line);
+    if (!match) continue;
+    const [, name, raw] = match;
+    const quoted = /^(['"])(.*)\1$/.exec(raw);
+    env[name] = quoted ? quoted[2] : raw;
+  }
+  return env;
+}
+
+let source: string;
+let environment: RawEnv;
+
+try {
+  const { envFile } = readArgs(process.argv.slice(2));
+  source = envFile ?? 'environment only';
+  environment = { ...(envFile ? parseEnvFile(envFile) : process.env), NODE_ENV: 'production' };
+} catch (error) {
+  if (error instanceof UsageError) fail(error.message);
+  throw error;
+}
+
+const set = CHECKED.filter((name) => environment[name] !== undefined && environment[name] !== '');
+const unset = CHECKED.filter((name) => !set.includes(name));
+
+console.log(`Source: ${source}`);
+console.log(`Set: ${set.length > 0 ? set.join(', ') : '(nothing this check reads)'}`);
+console.log(`Not set: ${unset.length > 0 ? unset.join(', ') : '(nothing)'}`);
 
 try {
   assertProductionSecurity(environment);
 } catch (error) {
-  console.error((error as Error).message);
-  process.exit(1);
+  fail((error as Error).message);
 }
 
 console.log('Security check passed: this environment is safe to deploy to production.');

@@ -100,10 +100,11 @@ describe('the CI production fixture', () => {
 /**
  * The same two runs CI makes of `pnpm check:security`, as a unit test.
  *
- * Worth having here as well as in CI: `check:security` loads the repository's
- * `.env` if one exists, so on a developer's machine the failing case can pass
- * for reasons that have nothing to do with the fixture. This reads the file and
- * nothing else.
+ * Worth having here as well as in CI: this calls the assertion directly with
+ * the fixture and nothing else, so it says something about the fixture even on
+ * a machine whose shell has half a production environment exported into it.
+ * What the *script* judges - and that it never quietly adds a `.env` of its
+ * own to it - is pinned separately, in `check-security.test.ts`.
  */
 describe('the boot assertion, judging the fixture', () => {
   const production: RawEnv = { ...fixture, NODE_ENV: 'production' };

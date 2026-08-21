@@ -57,7 +57,8 @@ pnpm lint                     # eslint, every workspace
 pnpm typecheck                # tsc --noEmit, every workspace
 pnpm test                     # vitest, every workspace
 pnpm build                    # next build
-pnpm check:security           # judge this environment as a production one
+pnpm check:security           # judge this shell's variables as a production environment
+pnpm check:security --env-file .env    # judge that file instead, and only it
 
 pnpm --filter @budget-bot/db db:test:setup   # once: create the test database
 pnpm e2e                                     # Playwright, needs the above

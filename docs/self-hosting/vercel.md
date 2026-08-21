@@ -65,9 +65,19 @@ where.
 Before deploying, run the same judgement locally against the same values:
 
 ```bash
-vercel env pull --environment=production .env
-pnpm check:security
+vercel env pull --environment=production .env.production.local
+pnpm check:security --env-file .env.production.local
 ```
+
+`--env-file` judges that file and *only* that file: variables exported in your
+shell, and any other `.env` lying about, are ignored on purpose. Without the
+flag it judges the shell's variables instead. Either way it prints which of the
+two it read, and the names — never the values — of the variables it found, so
+you can see what the verdict is about before you believe it.
+
+The pulled file is called `.env.production.local` rather than `.env` for two
+reasons: `.gitignore` covers `.env*.local`, and a file of production secrets
+that your next `pnpm dev` picks up is its own accident.
 
 ## 5. First deploy
 
