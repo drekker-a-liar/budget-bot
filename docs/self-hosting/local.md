@@ -185,6 +185,12 @@ Three things about how it behaves:
 A failure prints the mapped Plaid code alone — `Plaid Sandbox smoke failed:
 INVALID_FIELD` — and never a token, an item id or a transaction descriptor.
 
+Sandbox costs nothing and has no Item limit. Production does, and it is not a
+number this file can tell you: **re-check the current Trial-tier limits in the
+Plaid dashboard before you budget on the 10-Item figure**
+`docs/self-hosting/vercel.md` quotes. Plaid sets it, and both documents are
+snapshots of when they were written.
+
 ## Judging an environment before deploying it
 
 ```bash

@@ -124,10 +124,11 @@ it proved by tests that need no Plaid credentials.
   nothing yet: there is no scheduled sync for it to protect.
 - **No re-auth.** When a bank asks the owner to sign in again the connection
   records `reauth_required` and the screen says so, and that is as far as it
-  goes. Worse, pressing **Connect a bank** for a bank that is already linked
-  fails on the unique `(provider, item_id)` and reaches the browser as
-  "Something went wrong connecting to the server" — Link's update mode is the
-  fix and it is Phase 3.
+  goes. Pressing **Connect a bank** for a bank that is already linked now gets
+  a readable error — "This bank is already connected. Use Sync now on the
+  existing connection." — rather than a message about the server; making it
+  re-authenticate the existing connection instead of refusing is Link's update
+  mode, and it is Phase 3.
 - **No disconnect.** There is no way to remove a connection from the UI;
   `removeItem` exists on the provider and nothing calls it.
 - **CSV import does not dedupe against a bank feed**, or against a second
@@ -139,6 +140,36 @@ it proved by tests that need no Plaid credentials.
   written by a single statement and share a `created_at`, so the table's order
   is a tie-break on a random uuid and can differ between two databases holding
   the same data.
+
+### Fixed after the whole-branch review
+
+- **`.env.example` told a self-hoster to give a preview `PLAID_ENV=sandbox`
+  with Sandbox keys**, which is a preview that refuses to boot — Vercel builds
+  previews with `NODE_ENV=production`, and the assertion refuses Sandbox under
+  that unconditionally. `docs/self-hosting/vercel.md` said the opposite. Both
+  now say: production with live keys, previews with nothing, Sandbox keys on a
+  development machine. There is deliberately no `VERCEL_ENV` exemption, and
+  `vercel.md` and the spec both record why.
+- **Reconnecting an already-linked bank blamed the server.** The unique
+  `(provider, item_id)` violation escaped `exchangePublicTokenAction` — the
+  file's one write outside a `try` — and the browser showed "Something went
+  wrong connecting to the server. Try again.", after the public token had
+  already been spent. It is now `ConnectionAlreadyExistsError` and a sentence
+  that names the bank and points at **Sync now**.
+- **The header pill could label a checking account as the card.** The card
+  profile is now the first enabled *credit* account, which is what spec §6 said
+  all along, and null when there is none.
+- **`calculateWeeklyCashFlow` never learned about `postedAt`.** The weekly cash
+  KPI buckets a bank row by when it posted, falling back to its date — spec
+  §2.3's last clause, which had reached neither the plan nor a task report.
+- **A sync that threw left the button reading "Syncing…"** until the next
+  navigation. Same try/catch/finally the connect path already had.
+- **The smoke script printed `UNKNOWN`** for
+  `TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION`, and echoed an unrecognised
+  argument back — so `pnpm plaid:smoke $PLAID_SECRET` put a secret in the
+  scrollback. Both fixed, both pinned.
+- **`db:seed --reset` now proves its blast radius**: the test keeps a second
+  owner's connection in the database and asserts it survives.
 
 ## v0.1.0-foundation — unreleased
 

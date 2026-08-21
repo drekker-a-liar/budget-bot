@@ -254,8 +254,10 @@ Production access. Each self-hoster applies with their own Plaid account —
 there is no shared application to inherit, and no key in this repository.
 
 Plaid's free Trial tier covers 10 live Items at the time of writing, which is
-several more than one person's business needs. Check the current limits before
-you plan around that number.
+several more than one person's business needs. **Re-check the current
+Trial-tier limits in the Plaid dashboard before you budget on that number** -
+it is a figure Plaid sets and can change, this document is a snapshot of when
+it was written, and the dashboard is the only place it is authoritative.
 
 Until that approval lands, leave the three variables unset. The connections
 screen says Plaid is not configured, and CSV import and manual entry carry on.
