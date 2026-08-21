@@ -81,15 +81,58 @@ describe('.env.example', () => {
     }
   });
 
-  it('leaves every secret blank', () => {
-    const values = readFileSync(EXAMPLE, 'utf8')
-      .split('\n')
-      .map((line) => /^(AUTH_SECRET|AUTH_GITHUB_SECRET|CRON_SECRET|BANK_TOKEN_ENCRYPTION_KEY[A-Z_]*)=(.*)$/.exec(line.trim()))
-      .filter((match): match is RegExpExecArray => Boolean(match));
+  /**
+   * Nothing in this file may hold a secret, and the rule is applied by *shape
+   * of name* rather than to a list somebody typed - a list is exactly what a
+   * new `STRIPE_API_KEY=sk_live_...` would not be on.
+   *
+   * This is also the compensating control for `.gitleaks.toml`, which exempts
+   * two literals by value and no file by path: the scanner catches anything
+   * secret-shaped, and this catches a documented placeholder quietly acquiring
+   * a value.
+   */
+  const SECRET_SHAPED = /SECRET|KEY|TOKEN|PASSWORD/i;
 
-    expect(values.length).toBe(5);
-    for (const [, name, value] of values) {
+  function assignmentsIn(path: string): Array<[string, string]> {
+    return readFileSync(path, 'utf8')
+      .split('\n')
+      .map((line) => /^([A-Z][A-Z0-9_]*)=(.*)$/.exec(line.trim()))
+      .filter((match): match is RegExpExecArray => Boolean(match))
+      .map((match): [string, string] => [match[1], match[2]]);
+  }
+
+  it('leaves every secret-shaped variable blank', () => {
+    const secrets = assignmentsIn(EXAMPLE).filter(([name]) => SECRET_SHAPED.test(name));
+
+    // Guards against the filter quietly matching nothing.
+    expect(secrets.map(([name]) => name)).toEqual([
+      'AUTH_SECRET',
+      'AUTH_GITHUB_SECRET',
+      'BANK_TOKEN_ENCRYPTION_KEY',
+      'BANK_TOKEN_ENCRYPTION_KEY_PREVIOUS',
+      'CRON_SECRET',
+    ]);
+
+    for (const [name, value] of secrets) {
       expect(value, `${name} has a value in .env.example`).toBe('');
     }
+  });
+
+  /**
+   * The variables that are *not* secret-shaped still get looked at, because
+   * "secret-shaped" is a heuristic and a connection string is a credential
+   * whatever it is called. These are the four that carry a value, and each one
+   * is a local default or a placeholder address.
+   */
+  it('carries nothing but local defaults in the variables that do have values', () => {
+    const filled = assignmentsIn(EXAMPLE).filter(([, value]) => value !== '');
+
+    expect(Object.fromEntries(filled)).toEqual({
+      DATABASE_URL: 'postgres://budget_bot:budget_bot@localhost:5433/budget_bot',
+      DATABASE_URL_TEST: 'postgres://budget_bot:budget_bot@localhost:5433/budget_bot_test',
+      ALLOWED_EMAILS: 'you@example.com',
+      SEED_DEMO: '0',
+      E2E: '0',
+    });
   });
 });

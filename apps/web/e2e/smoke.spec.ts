@@ -48,7 +48,13 @@ test.describe('with no session', () => {
   });
 });
 
-test.describe('signed in through the test-only door', () => {
+/**
+ * `.serial`, because these four are one journey and share a page: each depends
+ * on what the last one left behind. Without it, a failure halfway through
+ * reports three more failures that are only consequences of the first, and the
+ * one line worth reading is buried. Serial mode skips the rest instead.
+ */
+test.describe.serial('signed in through the test-only door', () => {
   let page: Page;
 
   test.beforeAll(async ({ browser }) => {

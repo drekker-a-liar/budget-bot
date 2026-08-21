@@ -97,6 +97,15 @@ Both are covered by tests (`apps/web/test/env.test.ts`,
 `apps/web/test/e2e-door.test.ts`). If you are ever tempted to set `E2E` on a
 deployment: it will not start.
 
+**But note what that leaves.** Both guards key on `NODE_ENV=production`, and
+`next dev` is not production — so under `next dev` the `E2E` flag is the *only*
+thing holding the door shut, and anyone who can reach the port can sign in as
+any allow-listed address without a password. Never run `next dev` with `E2E=1`
+on a host reachable from anywhere but your own machine, and never leave `E2E=1`
+exported in a shell you then use for ordinary development. The suite sets it on
+the server it spawns and nowhere else, which is why it is set there rather than
+in your `.env`.
+
 ## Git hooks
 
 `pnpm install` installs them (lefthook). Pre-commit runs `gitleaks` over what

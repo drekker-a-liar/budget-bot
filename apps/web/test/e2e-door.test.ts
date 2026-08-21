@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Account, User } from 'next-auth';
 import type { Adapter, AdapterSession, AdapterUser } from 'next-auth/adapters';
 import { authConfig } from '@/auth.config';
@@ -207,6 +207,11 @@ describe('minting the session the app can actually read', () => {
     name: 'Mike',
   } as AdapterUser;
 
+  /** Minting re-checks the door itself, so the door has to be open. */
+  beforeEach(() => {
+    for (const [key, value] of Object.entries(doorOpen())) vi.stubEnv(key, value);
+  });
+
   it('opens a session for a user who already exists', async () => {
     const { adapter, created, sessions } = fakeAdapter(existingUser);
 
@@ -263,5 +268,50 @@ describe('minting the session the app can actually read', () => {
 
   it('says which adapter methods it needed when they are missing', async () => {
     await expect(mintE2eDatabaseSession({} as Adapter, ALLOWED)).rejects.toThrow(/createSession/);
+  });
+
+  /**
+   * This function creates a user and hands out a session, which is the whole of
+   * what signing in means. It must therefore be safe read on its own, not only
+   * safe because of who happens to call it - so it asks the same three
+   * questions the provider asked, again.
+   */
+  describe('asking the door for itself', () => {
+    it('refuses an address nobody allow-listed', async () => {
+      const { adapter, created, sessions } = fakeAdapter(null);
+
+      await expect(
+        mintE2eDatabaseSession(adapter, 'stranger@example.com')
+      ).rejects.toThrow(/ALLOWED_EMAILS/);
+      expect(created).toEqual([]);
+      expect(sessions).toEqual([]);
+    });
+
+    it('refuses when the flag is off, even for an allow-listed address', async () => {
+      vi.stubEnv('E2E', '0');
+      const { adapter, created, sessions } = fakeAdapter(existingUser);
+
+      await expect(mintE2eDatabaseSession(adapter, ALLOWED)).rejects.toThrow(/E2E door/);
+      expect(created).toEqual([]);
+      expect(sessions).toEqual([]);
+    });
+
+    it('refuses in production, flag or no flag', async () => {
+      vi.stubEnv('NODE_ENV', 'production');
+      const { adapter, sessions } = fakeAdapter(existingUser);
+
+      await expect(mintE2eDatabaseSession(adapter, ALLOWED)).rejects.toThrow();
+      expect(sessions).toEqual([]);
+    });
+
+    it('never quotes the address back, because this message reaches logs', async () => {
+      const { adapter } = fakeAdapter(null);
+
+      const error = await mintE2eDatabaseSession(adapter, 'stranger@example.com').catch(
+        (thrown: Error) => thrown
+      );
+
+      expect((error as Error).message).not.toContain('stranger@example.com');
+    });
   });
 });

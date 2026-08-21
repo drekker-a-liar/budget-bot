@@ -1,4 +1,5 @@
 import type { Adapter } from 'next-auth/adapters';
+import { isE2eEmailAllowed } from '@/lib/e2eProvider';
 
 /**
  * Turning an authorized E2E sign-in into a real database session.
@@ -44,6 +45,13 @@ function requireMethods(adapter: Adapter): SessionMintingAdapter {
  * creates one on an OAuth sign-in, and a first E2E run has no user yet. It is
  * the same row a GitHub sign-in would have made: the seed script, which
  * refuses to invent a user of its own, finds it by address afterwards.
+ *
+ * This function creates a user and hands out a session, which is the whole of
+ * what signing in means - so it re-asks whether the door is open and whether
+ * this address may come through it, rather than trusting that whoever called
+ * it already did. It is only ever reached from `auth.ts`'s `jwt.encode` hook
+ * today; that is a fact about today, and this file has to be safe read on its
+ * own.
  */
 export async function mintE2eDatabaseSession(
   adapter: Adapter,
@@ -54,6 +62,13 @@ export async function mintE2eDatabaseSession(
 
   const address = email?.trim().toLowerCase();
   if (!address) throw new Error('The E2E sign-in produced no email address to sign in.');
+
+  if (!isE2eEmailAllowed(address)) {
+    // Never quotes the address back: this message reaches logs.
+    throw new Error(
+      'Refusing to open a session: the E2E door is shut, this is production, or that address is not on ALLOWED_EMAILS.'
+    );
+  }
 
   const user =
     (await getUserByEmail(address)) ??
