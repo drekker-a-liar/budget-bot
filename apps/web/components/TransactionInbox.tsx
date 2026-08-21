@@ -15,8 +15,9 @@ interface TransactionInboxProps {
   projects: Project[];
   onAssignProject: (transactionId: string, projectId: string) => void;
   onUpdateCategory: (transactionId: string, category: ExpenseCategory) => void;
-  /** The file itself: the page uploads it, this component only chooses it. */
-  onImportCsv: (file: File) => void;
+  /** The chosen file's text: read here so the page can POST it as a raw
+   * text/csv body, with no FormData in between. */
+  onImportCsv: (text: string) => void;
   onDeleteTransaction: (transactionId: string) => void;
 }
 
@@ -57,9 +58,10 @@ export function TransactionInbox({
   const handleFileChosen = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    onImportCsv(file);
+    void file.text().then(onImportCsv);
     // Cleared so choosing the same file twice still fires a change: uploading
-    // one statement again is something people do on purpose.
+    // one statement again is something people do on purpose. Safe to do
+    // immediately - `file` above is already the reference this read needs.
     event.target.value = '';
   };
 

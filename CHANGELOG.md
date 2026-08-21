@@ -4,6 +4,21 @@ Notable changes, newest first. Versions follow the sub-project sequence in the
 [architecture](docs/superpowers/specs/2026-08-20-system-architecture-design.md)
 rather than a release cadence.
 
+## v0.2.0-plaid-sandbox — unreleased
+
+Phase 2: **Plaid Sandbox Connector.** In progress.
+
+### CSV upload is `text/csv` only
+
+- `POST /api/import/csv` now accepts only a raw `text/csv` body;
+  `multipart/form-data` is refused with `415` before the body is read. The
+  client sends the file's text directly (`file.text()`), so the route no
+  longer buffers a `FormData` parse or re-checks a part's size against the
+  cap - `Content-Length` and the capped stream read are the only guards left,
+  and they cover the one shape the route now accepts.
+- An import batch no longer carries a filename: a raw body has no form field
+  to read one from.
+
 ## v0.1.0-foundation — unreleased
 
 Phase 1: **Foundation + Locked Door.** The application became a monorepo with a

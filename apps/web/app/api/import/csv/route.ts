@@ -15,8 +15,13 @@ import { currentOwnerId } from '@/lib/ownerSession';
  * The only REST route this application keeps besides `/api/auth/*` and
  * `/api/health` (spec §6). Everything else a person does is a server action;
  * this stays a route because the caller is a file upload, which is a machine
- * shape - a `multipart/form-data` body or a raw `text/csv` one - and because a
- * self-hoster with a cron job and `curl` should be able to feed it.
+ * shape, and because a self-hoster with a cron job and `curl` should be able
+ * to feed it.
+ *
+ * The body is a raw `text/csv` request, nothing else. `multipart/form-data`
+ * is refused with `415` rather than parsed: a form field is a shape built for
+ * a browser posting to itself, and buffering it just to pull one file back
+ * out was a detour the client no longer needs to take.
  *
  * Parsing lives in `@budget-bot/bank-connectors`; what happens here is the
  * part that is about *this* application: whose rows these are, what they get
@@ -53,13 +58,12 @@ const CSV_IMPORT_MAX_BYTES = 5 * 1024 * 1024;
 
 interface Upload {
   text: string;
-  filename: string | null;
 }
 
 /** A refusal, distinguishable from a parse failure by its status. */
 class UploadRefused extends Error {
   constructor(
-    readonly status: 400 | 411 | 413,
+    readonly status: 400 | 411 | 413 | 415,
     message: string
   ) {
     super(message);
@@ -120,28 +124,20 @@ async function readCappedText(req: Request): Promise<string> {
   return new TextDecoder().decode(Buffer.concat(chunks));
 }
 
-/** The file, however the caller chose to send it. */
+/** The file, sent as a raw `text/csv` body. */
 async function readUpload(req: Request): Promise<Upload | null> {
-  assertDeclaredSizeIsSane(req);
+  // Checked before the length or the body: a caller sending the wrong shape
+  // entirely (a browser form, a JSON blob) is told so without this route
+  // first pretending to care how many bytes it declared.
   const contentType = req.headers.get('content-type') ?? '';
-
-  if (contentType.includes('multipart/form-data')) {
-    // The declared length has already been checked, so `formData()` is not
-    // being handed an unbounded body. The file itself is checked as well,
-    // because one part of a multipart body can be far larger than the header
-    // suggested if the header was wrong.
-    const form = await req.formData();
-    const file = form.get('file');
-    if (!(file instanceof File)) return null;
-    if (file.size > CSV_IMPORT_MAX_BYTES) {
-      throw new UploadRefused(413, 'That file is larger than the 5 MiB import limit.');
-    }
-    return { text: await file.text(), filename: file.name || null };
+  if (!contentType.startsWith('text/csv')) {
+    throw new UploadRefused(415, 'Send the file contents as text/csv');
   }
 
+  assertDeclaredSizeIsSane(req);
   const text = await readCappedText(req);
   if (text.trim() === '') return null;
-  return { text, filename: null };
+  return { text };
 }
 
 function badRequest(message: string): NextResponse {
@@ -159,11 +155,12 @@ export async function POST(req: Request): Promise<NextResponse> {
     if (error instanceof UploadRefused) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
-    // A malformed multipart body is the caller's mistake, not a fault here.
+    // Nothing below this line is expected to throw anything else, but an
+    // empty body is the caller's mistake either way, not a fault here.
     upload = null;
   }
   if (!upload) {
-    return badRequest('No CSV file. Send multipart/form-data with a `file` field, or a text/csv body.');
+    return badRequest('No CSV file. Send the file contents as a text/csv body.');
   }
 
   let parsed: { rows: ReturnType<typeof CsvProvider.parse>['rows']; errors: CsvRowError[] };
@@ -203,7 +200,9 @@ export async function POST(req: Request): Promise<NextResponse> {
     const { batch } = await importsRepo.importCsvBatch(getDb(), ownerId, {
       batch: {
         source: 'csv',
-        filename: upload.filename,
+        // A raw text/csv body carries no filename; unlike a form post, there
+        // is no field to read one from.
+        filename: null,
         rowCount: items.length + parsed.errors.length,
         insertedCount: items.length,
         skippedCount: parsed.errors.length,

@@ -100,8 +100,9 @@ ever stored, processed or transmitted.
 
 ## Uploading a bank statement
 
-`POST /api/import/csv` takes a CSV export, as `multipart/form-data` with a
-`file` field or as a raw `text/csv` body, up to 5 MiB.
+`POST /api/import/csv` takes a CSV export as a raw `text/csv` body — send
+`Content-Type: text/csv` and a `Content-Length`, up to 5 MiB.
+`multipart/form-data` is refused with `415`.
 
 Columns are found by name, not position: a date column (`Date`, `Transaction
 Date`, `Posted Date`, …), a description (`Description`, `Memo`, `Payee`, …) and
