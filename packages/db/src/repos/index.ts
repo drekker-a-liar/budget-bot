@@ -13,6 +13,11 @@ export { ConnectionNotFoundError, UnknownProjectError } from './errors';
 
 export type { NewProject, ProjectUpdate } from './projects';
 export type {
+  // The parameter type of `upsertFromBank`, `applyModified` and
+  // `reconcilePending`. The package exposes no deep path into `repos/`, so a
+  // caller that cannot name this cannot write a signature that takes a page
+  // of synced rows - which is most of what the sync service does.
+  BankTransactionRow,
   ImportProvenance,
   ImportedTransaction,
   NewTransaction,
