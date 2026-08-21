@@ -319,9 +319,11 @@ describeDb('transactionsRepo owner isolation', () => {
     const hers = await transactionsRepo.createTransaction(db, alice, manual());
 
     expect(await transactionsRepo.listTransactions(db, bob)).toEqual([]);
+    expect(await transactionsRepo.getTransaction(db, bob, hers.id)).toBeUndefined();
     expect(await transactionsRepo.updateTransaction(db, bob, hers.id, { notes: 'mine' })).toBeNull();
     expect(await transactionsRepo.deleteTransaction(db, bob, hers.id)).toBe(false);
     expect(await transactionsRepo.listTransactions(db, alice)).toHaveLength(1);
+    expect(await transactionsRepo.getTransaction(db, alice, hers.id)).toBeDefined();
   });
 
   it('keeps the bank feeds of two owners apart', async () => {
