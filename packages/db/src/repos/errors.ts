@@ -71,3 +71,18 @@ export async function rejectingForeignProject<T>(
     throw error;
   }
 }
+
+/**
+ * No connection with that id belongs to this owner.
+ *
+ * Deliberately says nothing else. A connection id that is not yours and one
+ * that does not exist have to be the same answer, or the difference between
+ * the two messages tells a caller which ids are real - and the id itself is
+ * left out for the same reason, since echoing it back confirms it.
+ */
+export class ConnectionNotFoundError extends Error {
+  constructor() {
+    super('Bank connection not found');
+    this.name = 'ConnectionNotFoundError';
+  }
+}

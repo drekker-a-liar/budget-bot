@@ -7,7 +7,7 @@ export * as importBatchesRepo from './importBatches';
 export * as importsRepo from './imports';
 export * as ownersRepo from './owners';
 
-export { UnknownProjectError } from './errors';
+export { ConnectionNotFoundError, UnknownProjectError } from './errors';
 
 export type { NewProject, ProjectUpdate } from './projects';
 export type {
@@ -21,4 +21,12 @@ export type { ImportBatch, ImportSource, NewImportBatch } from './importBatches'
 export type { ImportCsvBatch, ImportResult } from './imports';
 export type { NewLaborEntry } from './labor';
 export type { InvoiceUpdate, NewInvoice } from './invoices';
-export type { CardProfileUpdate } from './bank';
+export type {
+  BankAccount,
+  BankAccountInput,
+  BankConnection,
+  CardProfileUpdate,
+  NewBankConnection,
+  SyncFailure,
+  SyncOutcome,
+} from './bank';
