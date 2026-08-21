@@ -37,6 +37,14 @@ const expense = (
   status,
   taxDeductible: true,
   createdAt: `${date}T00:00:00.000Z`,
+  postedAt: null,
+  pending: false,
+  source: 'manual',
+  provider: null,
+  externalId: null,
+  bankAccountId: null,
+  removedAt: null,
+  userEditedAt: null,
 });
 
 // CHARACTERIZATION of the aggregate figures, except where a test is marked

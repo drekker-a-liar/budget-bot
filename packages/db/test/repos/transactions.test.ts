@@ -119,6 +119,52 @@ describeDb('transactionsRepo money and identity', () => {
   });
 });
 
+describeDb('transactionsRepo.getTransaction', () => {
+  it('surfaces the bank columns a synced row stores', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const bankAccountId = await createBankAccount(db, ownerId);
+
+    const [created] = await transactionsRepo.upsertFromBank(db, ownerId, [
+      synced(bankAccountId, {
+        externalId: 'tx-1',
+        postedAt: new Date('2026-08-18T15:00:00.000Z'),
+        pending: true,
+      }),
+    ]);
+    const read = await transactionsRepo.getTransaction(db, ownerId, created.id);
+
+    expect(read).toMatchObject({
+      source: 'plaid',
+      provider: 'plaid',
+      externalId: 'tx-1',
+      pending: true,
+      postedAt: '2026-08-18T15:00:00.000Z',
+      bankAccountId,
+      removedAt: null,
+      userEditedAt: null,
+    });
+  });
+
+  it('defaults a manual row to source manual, not pending', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+
+    const created = await transactionsRepo.createTransaction(db, ownerId, manual());
+
+    expect(created).toMatchObject({
+      source: 'manual',
+      pending: false,
+      postedAt: null,
+      provider: null,
+      externalId: null,
+      bankAccountId: null,
+      removedAt: null,
+      userEditedAt: null,
+    });
+  });
+});
+
 describeDb('transactionsRepo.upsertFromBank', () => {
   it('inserts rows the feed has not sent before', async () => {
     const db = getDb();

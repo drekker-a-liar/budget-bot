@@ -7,6 +7,10 @@
 /** Timestamps cross the boundary as ISO strings, the shape the domain uses. */
 export const toIso = (value: Date): string => value.toISOString();
 
+/** A nullable timestamp crosses the boundary as an ISO string, or stays null. */
+export const toIsoOrNull = (value: Date | null): string | null =>
+  value ? value.toISOString() : null;
+
 /** `null` is how Postgres spells absent; the domain types spell it `undefined`. */
 export const orUndefined = <T>(value: T | null): T | undefined => value ?? undefined;
 

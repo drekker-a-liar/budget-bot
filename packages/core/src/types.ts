@@ -21,8 +21,26 @@ interface Persisted {
   updatedAt?: string;
 }
 
+/**
+ * What a bank feed adds to a transaction, on top of what the form sends
+ * (`TransactionInput`) and what persistence adds to everything (`Persisted`).
+ * A form never sends these - `TransactionInput` stays the form schema - so
+ * they live here rather than growing the zod input.
+ */
+interface BankColumns {
+  /** When the bank says it posted; null until it does, and for hand-entered rows. */
+  postedAt: string | null;
+  pending: boolean;
+  source: 'manual' | 'csv' | 'plaid';
+  provider: string | null;
+  externalId: string | null;
+  bankAccountId: string | null;
+  removedAt: string | null;
+  userEditedAt: string | null;
+}
+
 export type Project = z.infer<typeof ProjectInput> & Persisted;
-export type ExpenseTransaction = z.infer<typeof TransactionInput> & Persisted;
+export type ExpenseTransaction = z.infer<typeof TransactionInput> & Persisted & BankColumns;
 export type LaborEntry = z.infer<typeof LaborEntryInput> & Persisted;
 export type Invoice = z.infer<typeof InvoiceInput> & Persisted;
 

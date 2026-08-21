@@ -3,7 +3,7 @@ import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { Database, Executor } from '../client';
 import { transactions } from '../schema';
 import { rejectingForeignProject } from './errors';
-import { isUuid, orUndefined, toIso } from './rows';
+import { isUuid, orUndefined, toIso, toIsoOrNull } from './rows';
 
 /**
  * Expenses. The table has two owners: the user owns what they typed, a bank
@@ -14,7 +14,27 @@ import { isUuid, orUndefined, toIso } from './rows';
 
 type TransactionRow = typeof transactions.$inferSelect;
 
-export type NewTransaction = Omit<ExpenseTransaction, 'id' | 'createdAt' | 'updatedAt'>;
+/**
+ * What a form (or a bulk create) supplies. The bank columns are left out
+ * rather than made optional: a form never sends them, and leaving them out of
+ * `toInsert` lets Postgres apply their defaults (`source: 'manual'`,
+ * `pending: false`, the rest null) itself. `BankTransactionRow` below adds
+ * back the ones a feed actually owns.
+ */
+export type NewTransaction = Omit<
+  ExpenseTransaction,
+  | 'id'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'postedAt'
+  | 'pending'
+  | 'source'
+  | 'provider'
+  | 'externalId'
+  | 'bankAccountId'
+  | 'removedAt'
+  | 'userEditedAt'
+>;
 
 export type TransactionUpdate = Partial<Omit<NewTransaction, 'projectId'>> & {
   /**
@@ -45,6 +65,14 @@ function toTransaction(row: TransactionRow): ExpenseTransaction {
     receiptNumber: orUndefined(row.receiptNumber),
     taxDeductible: row.taxDeductible,
     notes: orUndefined(row.notes),
+    postedAt: toIsoOrNull(row.postedAt),
+    pending: row.pending,
+    source: row.source,
+    provider: row.provider,
+    externalId: row.externalId,
+    bankAccountId: row.bankAccountId,
+    removedAt: toIsoOrNull(row.removedAt),
+    userEditedAt: toIsoOrNull(row.userEditedAt),
     createdAt: toIso(row.createdAt),
     updatedAt: toIso(row.updatedAt),
   };
@@ -108,6 +136,20 @@ export async function listTransactions(
     )
     .orderBy(desc(transactions.createdAt), desc(transactions.id));
   return rows.map(toTransaction);
+}
+
+export async function getTransaction(
+  db: Database,
+  ownerId: string,
+  id: string
+): Promise<ExpenseTransaction | undefined> {
+  if (!isUuid(id)) return undefined;
+  const [row] = await db
+    .select()
+    .from(transactions)
+    .where(and(eq(transactions.ownerId, ownerId), eq(transactions.id, id)))
+    .limit(1);
+  return row && toTransaction(row);
 }
 
 export async function createTransaction(
