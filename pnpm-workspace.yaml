@@ -9,3 +9,9 @@ packages:
 allowBuilds:
   esbuild: false
   unrs-resolver: false
+
+# `next` bundles postcss, and the version it pins carries two high advisories
+# (GHSA-6g55-p6wh-862q, GHSA-r28c-9q8g-f849) that are fixed in 8.5.18. postcss
+# is API-stable across 8.x, so the override is cheaper than waiting for Next.
+overrides:
+  postcss: "^8.5.18"
