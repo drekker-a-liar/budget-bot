@@ -94,7 +94,7 @@ interface LegacyDatabase {
 
 loadRootEnv();
 
-const email = readFlag('owner-email') ?? process.env.DEV_OWNER_EMAIL;
+const email = readFlag('owner-email');
 if (!email) {
   console.error('Whose data is this? Pass --owner-email <email>.');
   process.exit(1);

@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
   integer,
   jsonb,
@@ -5,6 +6,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
 
 /**
@@ -24,16 +26,27 @@ export interface UserSettings {
   timeZone?: string;
 }
 
-export const users = pgTable('users', {
-  id: text('id')
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  name: text('name'),
-  email: text('email').notNull().unique(),
-  emailVerified: timestamp('email_verified', { withTimezone: true, mode: 'date' }),
-  image: text('image'),
-  settings: jsonb('settings').$type<UserSettings>().notNull().default({}),
-});
+export const users = pgTable(
+  'users',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    name: text('name'),
+    email: text('email').notNull().unique(),
+    emailVerified: timestamp('email_verified', { withTimezone: true, mode: 'date' }),
+    image: text('image'),
+    settings: jsonb('settings').$type<UserSettings>().notNull().default({}),
+  },
+  (table) => [
+    // The column's own UNIQUE is case-sensitive, so `Mike@x.com` and
+    // `mike@x.com` are two rows to Postgres and one person to everyone else.
+    // The allow list and `findOwnerIdByEmail` both fold case; this makes the
+    // database agree, so a provider that changes its casing cannot quietly
+    // create a second set of books.
+    uniqueIndex('users_email_lower_key').on(sql`lower(${table.email})`),
+  ]
+);
 
 export const accounts = pgTable(
   'accounts',

@@ -36,6 +36,8 @@ CREATE TABLE "users" (
 	CONSTRAINT "users_email_unique" UNIQUE("email")
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX "users_email_lower_key" ON "users" USING btree (lower("email"));
+--> statement-breakpoint
 CREATE TABLE "verification_tokens" (
 	"identifier" text NOT NULL,
 	"token" text NOT NULL,

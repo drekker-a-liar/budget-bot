@@ -16,11 +16,9 @@ import { hasFlag, loadRootEnv, readFlag, requireEnv } from './env';
  */
 loadRootEnv();
 
-const email = readFlag('owner-email') ?? process.env.DEV_OWNER_EMAIL;
+const email = readFlag('owner-email');
 if (!email) {
-  console.error(
-    'Which user should be seeded? Pass --owner-email <email>, or set DEV_OWNER_EMAIL.'
-  );
+  console.error('Which user should be seeded? Pass --owner-email <email>.');
   process.exit(1);
 }
 

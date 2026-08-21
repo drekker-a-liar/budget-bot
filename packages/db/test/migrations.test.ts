@@ -49,6 +49,15 @@ describe('the committed migrations', () => {
     );
   });
 
+  it('make one email one user, whatever case the provider sends it in', () => {
+    // The risk this pins: the column's own UNIQUE is case-sensitive, so
+    // `Mike@x.com` signing in after `mike@x.com` would be a second row - a
+    // second, empty set of books - rather than the same person.
+    expect(sqlText).toContain(
+      'CREATE UNIQUE INDEX "users_email_lower_key" ON "users" USING btree (lower("email"));'
+    );
+  });
+
   it('never uses a floating point type for money', () => {
     expect(sqlText).not.toMatch(/\b(real|double precision|float)\b/i);
     expect(sqlText).toMatch(/"amount_cents" bigint/);
