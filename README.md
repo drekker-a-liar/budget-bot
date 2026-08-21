@@ -92,7 +92,7 @@ ever stored, processed or transmitted.
 
 | Path | What it is |
 | --- | --- |
-| `apps/web` | The Next.js 14 App Router application |
+| `apps/web` | The Next.js 15 App Router application |
 | `packages/core` | Money, schemas and every margin calculation. No I/O |
 | `packages/db` | Drizzle schema, repositories, migrations, seed |
 | `packages/bank-connectors` | The `BankProvider` interface and the CSV one |

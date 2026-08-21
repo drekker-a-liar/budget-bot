@@ -43,31 +43,22 @@ const SIGNED_IN: Session = {
 type SearchParams = { error?: string; callbackUrl?: string };
 
 async function renderLogin(searchParams: SearchParams = {}) {
-  render(await LoginPage({ searchParams }));
+  // Next 15 hands a page its search params as a promise; the page awaits it.
+  render(await LoginPage({ searchParams: Promise.resolve(searchParams) }));
 }
 
 /**
- * `<form action={serverAction}>` is how Next runs a server action, and the
- * React that Next bundles understands it. The plain react-dom 18 these tests
- * render with does not, and says so on every render. The message is filtered
- * rather than the whole channel silenced, so a real warning still fails.
+ * `<form action={serverAction}>` is how Next runs a server action, and React 19
+ * understands a function there, so a render of this page should be silent. Any
+ * `console.error` is collected and fails the test that caused it.
  */
-function isFormActionWarning(args: unknown[]): boolean {
-  const text = args.map(String).join(' ');
-  return (
-    text.includes('Invalid value for prop') &&
-    text.includes('`action`') &&
-    text.includes('form')
-  );
-}
-
 let unexpectedWarnings: string[] = [];
 
 beforeEach(() => {
   authMock.mockResolvedValue(null);
   unexpectedWarnings = [];
   vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
-    if (!isFormActionWarning(args)) unexpectedWarnings.push(args.map(String).join(' '));
+    unexpectedWarnings.push(args.map(String).join(' '));
   });
 });
 

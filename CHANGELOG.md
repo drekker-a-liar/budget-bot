@@ -93,8 +93,6 @@ deployed.
 
 ### Known debt
 
-- Eight `next` advisories are allow-listed by exact id in `pnpm-workspace.yaml`
-  pending a Next 15 upgrade. See [CONTRIBUTING.md](CONTRIBUTING.md).
 - The cash flow waterfall draws from real weeks now, but shows an em dash for
   the figures nothing can compute yet — available credit and a liquid cash
   balance both wait on a bank connection (sub-project 2). Monthly gross margin

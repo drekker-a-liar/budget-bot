@@ -5,41 +5,23 @@ packages:
 # eslint-config-next pulls in unrs-resolver, whose postinstall only fetches a
 # native binary as a fallback; pnpm already installs the right one as an
 # optional dependency, so the script is deliberately not run. esbuild (via
-# vitest and drizzle-kit) is the same story.
+# vitest and drizzle-kit) and sharp (an optional dependency of Next 15, for
+# image optimisation) are the same story.
 allowBuilds:
   esbuild: false
   lefthook: true
+  sharp: false
   unrs-resolver: false
 
 # `next` bundles postcss, and the version it pins carries two high advisories
 # (GHSA-6g55-p6wh-862q, GHSA-r28c-9q8g-f849) that are fixed in 8.5.18. postcss
 # is API-stable across 8.x, so the override is cheaper than waiting for Next.
+#
+# Next 15 carries sharp as an optional dependency for image optimisation, and
+# the range it asks for (^0.34.3) inherits four high libvips advisories
+# (GHSA-f88m-g3jw-g9cj), fixed in 0.35.0. Next uses the handful of sharp calls
+# that did not change across that minor, and this app renders no `next/image`
+# at all, so the override costs nothing.
 overrides:
   postcss: "^8.5.18"
-
-# Advisories `pnpm audit --prod --audit-level=high` may not fail CI over.
-#
-# Exact GHSA ids, never a severity threshold and never a package name: a new
-# advisory against any of these packages is one nobody has read yet, and CI
-# going red is how it gets read.
-#
-# Every entry is the same story. All eight are fixed only in Next 15, and this
-# app is on the Next 14 App Router (spec §3); moving to 15 is a sub-project,
-# not a line in a CI file, and it is carried as security debt in
-# CONTRIBUTING.md. Four of them cannot reach this deployment at all - it has
-# no Pages Router, no i18n, no rewrites, no WebSocket upgrades and no custom
-# server. The other four are denial of service against a private,
-# allow-listed, single-user deployment: a real cost, and not one worth blocking
-# every pull request on until the upgrade lands.
-auditConfig:
-  ignoreGhsas:
-    # Reachable here; denial of service only.
-    - GHSA-h25m-26qc-wcjf # RSC request deserialization DoS
-    - GHSA-q4gf-8mx6-v5v3 # DoS with Server Components
-    - GHSA-8h8q-6873-q5fj # DoS with Server Components
-    - GHSA-m99w-x7hq-7vfj # DoS in App Router Server Actions
-    # Not reachable: this app has none of the features each one needs.
-    - GHSA-c4j6-fc7j-m34r # SSRF via WebSocket upgrades
-    - GHSA-36qx-fr4f-26g5 # middleware bypass in Pages Router with i18n
-    - GHSA-89xv-2m56-2m9x # SSRF in Server Actions on custom servers
-    - GHSA-p9j2-gv94-2wf4 # SSRF in rewrites via attacker-controlled hostname
+  sharp: "^0.35.3"
