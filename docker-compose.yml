@@ -1,0 +1,35 @@
+# Local Postgres for development and tests. Production is Neon (spec §2), but
+# the driver is the portable `postgres` one, so anything that speaks Postgres 16
+# works - this file just saves every contributor from installing a server.
+#
+#   pnpm db:up      start it
+#   pnpm db:down    stop it (data survives in the named volume)
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: budget-bot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: budget_bot
+      POSTGRES_PASSWORD: budget_bot
+      POSTGRES_DB: budget_bot
+    # Bound to the loopback address on purpose. These credentials are the
+    # weakest possible pair and this database will hold financial data, so it
+    # is reachable from this machine and from nowhere else - a bare "5433:5432"
+    # publishes on 0.0.0.0 and offers it to the whole network.
+    #
+    # 5433 rather than 5432: a Homebrew Postgres already owns 5432 on many
+    # machines.
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - budget-bot-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U budget_bot -d budget_bot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  budget-bot-pgdata:

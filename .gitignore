@@ -1,17 +1,26 @@
 # dependencies
-/node_modules
-/.pnp
+node_modules
+.pnp
 .pnp.js
 
 # testing
-/coverage
+coverage
 
 # next.js
-/.next/
-/out/
+.next/
+out/
 
 # production
-/build
+build
+
+# turborepo
+.turbo
+
+# playwright
+test-results/
+playwright-report/
+blob-report/
+.playwright/
 
 # misc
 .DS_Store
@@ -33,5 +42,5 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# local data
-data/data.json
+# SDD controller scratch (superpowers)
+.superpowers/

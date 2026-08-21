@@ -1,0 +1,44 @@
+# Static analysis (spec §7, "Repo hygiene").
+#
+# Separate from ci.yml because it answers a different question and on a
+# different clock: CI asks "is this change correct", CodeQL asks "did anyone
+# ever write a taint path into this repository", and the answer to the second
+# can change without the code changing - which is what the weekly run is for.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Mondays, early. A weekly run catches queries added after a change landed.
+    - cron: '17 6 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: analyze
+    runs-on: ubuntu-latest
+    permissions:
+      # Only this job writes findings, and only this job asks for the right to.
+      security-events: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: github/codeql-action/init@v3
+        with:
+          # One language: everything in this repository is TypeScript, and
+          # CodeQL treats the two as a single extractor.
+          languages: javascript-typescript
+          queries: security-and-quality
+
+      # No build step. The JavaScript extractor reads source directly, and
+      # `next build` would only give it compiled output to be confused by.
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:javascript-typescript

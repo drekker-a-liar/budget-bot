@@ -1,24 +1,26 @@
 {
-  "name": "contractor-budget-bot",
+  "name": "budget-bot",
   "version": "1.0.0",
   "private": true,
+  "packageManager": "pnpm@11.22.0",
   "scripts": {
-    "dev": "next dev -p 3000",
-    "build": "next build",
-    "start": "next start -p 3000",
-    "lint": "next lint"
-  },
-  "dependencies": {
-    "clsx": "^2.1.1",
-    "lucide-react": "^0.475.0",
-    "next": "^14.2.24",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "lint:staged": "node scripts/lint-staged.mjs",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "e2e": "pnpm --filter web e2e",
+    "check:security": "pnpm --filter web check:security",
+    "db:up": "docker compose up -d --wait",
+    "db:down": "docker compose down",
+    "db:generate": "pnpm --filter @budget-bot/db db:generate",
+    "db:migrate": "pnpm --filter @budget-bot/db db:migrate",
+    "db:seed": "pnpm --filter @budget-bot/db db:seed",
+    "prepare": "lefthook install || true"
   },
   "devDependencies": {
-    "@types/node": "^20.17.19",
-    "@types/react": "^18.3.18",
-    "@types/react-dom": "^18.3.5",
-    "typescript": "^5.7.3"
+    "lefthook": "^2.1.10",
+    "turbo": "^2.10.11"
   }
 }

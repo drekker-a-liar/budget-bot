@@ -1,0 +1,34 @@
+# Dependency updates (spec §7, "Repo hygiene").
+#
+# Grouped on purpose. Twenty separate pull requests a week is a way of teaching
+# a maintainer to merge without reading; one grouped pull request per ecosystem
+# is something a person can actually review, and the whole CI suite runs on it.
+# Majors stay ungrouped, because a major is a decision rather than a chore.
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: deps
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns:
+          - '*'
+    commit-message:
+      prefix: ci

@@ -1,0 +1,7 @@
+{
+  "version": 2,
+  "framework": "nextjs",
+  "buildCommand": "pnpm --filter @budget-bot/db db:migrate && pnpm --filter web build",
+  "devCommand": "pnpm --filter web dev",
+  "installCommand": "pnpm install --frozen-lockfile"
+}

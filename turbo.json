@@ -1,0 +1,32 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "tasks": {
+    "build": {
+      // `typecheck` as well as `^build`: `next build` deletes and rewrites
+      // `.next`, and `tsc` reads the route types Next generates in there. Run
+      // side by side - which is what `turbo typecheck build` does otherwise -
+      // the two race, and `tsc` fails on files that existed when it globbed
+      // and were gone when it opened them.
+      "dependsOn": ["^build", "typecheck"],
+      "outputs": [".next/**", "!.next/cache/**"]
+    },
+    "lint": {},
+    "typecheck": {},
+    "test": {
+      "dependsOn": ["^typecheck"]
+    },
+    "e2e": {
+      "cache": false
+    },
+    "db:migrate": {
+      "cache": false
+    },
+    "db:seed": {
+      "cache": false
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    }
+  }
+}
