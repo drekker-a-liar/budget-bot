@@ -21,9 +21,15 @@ export const ownerId = () =>
  * whose item this deployment does not recognise at all. Requiring the owner
  * first would mean the unrecognised payloads are the ones with no replay
  * protection, which is exactly backwards.
+ *
+ * Deleting a user clears the reference rather than cascading, for the same
+ * reason: the hash has to outlive the account for its retention window, or a
+ * payload redelivered just after an account is closed stops being recognised
+ * as a redelivery. What is left behind is a provider name, an item id and a
+ * hash - no financial data.
  */
 export const ownerIdNullable = () =>
-  text('owner_id').references(() => users.id, { onDelete: 'cascade' });
+  text('owner_id').references(() => users.id, { onDelete: 'set null' });
 
 export const createdAt = () =>
   timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow();

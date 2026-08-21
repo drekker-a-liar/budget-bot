@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { expect, it } from 'vitest';
-import { webhookEvents } from '../src/schema';
+import { users, webhookEvents } from '../src/schema';
 import { createOwner, describeDb, useTestDb } from './helpers/db';
 
 const getDb = useTestDb();
@@ -45,6 +45,23 @@ describeDb('webhook_events', () => {
       );
 
     expect(failure?.cause?.constraint_name).toBe('webhook_events_body_hash_key');
+  });
+
+  it('outlives the account it belonged to, so a redelivery is still recognised', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    await db
+      .insert(webhookEvents)
+      .values({ provider: 'plaid', ownerId, bodyHash: 'sha256:dddd' });
+
+    await db.delete(users).where(eq(users.id, ownerId));
+
+    const [survivor] = await db
+      .select()
+      .from(webhookEvents)
+      .where(eq(webhookEvents.bodyHash, 'sha256:dddd'));
+    expect(survivor).toBeDefined();
+    expect(survivor.ownerId).toBeNull();
   });
 
   it('takes the owner once the item has been recognised', async () => {
