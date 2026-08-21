@@ -22,15 +22,19 @@ const invoice = (status: InvoiceStatus, dollars: number, paidDate?: string): Inv
   createdAt: '2026-08-18T00:00:00.000Z',
 });
 
-const expense = (dollars: number, date: string): ExpenseTransaction => ({
-  id: `tx-${dollars}-${date}`,
+const expense = (
+  dollars: number,
+  date: string,
+  status: ExpenseTransaction['status'] = 'matched'
+): ExpenseTransaction => ({
+  id: `tx-${dollars}-${date}-${status}`,
   date,
   description: 'A PURCHASE',
   vendor: 'A Vendor',
   amountCents: parseMoney(dollars),
   category: 'materials',
   paymentMethod: 'card',
-  status: 'matched',
+  status,
   taxDeductible: true,
   createdAt: `${date}T00:00:00.000Z`,
 });
@@ -142,6 +146,74 @@ describe('calculateBusinessSummary', () => {
     const summary = calculateBusinessSummary([], transactions, [], invoices, NOW);
     expect(summary.weeklyNetCashFlowCents).toBe(parseMoney(net));
     expect(summary.cashFlowSeverity).toBe(expected);
+  });
+
+  /**
+   * Weekly outflow counts money that went out, by the same rule
+   * `spendByCategory` uses: not `ignored`, and not negative.
+   *
+   * A card payment or a refund arrives negative and is filed `ignored`, and
+   * summing it into outflow makes the outflow *smaller* and the "Weekly Net
+   * Cash Flow" KPI rosier - while the cash-flow waterfall rendered beside it
+   * on the same page excludes exactly that row. Two numbers about one week,
+   * drawn from the same rows, disagreeing.
+   */
+  describe('weekly cash outflow', () => {
+    const spend = expense(1000, '2026-08-19');
+
+    it('leaves out a negative row the user filed as ignored', () => {
+      const summary = calculateBusinessSummary(
+        [],
+        [spend, expense(-400, '2026-08-19', 'ignored')],
+        [],
+        [],
+        NOW
+      );
+
+      expect(summary.weeklyCashOutflowCents).toBe(100_000);
+      expect(summary.weeklyNetCashFlowCents).toBe(-100_000);
+    });
+
+    it('leaves out a negative row the user filed against a job', () => {
+      // `ignored` is the default a refund arrives with, not a promise it
+      // keeps: the user can match one to a project. It is still not spending.
+      const summary = calculateBusinessSummary(
+        [],
+        [spend, expense(-400, '2026-08-19', 'matched')],
+        [],
+        [],
+        NOW
+      );
+
+      expect(summary.weeklyCashOutflowCents).toBe(100_000);
+    });
+
+    it('leaves out a positive row the user filed as ignored', () => {
+      const summary = calculateBusinessSummary(
+        [],
+        [spend, expense(250, '2026-08-19', 'ignored')],
+        [],
+        [],
+        NOW
+      );
+
+      expect(summary.weeklyCashOutflowCents).toBe(100_000);
+    });
+
+    it('agrees with the waterfall about which rows are spending', () => {
+      // The same rows through `spendByCategory`'s rule, spelled out here
+      // because the two live in different packages and drifted apart once.
+      const rows = [
+        spend,
+        expense(-400, '2026-08-19', 'ignored'),
+        expense(250, '2026-08-19', 'ignored'),
+      ];
+      const spent = rows.filter((row) => row.status !== 'ignored' && row.amountCents > 0);
+
+      expect(
+        calculateBusinessSummary([], rows, [], [], NOW).weeklyCashOutflowCents
+      ).toBe(spent.reduce((total, row) => total + row.amountCents, 0));
+    });
   });
 
   // CHANGED (bug 2): with no hours logged there is no realization to report,

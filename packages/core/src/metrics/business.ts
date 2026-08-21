@@ -78,8 +78,20 @@ export function calculateBusinessSummary(
       .map((i) => i.amountCents)
   );
 
+  // Money that actually went out, by the same rule the cash-flow waterfall
+  // and the category breakdown use: not `ignored`, and not negative. A card
+  // payment or a refund is both, and summing one here would *reduce* outflow
+  // and make the KPI rosier than the waterfall drawn beside it on the same
+  // page - two numbers about one week, from the same rows, disagreeing.
   const weeklyCashOutflowCents = addCents(
-    ...transactions.filter((t) => new Date(t.date) >= oneWeekAgo).map((t) => t.amountCents)
+    ...transactions
+      .filter(
+        (t) =>
+          t.status !== 'ignored' &&
+          t.amountCents > 0 &&
+          new Date(t.date) >= oneWeekAgo
+      )
+      .map((t) => t.amountCents)
   );
 
   const weeklyNetCashFlowCents = subtractCents(
