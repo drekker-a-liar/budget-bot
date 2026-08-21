@@ -124,12 +124,27 @@ function retryAfterSeconds(headers: unknown): number {
   return Math.ceil(seconds);
 }
 
+/**
+ * Anything shaped like a Plaid access token, in any of the three environments.
+ *
+ * Defence in depth over the one field this file copies. `error_message` is
+ * free text from somebody else's system and the message built from it is what
+ * callers log, so "Plaid does not put tokens in it" is a promise nothing here
+ * can enforce - and the cost of it being wrong once is a credential in a log
+ * file (spec §9).
+ */
+const ACCESS_TOKEN_PATTERN = /access-(sandbox|development|production)-[\w-]+/g;
+
+function redactTokens(text: string): string {
+  return text.replace(ACCESS_TOKEN_PATTERN, 'access-[redacted]');
+}
+
 /** Built from the Plaid error code and message, and from nothing else. */
 function describe(body: PlaidErrorBody | undefined): string {
   if (body === undefined) return 'The Plaid request failed without a Plaid error body.';
   return body.error_message === undefined
     ? body.error_code
-    : `${body.error_code}: ${body.error_message}`;
+    : redactTokens(`${body.error_code}: ${body.error_message}`);
 }
 
 /**

@@ -1,0 +1,26 @@
+{
+  "accounts": [
+    {
+      "account_id": "acct-checking-1",
+      "balances": {
+        "available": 12450.11,
+        "current": 12980.11,
+        "limit": null,
+        "iso_currency_code": "USD",
+        "unofficial_currency_code": null
+      },
+      "mask": "0000",
+      "name": "Platypus Business Checking",
+      "official_name": "Platypus Business Interest Checking",
+      "type": "depository",
+      "subtype": "checking"
+    }
+  ],
+  "added": [],
+  "modified": [],
+  "removed": [],
+  "next_cursor": "",
+  "has_more": false,
+  "transactions_update_status": "TRANSACTIONS_UPDATE_STATUS_UNKNOWN",
+  "request_id": "req-sync-empty"
+}

@@ -265,7 +265,11 @@ export class PlaidProvider implements BankProvider {
       // Only the ids come back for removals, which is all the caller needs to
       // find the rows: the merge rule works from `external_id`.
       removed: page.removed.map((removed) => removed.transaction_id),
-      nextCursor: page.next_cursor,
+      // Plaid answers an item with nothing to send with `next_cursor: ""`,
+      // and sending that empty string back is a validation error. `null` is
+      // this interface's "from the beginning", so the empty string becomes one
+      // here rather than being committed as a cursor no request can use.
+      nextCursor: page.next_cursor || null,
       hasMore: page.has_more,
     };
   }

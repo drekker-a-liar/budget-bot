@@ -133,4 +133,50 @@ describe('toPlaidError', () => {
     expect(JSON.stringify(error)).not.toContain('SECRET');
     expect(error.cause).toBeUndefined();
   });
+
+  /**
+   * Defence in depth, for the one field the mapper does copy.
+   *
+   * `error_message` is free text from Plaid, and the message built out of it
+   * is the thing callers log. Plaid does not put access tokens in it today -
+   * but "does not today" is a property of somebody else's system, and the
+   * cost of being wrong about it is a credential in a log file (spec §9). So
+   * anything token-shaped is struck out on the way through, whichever
+   * environment minted it.
+   */
+  it.each(['sandbox', 'development', 'production'])(
+    'redacts an access-%s token that arrived in the error message',
+    (environment) => {
+      const token = `access-${environment}-9f3a1c2e-not-a-real-token`;
+      const error = toPlaidError(
+        response({
+          error_type: 'INVALID_INPUT',
+          error_code: 'INVALID_ACCESS_TOKEN',
+          error_message: `provided access token ${token} is not valid`,
+          request_id: 'req-redact-1',
+        })
+      );
+
+      expect(error.message).not.toContain(token);
+      expect(error.message).not.toContain('9f3a1c2e');
+      expect(error.message).toContain('access-[redacted]');
+      // The rest of the message survives: the point is a redaction, not a
+      // blanket refusal to say what went wrong.
+      expect(error.message).toContain('INVALID_ACCESS_TOKEN');
+    }
+  );
+
+  it('leaves a message with nothing token-shaped in it exactly as it was', () => {
+    const error = toPlaidError(
+      response({
+        error_type: 'ITEM_ERROR',
+        error_code: 'ITEM_LOGIN_REQUIRED',
+        error_message: 'the login details of this item have changed',
+      })
+    );
+
+    expect(error.message).toBe(
+      'ITEM_LOGIN_REQUIRED: the login details of this item have changed'
+    );
+  });
 });

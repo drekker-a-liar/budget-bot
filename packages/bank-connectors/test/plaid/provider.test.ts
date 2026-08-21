@@ -24,6 +24,7 @@ import exchangeFixture from '../fixtures/plaid/exchange.json';
 import institutionFixture from '../fixtures/plaid/institution.json';
 import itemFixture from '../fixtures/plaid/item.json';
 import linkTokenFixture from '../fixtures/plaid/link-token.json';
+import syncEmptyCursorFixture from '../fixtures/plaid/sync-empty-cursor.json';
 import syncModifiedFixture from '../fixtures/plaid/sync-modified.json';
 import syncPage1Fixture from '../fixtures/plaid/sync-page-1.json';
 import syncPage2Fixture from '../fixtures/plaid/sync-page-2.json';
@@ -338,6 +339,26 @@ describe('syncTransactions', () => {
       amountCents: 21419,
     });
     expect(page.removed).toEqual(['txn-pending-1']);
+  });
+
+  /**
+   * Plaid answers a brand-new item that has nothing to send with
+   * `next_cursor: ""`, and sending that empty string back on the next call is
+   * a validation error. `null` is this interface's word for "from the
+   * beginning", so the empty string has to become one here rather than being
+   * carried into the database as a cursor no request can use.
+   */
+  it('reads an empty next_cursor as no cursor at all', async () => {
+    const client = fakeClient();
+    client.transactionsSync.mockResolvedValueOnce(
+      ok<TransactionsSyncResponse>(syncEmptyCursorFixture)
+    );
+
+    const page = await providerWith(client).syncTransactions('access-sandbox-abc', null);
+
+    expect(page.nextCursor).toBeNull();
+    expect(page.hasMore).toBe(false);
+    expect(page.added).toEqual([]);
   });
 });
 
