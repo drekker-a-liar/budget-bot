@@ -75,10 +75,24 @@ runs previews with `NODE_ENV=production`, so the assertion sees a preview and a
 production deployment as the same thing, and `PLAID_ENV=sandbox` on a preview
 is a preview that refuses to boot. A preview with none of the three set is a
 supported deployment - the connections screen says Plaid is not configured, and
-everything else works. (Previews on Sandbox keys is the intent, and needs the
-assertion to be able to tell the two apart; until it can, this is the honest
-instruction.) Production keys on Preview is the one arrangement that must never
-happen: preview URLs are shared far more casually than production ones.
+everything else works.
+
+This is the settled rule rather than a gap waiting to be closed. The assertion
+could be taught to allow `sandbox` when `VERCEL_ENV=preview`, and deliberately
+is not: today it makes one unconditional claim - a process with
+`NODE_ENV=production` will not talk to Sandbox - and keying that on a second
+variable demotes it to a claim about configuration. `VERCEL_ENV` is set by the
+platform, is absent everywhere else, and can be set by anyone who can set
+`PLAID_ENV`, so an env file copied from Vercel to a VPS, or a mis-wired
+"promote preview to production", would re-open exactly the hole the check
+exists to close while the check reported itself satisfied. What a Sandbox
+preview would buy over `next dev` against Sandbox plus the Playwright journey
+in CI is the ability to click Plaid's own Link UI on a shared URL, which is
+worth something and is not worth that. Sandbox keys stay on a development
+machine (see `docs/self-hosting/local.md`).
+
+Production keys on Preview is the one arrangement that must never happen:
+preview URLs are shared far more casually than production ones.
 
 **Never set `E2E`.** It adds a password-less sign-in door for the Playwright
 suite. A production deployment with it set throws at boot and serves a 500 —
