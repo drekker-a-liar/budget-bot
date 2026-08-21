@@ -12,29 +12,27 @@ import { isPublicPath } from '@/lib/publicPaths';
  * session, no handler in `app/api` returns anything but a 401. It walks the
  * exported methods rather than a list written by hand, because the way this
  * breaks is somebody adding a handler and not thinking about it.
+ *
+ * There is very little left under `app/api` on purpose: reads happen in Server
+ * Components and writes in Server Actions (spec §6), so the only routes are
+ * Auth.js's own, the health check, and the CSV upload - which is a route
+ * because its caller is a file, not a person. `test/actions.test.ts` pins the
+ * equivalent rule for actions.
  */
 
 vi.mock('@/auth', () => ({ auth: vi.fn(async () => null) }));
 
-const emptySnapshot = {
-  projects: [],
-  transactions: [],
-  laborEntries: [],
-  invoices: [],
-  cardProfile: null,
-  version: 1,
-};
+const repos = vi.hoisted(() => ({
+  createImportBatch: vi.fn(async () => ({ id: 'batch-1' })),
+  bulkCreateImported: vi.fn(async () => []),
+}));
 
-const store = {
-  getAll: vi.fn(async () => emptySnapshot),
-  getProjects: vi.fn(async () => []),
-  getProjectById: vi.fn(async () => undefined),
-  getTransactions: vi.fn(async () => []),
-  getLaborEntries: vi.fn(async () => []),
-  getInvoices: vi.fn(async () => []),
-};
-
-vi.mock('@/lib/db', () => ({ storeFor: vi.fn(() => store) }));
+vi.mock('@budget-bot/db', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@budget-bot/db')>()),
+  getDb: () => ({}),
+  importBatchesRepo: { createImportBatch: repos.createImportBatch },
+  transactionsRepo: { bulkCreateImported: repos.bulkCreateImported },
+}));
 
 const { auth } = await import('@/auth');
 
@@ -89,8 +87,8 @@ for (const route of gatedRoutes) {
 }
 
 beforeEach(() => {
+  vi.clearAllMocks();
   authMock.mockResolvedValue(null);
-  for (const method of Object.values(store)) method.mockClear();
 });
 
 describe('the route list this test walks', () => {
@@ -113,10 +111,20 @@ describe('the route list this test walks', () => {
     ]);
   });
 
-  it('found a handler for every gated route, and several methods', () => {
+  it('has no CRUD routes left: reads are components and writes are actions', () => {
+    // /api/data, /api/projects, /api/transactions, /api/labor and /api/invoices
+    // were how the client-rendered pages talked to the database. Their pages
+    // read on the server now, and nothing should put them back.
+    expect(routes.map((route) => route.path)).toEqual([
+      '/api/auth/sample',
+      '/api/health',
+      '/api/import/csv',
+    ]);
+  });
+
+  it('found a handler for every gated route', () => {
     const covered = new Set(handlers.map(([name]) => name.split(' ')[1]));
     expect([...covered].sort()).toEqual(gatedRoutes.map((route) => route.path));
-    expect(handlers.length).toBeGreaterThan(gatedRoutes.length);
   });
 });
 
@@ -128,26 +136,30 @@ describe('with no session', () => {
     expect(response.status).toBe(401);
   });
 
-  it.each(handlers)('%s reads nothing before refusing', async (_name, handler, request) => {
+  it.each(handlers)('%s writes nothing before refusing', async (_name, handler, request) => {
     await handler(request.clone(), { params: { id: 'p1' } });
 
-    for (const method of Object.values(store)) {
-      expect(method).not.toHaveBeenCalled();
+    for (const repo of Object.values(repos)) {
+      expect(repo).not.toHaveBeenCalled();
     }
   });
 });
 
 describe('with a session', () => {
-  it('a read reaches the store, scoped to the signed-in user', async () => {
+  it('a write reaches the database, scoped to the signed-in user', async () => {
     authMock.mockResolvedValue(SIGNED_IN);
-    const { storeFor } = await import('@/lib/db');
-    const { GET } = await import('@/app/api/labor/route');
+    const { POST } = await import('@/app/api/import/csv/route');
 
-    const response = await GET(requestFor('GET', '/api/labor'));
+    const response = await POST(
+      new Request('http://localhost/api/import/csv', {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/csv' },
+        body: 'Date,Description,Amount\n2026-08-18,THE HOME DEPOT,10.00',
+      })
+    );
 
     expect(response.status).toBe(200);
-    expect(storeFor).toHaveBeenCalledWith('user-1');
-    expect(store.getLaborEntries).toHaveBeenCalled();
+    expect(repos.createImportBatch).toHaveBeenCalledWith({}, 'user-1', expect.any(Object));
   });
 });
 
