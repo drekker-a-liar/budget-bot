@@ -13,6 +13,7 @@ import {
   getBankProvider,
   getBankProviderKind,
 } from '@/src/server/bank/provider';
+import { SCRIPTED_PUBLIC_TOKEN } from '@/lib/plaidLink';
 
 /**
  * The scripted bank (spec §9).
@@ -225,6 +226,15 @@ describe('the rest of the BankProvider surface', () => {
     await expect(provider().verifyAndParseWebhook('{}', {})).rejects.toBeInstanceOf(
       NotSupportedError
     );
+  });
+});
+
+describe('the copy of the public token the browser carries', () => {
+  it('is the same string the fake will exchange', () => {
+    // `ConnectBankButton` cannot import this file - it is server code, and it
+    // would arrive in the browser bundle with the connectors package behind
+    // it - so it carries the literal. This is what keeps the two the same.
+    expect(SCRIPTED_PUBLIC_TOKEN).toBe(FAKE_PUBLIC_TOKEN);
   });
 });
 

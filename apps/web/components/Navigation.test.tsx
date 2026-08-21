@@ -56,6 +56,7 @@ describe('Navigation', () => {
     ['/projects', 'Projects & Margins'],
     ['/transactions', 'Card Inbox'],
     ['/cashflow', 'Cash Flow & Runway'],
+    ['/settings/connections', 'Connections'],
   ])('marks %s as the page being read', (path, label) => {
     pathname.current = path;
     render(<Navigation />);
@@ -74,6 +75,35 @@ describe('Navigation', () => {
 
     expect(screen.getByText(/4892/)).toBeInTheDocument();
     expect(screen.getByText('$3,248.65')).toBeInTheDocument();
+  });
+
+  it('calls the card what the bank calls it', () => {
+    // It used to say "Spark" for everybody. That was true of one card on one
+    // machine, and a wrong fact about a real card on every other deployment.
+    render(<Navigation cardProfile={CARD} />);
+
+    expect(screen.getByText(/Spark Business Cash ••• 4892/)).toBeInTheDocument();
+  });
+
+  it('falls back to the issuer when the bank gave the account no name', () => {
+    render(<Navigation cardProfile={{ ...CARD, cardName: '' }} />);
+
+    expect(screen.getByText(/Capital One ••• 4892/)).toBeInTheDocument();
+  });
+
+  it('still says something when the bank gave neither', () => {
+    render(<Navigation cardProfile={{ ...CARD, cardName: '', issuer: '' }} />);
+
+    expect(screen.getByText(/Card ••• 4892/)).toBeInTheDocument();
+  });
+
+  it('offers the connections screen, which is where a card comes from', () => {
+    render(<Navigation />);
+
+    expect(screen.getByRole('link', { name: /connections/i })).toHaveAttribute(
+      'href',
+      '/settings/connections'
+    );
   });
 
   it('says nothing about a card before one is linked', () => {

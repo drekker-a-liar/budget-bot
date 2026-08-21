@@ -11,7 +11,8 @@ import {
   Plus,
   Clock,
   Receipt,
-  FileText
+  FileText,
+  Landmark
 } from 'lucide-react';
 import { CardProfile, formatCents } from '@budget-bot/core';
 
@@ -38,6 +39,7 @@ export function Navigation({
       badge: unassignedCount > 0 ? unassignedCount : undefined,
     },
     { label: 'Cash Flow & Runway', href: '/cashflow', icon: TrendingUp },
+    { label: 'Connections', href: '/settings/connections', icon: Landmark },
   ];
 
   return (
@@ -146,7 +148,12 @@ export function Navigation({
             }}>
               <CreditCard size={14} color="var(--accent-cyan)" />
               <div>
-                <span style={{ color: 'var(--text-secondary)' }}>Spark ••• {cardProfile.last4}:</span>{' '}
+                <span style={{ color: 'var(--text-secondary)' }}>
+                  {/* The card's own name, as the bank reported it. It used to
+                      say "Spark" for everybody, which was true of one card on
+                      one machine and a lie on every other deployment. */}
+                  {cardProfile.cardName || cardProfile.issuer || 'Card'} ••• {cardProfile.last4}:
+                </span>{' '}
                 <span className="tnum" style={{ fontWeight: 700, color: '#f8fafc' }}>
                   {formatCents(cardProfile.currentBalanceCents)}
                 </span>
