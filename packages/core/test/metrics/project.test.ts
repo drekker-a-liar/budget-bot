@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { calculateProjectKPIs } from '../../src/metrics/project';
+import { parseMoney } from '../../src/money';
+import type { ExpenseTransaction } from '../../src/types';
 import {
   SEED_PROJECTS,
   SEED_TRANSACTIONS,
@@ -78,6 +80,45 @@ describe('calculateProjectKPIs', () => {
     const kpi = kpiFor('proj-5');
     expect(kpi.revenueCents).toBe(320_000);
     expect(kpi.grossMarginPct).toBe(100);
+  });
+
+  it('reports 0% rather than no percentage when there is no revenue to divide by', () => {
+    const project = {
+      ...SEED_PROJECTS.find((p) => p.id === 'proj-5')!,
+      quotedTotalCents: parseMoney(0),
+    };
+    const kpi = calculateProjectKPIs(project, [], [], []);
+
+    expect(kpi.revenueCents).toBe(0);
+    expect(kpi.grossMarginPct).toBe(0);
+    expect(kpi.grossMarginSeverity).toBe('critical');
+    expect(kpi.budgetVariancePct).toBe(0);
+    expect(kpi.budgetSeverity).toBe('healthy');
+  });
+
+  it('separates subcontractor cost from materials and other direct costs', () => {
+    const project = SEED_PROJECTS.find((p) => p.id === 'proj-5')!;
+    const subcontract: ExpenseTransaction = {
+      id: 'tx-sub-1',
+      date: '2026-08-26',
+      description: 'VANCE ELECTRIC LLC - LED channel wiring',
+      vendor: 'Vance Electric',
+      amountCents: parseMoney(750),
+      category: 'subcontractor',
+      paymentMethod: 'check',
+      status: 'matched',
+      projectId: 'proj-5',
+      taxDeductible: true,
+      createdAt: '2026-08-26T00:00:00.000Z',
+    };
+    const kpi = calculateProjectKPIs(project, [subcontract], [], []);
+
+    expect(kpi.subcontractorCostCents).toBe(75_000);
+    expect(kpi.actualMaterialsCostCents).toBe(0);
+    expect(kpi.otherDirectCostsCents).toBe(0);
+    expect(kpi.totalDirectCostCents).toBe(75_000);
+    // Subs come out of net earnings, exactly as materials do.
+    expect(kpi.netEarningsCents).toBe(245_000);
   });
 
   // CHANGED (bug 1): the KPI object used to carry `unassignedExpenseCount`,

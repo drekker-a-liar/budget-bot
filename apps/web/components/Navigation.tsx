@@ -83,7 +83,7 @@ export function Navigation({
             </div>
             <div>
               <div style={{ fontSize: '0.95rem', fontWeight: 800, letterSpacing: '-0.02em', color: '#ffffff' }}>
-                BUDGET BOT <span style={{ color: 'var(--accent-cyan)', fontSize: '0.75rem', fontWeight: 600 }}>// TRADE OPS</span>
+                BUDGET BOT <span style={{ color: 'var(--accent-cyan)', fontSize: '0.75rem', fontWeight: 600 }}>{'// TRADE OPS'}</span>
               </div>
               <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                 Contractor Expense & Margin OS

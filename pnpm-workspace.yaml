@@ -1,3 +1,9 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# eslint-config-next pulls in unrs-resolver, whose postinstall only fetches a
+# native binary as a fallback; pnpm already installs the right one as an
+# optional dependency, so the script is deliberately not run.
+allowBuilds:
+  unrs-resolver: false

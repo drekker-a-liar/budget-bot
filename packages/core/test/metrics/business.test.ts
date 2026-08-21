@@ -1,11 +1,39 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { calculateBusinessSummary } from '../../src/metrics/business';
+import type { ExpenseTransaction, Invoice, InvoiceStatus } from '../../src/types';
+import { parseMoney } from '../../src/money';
 import {
   SEED_PROJECTS,
   SEED_TRANSACTIONS,
   SEED_LABOR,
   SEED_INVOICES,
 } from '../fixtures';
+
+const invoice = (status: InvoiceStatus, dollars: number, paidDate?: string): Invoice => ({
+  id: `inv-${status}-${dollars}`,
+  projectId: 'proj-x',
+  invoiceNumber: 'INV-TEST',
+  amountCents: parseMoney(dollars),
+  depositAmountCents: parseMoney(0),
+  dateIssued: '2026-08-18',
+  dueDate: '2026-08-19',
+  status,
+  paidDate,
+  createdAt: '2026-08-18T00:00:00.000Z',
+});
+
+const expense = (dollars: number, date: string): ExpenseTransaction => ({
+  id: `tx-${dollars}-${date}`,
+  date,
+  description: 'A PURCHASE',
+  vendor: 'A Vendor',
+  amountCents: parseMoney(dollars),
+  category: 'materials',
+  paymentMethod: 'card',
+  status: 'matched',
+  taxDeductible: true,
+  createdAt: `${date}T00:00:00.000Z`,
+});
 
 // CHARACTERIZATION of the aggregate figures, except where a test is marked
 // CHANGED: those pin behaviour this task deliberately altered.
@@ -86,6 +114,34 @@ describe('calculateBusinessSummary', () => {
     // $154.76/hr by leaving $1,690 of subs and disposal costs in.
     expect(summarize().averageHourlyRealizationCents).toBe(15_132);
     expect(summarize().averageHourlySeverity).toBe('healthy');
+  });
+
+  it.each([
+    [0, 'healthy'],
+    [500, 'healthy'],
+    [500.01, 'caution'],
+    [2000, 'caution'],
+    [2000.01, 'critical'],
+  ])('$%s of overdue receivables is %s', (dollars, expected) => {
+    const invoices = dollars > 0 ? [invoice('overdue', dollars)] : [];
+    expect(calculateBusinessSummary([], [], [], invoices, NOW).receivablesSeverity).toBe(
+      expected
+    );
+  });
+
+  it.each([
+    [1000, 'healthy'],
+    [0, 'healthy'],
+    [-0.01, 'caution'],
+    [-500, 'caution'],
+    [-500.01, 'critical'],
+  ])('a weekly net cash flow of $%s is %s', (net, expected) => {
+    // One paid invoice in, one expense out, both inside the seven-day window.
+    const invoices = [invoice('paid', 1000, '2026-08-19')];
+    const transactions = [expense(1000 - net, '2026-08-19')];
+    const summary = calculateBusinessSummary([], transactions, [], invoices, NOW);
+    expect(summary.weeklyNetCashFlowCents).toBe(parseMoney(net));
+    expect(summary.cashFlowSeverity).toBe(expected);
   });
 
   // CHANGED (bug 2): with no hours logged there is no realization to report,

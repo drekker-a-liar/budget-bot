@@ -136,7 +136,7 @@ export function DashboardMetrics({ summary, onOpenInbox }: DashboardMetricsProps
           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>unlinked spend</span>
         </div>
         <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.5rem' }}>
-          <span style={{ color: 'var(--text-secondary)' }}>Home Depot & Lowe's swipes</span>
+          <span style={{ color: 'var(--text-secondary)' }}>Home Depot &amp; Lowe&apos;s swipes</span>
           <Link
             href="/transactions"
             style={{

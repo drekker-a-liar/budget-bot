@@ -6,5 +6,11 @@ export default defineConfig({
   test: {
     ...baseVitestConfig.test,
     include: ["test/**/*.test.ts"],
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.ts"],
+      // Barrel file: re-exports only, nothing to execute.
+      exclude: ["src/index.ts"],
+    },
   },
 });

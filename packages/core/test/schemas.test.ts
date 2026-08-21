@@ -14,12 +14,11 @@ import {
 } from './fixtures';
 
 /** Everything persistence adds, which the input schemas do not describe. */
-const withoutPersistedFields = <T extends object>(entity: T) => {
-  const { id, createdAt, updatedAt, ...input } = entity as T & {
-    id: string;
-    createdAt: string;
-    updatedAt?: string;
-  };
+const withoutPersistedFields = (entity: object): Record<string, unknown> => {
+  const input: Record<string, unknown> = { ...entity };
+  delete input.id;
+  delete input.createdAt;
+  delete input.updatedAt;
   return input;
 };
 
