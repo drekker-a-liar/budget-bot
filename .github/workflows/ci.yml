@@ -1,0 +1,190 @@
+# Everything that has to be true before a change lands (spec §7, §9).
+#
+# Three jobs, because they fail for three different reasons and a reader of a
+# red X should not have to open the log to find out which: `verify` is the
+# code, `secrets` is the history, `e2e` is the app actually running.
+#
+# The database is a service container rather than a hosted branch. Nothing here
+# needs a secret, which means a fork's pull request gets the same run as a
+# branch - and a CI configuration that only works for people with credentials
+# is not a check on an open-source repository, it is a check on its owner.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# One run per branch. A push that lands while the last one is still going makes
+# that one's answer irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # A throwaway server inside the runner. These credentials are as weak as they
+  # look and reachable from nowhere but this job.
+  DATABASE_URL: postgres://budget_bot:budget_bot@127.0.0.1:5432/budget_bot
+  DATABASE_URL_TEST: postgres://budget_bot:budget_bot@127.0.0.1:5432/budget_bot_test
+
+jobs:
+  verify:
+    name: lint, typecheck, test, build
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: budget_bot
+          POSTGRES_PASSWORD: budget_bot
+          POSTGRES_DB: budget_bot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U budget_bot -d budget_bot"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # No version pinned here on purpose: the action reads `packageManager`
+      # out of package.json, so this file cannot drift from what a contributor
+      # runs locally.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Create the test database
+        # The packages/db suite drops and rebuilds its schema, so it gets a
+        # database of its own. Without this it skips itself with a message,
+        # which would be a green run that tested nothing.
+        run: pnpm --filter @budget-bot/db db:test:setup
+
+      # Deliberately not `--filter=...[origin/main]`. The affected-package
+      # filter needs a merge base that a shallow checkout of a pull request
+      # does not reliably have, and a run that quietly skips a package is worse
+      # than one that takes an extra minute.
+      - name: Lint, typecheck, test, build
+        run: pnpm turbo lint typecheck test build
+
+      - name: Audit production dependencies
+        # Blocking. The advisories this is allowed to pass over are named, one
+        # by one and with reasons, in pnpm-workspace.yaml - so a new one
+        # against any of those packages still turns this red.
+        run: pnpm audit --prod --audit-level=high
+
+      - name: The boot assertion accepts a complete production environment
+        # Half of the check, and the half that is usually missing: an assertion
+        # nobody has seen accept anything is one that might refuse everything.
+        run: |
+          set -a
+          . ./ci/env.production.fixture
+          set +a
+          pnpm check:security
+
+      - name: The boot assertion still refuses one with no allow list
+        # `set -e` is on, so this cannot be written as a plain command: it is
+        # expected to fail, and a zero exit is the failure.
+        run: |
+          set -a
+          . ./ci/env.production.fixture
+          set +a
+          unset ALLOWED_EMAILS
+          if pnpm check:security; then
+            echo "::error::check:security accepted a production environment with an empty allow list."
+            exit 1
+          fi
+          echo "Refused, as it should."
+
+  secrets:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # The whole history. A secret committed and then removed is still a
+          # secret that was published, and scanning only the diff would call
+          # the commit that removes it clean.
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        # The binary from a pinned release rather than the marketplace action:
+        # the action asks organisation accounts for a licence key, and a check
+        # that needs a secret is one a fork's pull request cannot run.
+        env:
+          GITLEAKS_VERSION: 8.30.0
+        run: |
+          curl -sSfL \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      - name: Scan the full history
+        run: gitleaks git --redact --config .gitleaks.toml .
+
+  e2e:
+    name: end-to-end smoke
+    runs-on: ubuntu-latest
+    # After `verify`, not beside it: an end-to-end failure is hard to read, and
+    # if the unit tests are red they are the better explanation.
+    needs: verify
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: budget_bot
+          POSTGRES_PASSWORD: budget_bot
+          POSTGRES_DB: budget_bot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U budget_bot -d budget_bot"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Create the database the suite reseeds
+        run: pnpm --filter @budget-bot/db db:test:setup
+
+      - name: Install Chromium
+        run: pnpm --filter web exec playwright install --with-deps chromium
+
+      - name: Run the smoke suite
+        # The suite starts `next dev` itself and sets E2E for that server only
+        # (apps/web/e2e/environment.ts). E2E is deliberately not set on this
+        # job: nothing else in it should be able to see the test door.
+        run: pnpm --filter web e2e
+
+      - name: Keep the report when it fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+          retention-days: 7

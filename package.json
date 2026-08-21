@@ -7,6 +7,7 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
+    "lint:staged": "node scripts/lint-staged.mjs",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "e2e": "pnpm --filter web e2e",
@@ -15,9 +16,11 @@
     "db:down": "docker compose down",
     "db:generate": "pnpm --filter @budget-bot/db db:generate",
     "db:migrate": "pnpm --filter @budget-bot/db db:migrate",
-    "db:seed": "pnpm --filter @budget-bot/db db:seed"
+    "db:seed": "pnpm --filter @budget-bot/db db:seed",
+    "prepare": "lefthook install || true"
   },
   "devDependencies": {
+    "lefthook": "^2.1.10",
     "turbo": "^2.10.11"
   }
 }

@@ -1,0 +1,38 @@
+# Git hooks (spec §7, "Repo hygiene"). Installed by the root `prepare` script,
+# so `pnpm install` is all a contributor has to do.
+#
+# The rule for what belongs here: a check that is cheap and that catches
+# something a rebase cannot undo. A committed secret is the second kind - it
+# stays in the history whatever the next commit says - so it is checked before
+# the commit exists. Everything slower is CI's job, or pre-push's.
+#
+# `LEFTHOOK=0 git commit ...` skips all of it, for the times that is the right
+# call. CI does not offer that.
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: gitleaks
+      # `git --staged` scans the diff about to be committed. It fails the
+      # commit rather than warning: this is the only check in the repository
+      # whose finding cannot be fixed by a later commit.
+      #
+      # No gitleaks on this machine is also a failure, on purpose - a secret
+      # scanner that quietly does not run is worse than none. Install it with
+      # `brew install gitleaks`, or see https://github.com/gitleaks/gitleaks.
+      run: gitleaks git --staged --redact --config .gitleaks.toml
+
+    - name: eslint
+      # `--fix` on the staged TypeScript, re-staged afterwards. Which eslint
+      # depends on which workspace the file is in; scripts/lint-staged.mjs
+      # sorts that out.
+      glob: "*.{ts,tsx,mts}"
+      run: pnpm run lint:staged
+
+pre-push:
+  jobs:
+    - name: typecheck
+      # Not pre-commit: a whole-repo `tsc` is several seconds, and a commit is
+      # something people make dozens of times an hour. A push is the point at
+      # which somebody else might have to look at this.
+      run: pnpm run typecheck

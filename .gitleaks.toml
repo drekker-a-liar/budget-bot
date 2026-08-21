@@ -1,0 +1,38 @@
+# gitleaks configuration (spec §7, "Repo hygiene").
+#
+# Run by lefthook over what is staged, and by CI over the full history.
+# Nothing here loosens a rule. The allow lists below cover files that exist in
+# order to *show* what a secret looks like, and they are written as narrowly as
+# each case allows - a bare regex for a shape of string would excuse a real
+# secret of that shape too.
+#
+#   gitleaks detect --source . --config .gitleaks.toml     # full history
+#   gitleaks protect --staged --config .gitleaks.toml      # what is staged
+
+title = "Budget Bot"
+
+# The upstream rule set, in full. This file adds to it and takes nothing away.
+[extend]
+useDefault = true
+
+# Files where every value is either blank or a documented dummy, whole.
+[[allowlists]]
+description = "Files that document secrets rather than hold them"
+paths = [
+  # Every secret in it is blank, and test/env-example.test.ts fails if one
+  # ever is not.
+  '''^\.env\.example$''',
+  # Deliberately valid-looking dummies. CI feeds this file to the boot
+  # assertion to prove the assertion accepts a complete environment; see the
+  # file's own header for why each value looks the way it does.
+  '''^ci/env\.production\.fixture$''',
+]
+
+# One literal, in one file. The test needs a client id shaped like GitHub's to
+# assert that the boot assertion accepts one; the value is sixteen hex digits
+# in order, which is nobody's OAuth app.
+[[allowlists]]
+description = "The placeholder GitHub client id in the boot-assertion test"
+condition = "AND"
+paths = ['''^apps/web/test/env\.test\.ts$''']
+regexes = ['''Iv1\.0123456789abcdef''']
