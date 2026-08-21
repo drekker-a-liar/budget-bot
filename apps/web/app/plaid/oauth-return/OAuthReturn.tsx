@@ -48,15 +48,28 @@ export function OAuthReturn() {
 
   const finish = useCallback(
     async (publicToken: string) => {
-      const result = await exchangePublicTokenAction({ publicToken });
-      if (!result.ok) {
-        setError(result.error);
-        return;
+      try {
+        const result = await exchangePublicTokenAction({ publicToken });
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        router.replace('/settings/connections');
+      } catch {
+        // A refusal is a value with a message on it; this is the call itself
+        // never coming back. Unhandled, it leaves the page saying "Finishing
+        // the connection…" with nothing to say it never will.
+        setError('Something went wrong connecting to the server. Try again.');
       }
-      router.replace('/settings/connections');
     },
     [router]
   );
+
+  /** The flow is over, however it ended: the stashed token is spent. */
+  const done = () => {
+    forgetLinkToken();
+    setResumed(null);
+  };
 
   const { open, ready } = usePlaidLink({
     token: resumed?.token ?? null,
@@ -64,10 +77,12 @@ export function OAuthReturn() {
     onSuccess: (publicToken) => {
       // Spent either way: the flow has left Link, and this page must not be
       // able to resume it a second time.
-      forgetLinkToken();
-      setResumed(null);
+      done();
       if (publicToken) void finish(publicToken);
     },
+    // Closed without finishing - the user backed out at the bank. The token is
+    // single-use, so there is nothing here left to resume.
+    onExit: done,
   });
 
   useEffect(() => {

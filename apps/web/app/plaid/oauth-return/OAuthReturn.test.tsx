@@ -21,6 +21,7 @@ const link = vi.hoisted(() => ({
     token: string | null;
     receivedRedirectUri?: string;
     onSuccess: (publicToken: string | null, metadata: unknown) => void;
+    onExit?: (error: unknown, metadata: unknown) => void;
   },
   open: vi.fn(),
   ready: true,
@@ -118,6 +119,33 @@ describe('with the token the connections page stashed', () => {
     });
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/not configured/i);
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  it('clears the stash when the user closes Link instead of finishing', async () => {
+    render(<OAuthReturn />);
+    await waitFor(() => expect(link.open).toHaveBeenCalled());
+
+    await act(async () => {
+      link.options?.onExit?.(null, {});
+    });
+
+    expect(window.sessionStorage.getItem(LINK_TOKEN_KEY)).toBeNull();
+  });
+
+  it('says something went wrong when the action never comes back', async () => {
+    // Not a refusal, which is a value with a message on it - the call itself
+    // failing. Without a catch this is an unhandled rejection and the page
+    // sits on "Finishing the connection…" for ever.
+    vi.mocked(exchangePublicTokenAction).mockRejectedValueOnce(new Error('502'));
+    render(<OAuthReturn />);
+    await waitFor(() => expect(link.open).toHaveBeenCalled());
+
+    await act(async () => {
+      link.options?.onSuccess('public-sandbox-9', {});
+    });
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
     expect(router.replace).not.toHaveBeenCalled();
   });
 

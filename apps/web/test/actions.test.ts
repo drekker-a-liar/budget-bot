@@ -1,5 +1,6 @@
-import { PlaidItemError } from '@budget-bot/bank-connectors';
+import { PlaidItemError, PlaidRequestError } from '@budget-bot/bank-connectors';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { resetEnvCache } from '@/src/env';
 import type { RunSyncResult } from '@/src/server/bank/sync';
 import { loadActions } from './helpers/actionModules';
 
@@ -114,6 +115,19 @@ const repos = vi.hoisted(() => ({
     id,
     status: 'active',
   })),
+  // The one function that turns a stored token back into a string. It hands
+  // the plaintext to a callback and never returns it, so the stand-in does the
+  // same thing rather than resolving to a token.
+  withAccessToken: vi.fn(
+    async (
+      _db: unknown,
+      _owner: string,
+      _id: string,
+      _keyring: unknown,
+      fn: (accessToken: string) => Promise<unknown>
+    ) => fn('access-fake')
+  ),
+  recordSyncError: vi.fn(async () => undefined),
 }));
 
 vi.mock('@budget-bot/db', async (importOriginal) => ({
@@ -134,6 +148,8 @@ vi.mock('@budget-bot/db', async (importOriginal) => ({
     createConnection: repos.createConnection,
     upsertAccounts: repos.upsertAccounts,
     getConnection: repos.getConnection,
+    withAccessToken: repos.withAccessToken,
+    recordSyncError: repos.recordSyncError,
   },
 }));
 
@@ -211,6 +227,7 @@ const TEST_KEY = Buffer.from('not-a-real-key--not-a-real-key32').toString('base6
 beforeEach(() => {
   vi.clearAllMocks();
   vi.unstubAllEnvs();
+  resetEnvCache();
   vi.stubEnv('BANK_TOKEN_ENCRYPTION_KEY', TEST_KEY);
   vi.mocked(auth).mockResolvedValue({
     user: { id: 'user-1' },
@@ -533,7 +550,12 @@ describe('connecting a bank', () => {
 
   it('falls back to the deployment url when the request says nothing about itself', async () => {
     requestHeaders.current = {};
+    // Through the validated `env`, not `process.env`: one schema decides what
+    // a variable may be, and this is the last reader that was going round it.
+    // The proxy memoizes its parse, so a stubbed variable needs the reset.
+    vi.stubEnv('DATABASE_URL', 'postgres://stub/stub');
     vi.stubEnv('AUTH_URL', 'https://books.example/');
+    resetEnvCache();
 
     await createLinkTokenAction();
 
@@ -714,5 +736,128 @@ describe('syncing on demand', () => {
     const result = await syncNowAction({ connectionId: 'conn-1' });
 
     expect(result).toMatchObject({ ok: true, data: { skipped: true } });
+  });
+});
+
+/**
+ * What happens when the bank says no.
+ *
+ * The first thing an owner does with a fresh deployment is press Connect, and
+ * the most likely thing to happen is a Plaid failure: a `redirect_uri` that is
+ * not registered against the client id, credentials from the wrong
+ * environment, a public token that has already been spent. None of those are
+ * exceptional - they are the ordinary first run - and an action that throws
+ * out of them takes the browser to an error boundary, or worse, leaves the
+ * island's `await` rejected with a button that says "Connecting…" for ever.
+ *
+ * So a provider failure is a value here, mapped by the same `syncFailureOf`
+ * the connection's recorded state uses, and rendered as the code rather than
+ * as the provider's message.
+ */
+describe('when the provider refuses', () => {
+  it('reports a refused link token rather than throwing out of the action', async () => {
+    bank.createLinkToken.mockRejectedValueOnce(
+      new PlaidRequestError('INVALID_FIELD', 'redirect_uri must be registered: https://app.example')
+    );
+
+    const result = await createLinkTokenAction();
+
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('INVALID_FIELD') });
+    // The code, not Plaid's sentence - and certainly not a URL it echoed back.
+    expect(JSON.stringify(result)).not.toContain('must be registered');
+  });
+
+  it('reports a refused exchange, and stores no connection at all', async () => {
+    bank.exchangePublicToken.mockRejectedValueOnce(
+      new PlaidRequestError('INVALID_PUBLIC_TOKEN', 'public token has already been exchanged')
+    );
+
+    const result = await exchangePublicTokenAction({ publicToken: 'public-fake' });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('INVALID_PUBLIC_TOKEN'),
+    });
+    expect(repos.createConnection).not.toHaveBeenCalled();
+    expect(bank.runSync).not.toHaveBeenCalled();
+  });
+
+  it('keeps the connection when the accounts cannot be listed, and says none were stored', async () => {
+    // The token is encrypted into a row by this point. Throwing would strand
+    // it; storing zero accounts and calling it a success would be worse still,
+    // because every synced transaction would name an account that is not there
+    // and be dropped. So: an honest count, the reason, and no sync to run.
+    bank.getAccounts.mockRejectedValueOnce(
+      new PlaidRequestError('PRODUCT_NOT_READY', 'the item is still being prepared')
+    );
+
+    const result = await exchangePublicTokenAction({ publicToken: 'public-fake' });
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: { connectionId: 'conn-1', accounts: 0, firstSync: { error: 'PRODUCT_NOT_READY' } },
+    });
+    expect(repos.createConnection).toHaveBeenCalled();
+    expect(bank.runSync).not.toHaveBeenCalled();
+  });
+
+  it('says a bank needs signing into again rather than naming a code at the owner', async () => {
+    bank.exchangePublicToken.mockRejectedValueOnce(
+      new PlaidItemError('ITEM_LOGIN_REQUIRED', 'the user must log in again')
+    );
+
+    const result = await exchangePublicTokenAction({ publicToken: 'public-fake' });
+
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('sign in again') });
+  });
+});
+
+/**
+ * Sync now refreshes the account list first.
+ *
+ * Two reasons, and the second is why it is unconditional. Balances move, and a
+ * screen showing last week's is a screen nobody trusts. And a connection that
+ * was stored without accounts - `getAccounts` failed straight after Link -
+ * cannot sync at all: every transaction names an account that is not there, so
+ * every page is dropped as `UNKNOWN_ACCOUNT` and the connection is permanently
+ * useless. Refreshing here is what heals it, without a repair path anybody has
+ * to know exists.
+ */
+describe('refreshing the accounts before a sync', () => {
+  it('lists them through the stored token and upserts them before pulling anything', async () => {
+    await syncNowAction({ connectionId: 'conn-1' });
+
+    expect(repos.withAccessToken).toHaveBeenCalledWith(
+      {},
+      'user-1',
+      'conn-1',
+      expect.anything(),
+      expect.any(Function)
+    );
+    expect(bank.getAccounts).toHaveBeenCalledWith('access-fake');
+    expect(repos.upsertAccounts).toHaveBeenCalledWith(
+      {},
+      'user-1',
+      'conn-1',
+      expect.arrayContaining([expect.objectContaining({ externalId: 'fake-credit' })])
+    );
+    expect(repos.upsertAccounts.mock.invocationCallOrder[0]).toBeLessThan(
+      bank.runSync.mock.invocationCallOrder[0]
+    );
+  });
+
+  it('records why it stopped when the refresh itself fails, so the screen agrees', async () => {
+    bank.getAccounts.mockRejectedValueOnce(
+      new PlaidItemError('ITEM_LOGIN_REQUIRED', 'the user must log in again')
+    );
+
+    const result = await syncNowAction({ connectionId: 'conn-1' });
+
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('sign in again') });
+    expect(repos.recordSyncError).toHaveBeenCalledWith({}, 'user-1', 'conn-1', {
+      code: 'ITEM_LOGIN_REQUIRED',
+      status: 'reauth_required',
+    });
+    expect(bank.runSync).not.toHaveBeenCalled();
   });
 });

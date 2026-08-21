@@ -25,6 +25,7 @@ const link = vi.hoisted(() => ({
     token: string | null;
     receivedRedirectUri?: string;
     onSuccess: (publicToken: string | null, metadata: unknown) => void;
+    onExit?: (error: unknown, metadata: unknown) => void;
   },
   open: vi.fn(),
   ready: true,
@@ -154,7 +155,7 @@ describe('a real bank, through Plaid Link', () => {
     expect(router.refresh).not.toHaveBeenCalled();
   });
 
-  it('ignores a Link success that carried no token', async () => {
+  it('ignores a Link success that carried no token, and clears the stash anyway', async () => {
     render(<ConnectBankButton kind="plaid" />);
     await clickConnect();
     await waitFor(() => expect(link.open).toHaveBeenCalled());
@@ -164,5 +165,44 @@ describe('a real bank, through Plaid Link', () => {
     });
 
     expect(exchangePublicTokenAction).not.toHaveBeenCalled();
+    // Spent regardless: Link has finished with this token, and a stash left
+    // behind is one the OAuth return page would try to resume.
+    expect(window.sessionStorage.getItem(LINK_TOKEN_KEY)).toBeNull();
+  });
+
+  it('clears the stash when the user closes Link without finishing', async () => {
+    render(<ConnectBankButton kind="plaid" />);
+    await clickConnect();
+    await waitFor(() => expect(link.open).toHaveBeenCalled());
+
+    await act(async () => {
+      link.options?.onExit?.(null, {});
+    });
+
+    expect(window.sessionStorage.getItem(LINK_TOKEN_KEY)).toBeNull();
+  });
+});
+
+/**
+ * An action that rejects rather than answering.
+ *
+ * A server action can fail as an exception - the deployment is down, the
+ * request never arrives - and the `await` in this component is what receives
+ * it. Without a `catch` that is an unhandled rejection, `setBusy(false)` never
+ * runs, and the button says "Connecting…" for the rest of the session with
+ * nothing on screen to say why.
+ */
+describe('when the action itself throws', () => {
+  it.each([
+    ['fake', async () => vi.mocked(exchangePublicTokenAction).mockRejectedValueOnce(new Error('502'))],
+    ['plaid', async () => vi.mocked(createLinkTokenAction).mockRejectedValueOnce(new Error('502'))],
+  ] as const)('says something went wrong and re-enables the button (%s)', async (kind, arrange) => {
+    await arrange();
+    render(<ConnectBankButton kind={kind} />);
+
+    await clickConnect();
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /connect a bank/i })).toBeEnabled();
   });
 });

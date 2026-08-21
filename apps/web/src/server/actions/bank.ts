@@ -1,9 +1,10 @@
 'use server';
 
-import { bankRepo, getDb } from '@budget-bot/db';
+import { bankRepo, getDb, type BankAccount } from '@budget-bot/db';
 import { loadKeysFromEnv } from '@budget-bot/db/crypto';
 import { headers } from 'next/headers';
 import { currentOwnerId } from '@/lib/ownerSession';
+import { env } from '@/src/env';
 import { getBankProvider } from '@/src/server/bank/provider';
 import { runSync, syncFailureOf, type RunSyncResult } from '@/src/server/bank/sync';
 import { ExchangePublicTokenForm, SyncConnectionForm } from './inputs';
@@ -95,7 +96,10 @@ async function requestOrigin(): Promise<string | null> {
 
 /** What the operator configured this deployment's own URL to be. */
 function configuredOrigin(): string | null {
-  const configured = process.env.AUTH_URL;
+  // Through the validated `env` rather than `process.env`: one schema is the
+  // last word on what a variable may be, and a second reader going round it is
+  // how a value that the schema would have rejected reaches a redirect URI.
+  const configured = env.AUTH_URL;
   if (!configured) return null;
   try {
     // The origin, not the string: `AUTH_URL` is allowed to carry Auth.js's own
@@ -132,8 +136,17 @@ export async function createLinkTokenAction(): Promise<ActionResult<{ linkToken:
     );
   }
 
-  const { linkToken } = await provider.createLinkToken({ userId: ownerId, redirectUri });
-  return ok({ linkToken });
+  try {
+    const { linkToken } = await provider.createLinkToken({ userId: ownerId, redirectUri });
+    return ok({ linkToken });
+  } catch (error) {
+    // The likeliest failure on a deployment's first run - a `redirect_uri` the
+    // Plaid dashboard has never been told about, or credentials from the other
+    // environment - and it is an answer rather than an exception. Throwing
+    // here reaches the browser as a rejected action call, which is a button
+    // that says "Connecting…" for ever and says nothing about why.
+    return failed(readable(error, LINK_REFUSED));
+  }
 }
 
 /**
@@ -163,7 +176,15 @@ export async function exchangePublicTokenAction(
   // `createConnection`, which encrypts it against the row's own id, and to the
   // account listing, which is the one call that has to happen before the row
   // can be read back through `withAccessToken`.
-  const item = await provider.exchangePublicToken(parsed.data.publicToken);
+  let item;
+  try {
+    item = await provider.exchangePublicToken(parsed.data.publicToken);
+  } catch (error) {
+    // Nothing has been written yet, so this really is "nothing has changed".
+    // A spent public token and a credentials mismatch both land here.
+    return failed(readable(error, EXCHANGE_REFUSED));
+  }
+
   const connection = await bankRepo.createConnection(
     db,
     ownerId,
@@ -176,24 +197,31 @@ export async function exchangePublicTokenAction(
     },
     keyring
   );
-  const stored = await bankRepo.upsertAccounts(
-    db,
-    ownerId,
-    connection.id,
-    await provider.getAccounts(item.accessToken)
-  );
 
+  // Past this line the token is stored, and every failure below is reported as
+  // a field on a success. Turning one into `failed` would strand an encrypted
+  // credential behind a connection the owner cannot see and cannot retry.
+  let stored: BankAccount[] = [];
   let firstSync: FirstSyncOutcome;
   try {
+    stored = await bankRepo.upsertAccounts(
+      db,
+      ownerId,
+      connection.id,
+      await provider.getAccounts(item.accessToken)
+    );
+
     firstSync = await runSync(db, ownerId, connection.id, {
       provider,
       keyring,
       maxPages: FIRST_SYNC_MAX_PAGES,
     });
   } catch (error) {
-    // The connection is stored, and `runSync` has already recorded why it
-    // stopped. Losing an encrypted token over a sync that can be retried from
-    // the screen would be the worst trade available here.
+    // Includes the case where the accounts could not be listed at all, which
+    // is why the sync is inside this block rather than after it: with no
+    // accounts, every transaction a sync fetched would name one this
+    // connection does not have and be dropped. **Sync now** re-lists the
+    // accounts before it pulls, so a connection stored empty heals itself.
     firstSync = { error: syncFailureOf(error).code };
   }
 
@@ -201,15 +229,34 @@ export async function exchangePublicTokenAction(
   return ok({ connectionId: connection.id, accounts: stored.length, firstSync });
 }
 
-/** What a failed run should say to the person who pressed the button. */
-function readable(code: string, status: 'error' | 'reauth_required'): string {
-  if (status === 'reauth_required') {
+/**
+ * What a provider failure should say to the person who pressed the button.
+ *
+ * The failure is classified by `syncFailureOf`, which is the same mapping the
+ * connection's recorded state uses - so "what the screen says" and "what the
+ * row says" cannot drift into two different names for one failure. Only the
+ * sentence differs by operation, because "the sync stopped" is the wrong thing
+ * to tell somebody whose Link token was refused before a sync existed.
+ *
+ * The code, never the provider's message: the message is free text from
+ * somebody else's system and this is a screen (spec §9).
+ */
+function readable(error: unknown, sentence: (code: string) => string): string {
+  const failure = syncFailureOf(error);
+  if (failure.status === 'reauth_required') {
     return 'Your bank needs you to sign in again before it will share transactions. Reconnect it to carry on.';
   }
-  // The code, never the provider's message: the message is free text from
-  // somebody else's system and this is a screen (spec §9).
-  return `The sync stopped: ${code}. Nothing already imported was lost - try again in a minute.`;
+  return sentence(failure.code);
 }
+
+const LINK_REFUSED = (code: string) =>
+  `Plaid would not start a connection: ${code}. Nothing has changed - try again.`;
+
+const EXCHANGE_REFUSED = (code: string) =>
+  `That bank could not be connected: ${code}. Nothing has been stored - try again.`;
+
+const SYNC_STOPPED = (code: string) =>
+  `The sync stopped: ${code}. Nothing already imported was lost - try again in a minute.`;
 
 /**
  * Everything the bank has, now.
@@ -235,18 +282,41 @@ export async function syncNowAction(input: unknown): Promise<ActionResult<RunSyn
   const connection = await bankRepo.getConnection(db, ownerId, parsed.data.connectionId);
   if (!connection) return failed('Connection not found');
 
+  const keyring = loadKeysFromEnv();
+
+  // The accounts, before anything is pulled against them. Two reasons, and the
+  // second is why it is unconditional rather than a repair anybody has to know
+  // to run: balances move, and a connection that was stored *without* accounts
+  // - `getAccounts` failed straight after Link - can never sync, because every
+  // transaction names an account it does not have and is dropped. This heals
+  // that connection the next time somebody presses the button.
+  try {
+    const accounts = await bankRepo.withAccessToken(
+      db,
+      ownerId,
+      connection.id,
+      keyring,
+      (accessToken) => provider.getAccounts(accessToken)
+    );
+    await bankRepo.upsertAccounts(db, ownerId, connection.id, accounts);
+  } catch (error) {
+    // Recorded, because nothing below this point will do it: `runSync` writes
+    // the connection's failure state itself, and a refresh that failed outside
+    // it would otherwise leave a screen saying "Connected" under a message
+    // saying it is not.
+    await bankRepo.recordSyncError(db, ownerId, connection.id, syncFailureOf(error));
+    revalidateApp();
+    return failed(readable(error, SYNC_STOPPED));
+  }
+
   let result: RunSyncResult;
   try {
-    result = await runSync(db, ownerId, connection.id, {
-      provider,
-      keyring: loadKeysFromEnv(),
-    });
+    result = await runSync(db, ownerId, connection.id, { provider, keyring });
   } catch (error) {
     // `runSync` recorded the failure on the connection before it threw, so the
     // screen has to be re-read for the owner to see it.
     revalidateApp();
-    const failure = syncFailureOf(error);
-    return failed(readable(failure.code, failure.status));
+    return failed(readable(error, SYNC_STOPPED));
   }
 
   revalidateApp();

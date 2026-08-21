@@ -2,7 +2,6 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BankAccount, BankConnection } from '@budget-bot/db';
 import { mockNextNavigation, refused, router } from '@/test/helpers/islands';
 
 /**
@@ -30,55 +29,48 @@ vi.mock('@/src/server/actions/bank', () => ({
 const { syncNowAction } = await import('@/src/server/actions/bank');
 const { ConnectionsView } = await import('./ConnectionsView');
 
-function anAccount(overrides: Partial<BankAccount> = {}): BankAccount {
+/**
+ * The props, named off the component itself.
+ *
+ * Deliberately not the repository's row types: the query hands this screen a
+ * view with the cursor, the item id and the encryption key id left out, and a
+ * fixture built from the wider row would let the screen start reading one of
+ * them without anything noticing.
+ */
+type Connection = Parameters<typeof ConnectionsView>[0]['connections'][number];
+type Account = Connection['accounts'][number];
+
+function anAccount(overrides: Partial<Account> = {}): Account {
   return {
     id: 'acct-1',
-    connectionId: 'conn-1',
-    externalId: 'fake-credit',
     name: 'Fake Business Card',
     officialName: 'Fake Bank Business Rewards Card',
     mask: '4471',
     type: 'credit',
     subtype: 'credit card',
     currentBalanceCents: 264956,
-    availableBalanceCents: 235044,
     creditLimitCents: 500000,
-    isoCurrencyCode: 'USD',
-    isEnabled: true,
-    balancesUpdatedAt: '2026-08-20T12:00:00.000Z',
     ...overrides,
   };
 }
 
-function aConnection(
-  overrides: Partial<BankConnection & { accounts: BankAccount[] }> = {}
-): BankConnection & { accounts: BankAccount[] } {
+function aConnection(overrides: Partial<Connection> = {}): Connection {
   return {
     id: 'conn-1',
-    provider: 'plaid',
-    itemId: 'item-fake',
-    institutionId: 'ins_fake',
     institutionName: 'Fake Bank (E2E)',
-    encryptionKeyId: 'key-1',
-    cursor: 'fake-2',
     status: 'active',
     lastSyncedAt: '2026-08-20T12:00:00.000Z',
     lastErrorCode: null,
-    lastErrorAt: null,
-    createdAt: '2026-08-19T12:00:00.000Z',
-    updatedAt: '2026-08-20T12:00:00.000Z',
     accounts: [
       anAccount(),
       anAccount({
         id: 'acct-2',
-        externalId: 'fake-checking',
         name: 'Fake Business Checking',
         officialName: 'Fake Bank Business Interest Checking',
         mask: '0000',
         type: 'depository',
         subtype: 'checking',
         currentBalanceCents: 1298011,
-        availableBalanceCents: 1245011,
         creditLimitCents: null,
       }),
     ],

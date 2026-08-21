@@ -4,10 +4,10 @@ import React, { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { AlertTriangle, Landmark, RefreshCw } from 'lucide-react';
 import { formatCents, type Cents } from '@budget-bot/core';
-import type { BankAccount, BankConnection } from '@budget-bot/db';
 import { Navigation } from '@/components/Navigation';
 import { syncNowAction } from '@/src/server/actions/bank';
 import type { RunSyncResult } from '@/src/server/bank/sync';
+import type { ConnectionView } from '@/src/server/queries/connections';
 import { ConnectBankButton } from './ConnectBankButton';
 
 /**
@@ -32,7 +32,7 @@ export interface ConnectionsViewProps {
   /** False when this deployment has no Plaid credentials at all (spec §7). */
   configured: boolean;
   kind: 'fake' | 'plaid' | null;
-  connections: Array<BankConnection & { accounts: BankAccount[] }>;
+  connections: ConnectionView[];
   unassignedCount: number;
 }
 
@@ -67,7 +67,7 @@ function formatSyncedAt(iso: string): string {
 }
 
 /** The status of a connection, as a chip a reader can act on. */
-function statusOf(connection: BankConnection): { label: string; className: string } {
+function statusOf(connection: ConnectionView): { label: string; className: string } {
   if (connection.status === 'reauth_required') {
     return { label: 'Your bank needs you to sign in again', className: 'badge-critical' };
   }

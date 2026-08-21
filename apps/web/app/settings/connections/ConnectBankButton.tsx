@@ -38,6 +38,16 @@ export function ConnectBankButton({ kind }: ConnectBankButtonProps) {
   return kind === 'plaid' ? <ConnectThroughLink /> : <ConnectTheScriptedBank />;
 }
 
+/**
+ * Something went wrong that this component cannot describe.
+ *
+ * An action answers a *refusal* as a value, and that message is the one worth
+ * showing. This is for the other case - the call itself never came back - and
+ * it deliberately says nothing about what: the component does not know, and
+ * inventing a reason is worse than admitting there is not one.
+ */
+const UNREACHABLE = 'Something went wrong connecting to the server. Try again.';
+
 /** What both flows do with a public token once they have one. */
 function useExchange() {
   const router = useRouter();
@@ -47,19 +57,28 @@ function useExchange() {
   const exchange = useCallback(
     async (publicToken: string) => {
       setBusy(true);
-      const result = await exchangePublicTokenAction({ publicToken });
-      setBusy(false);
-      // Whatever happened next, Link is finished with this token and the
-      // return page has no business resuming it.
-      forgetLinkToken();
-
-      if (!result.ok) {
-        setError(result.error);
-        return;
+      try {
+        const result = await exchangePublicTokenAction({ publicToken });
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        // The action revalidated the tree; this is what asks for it. The new
+        // connection is a server render away, not a piece of local state.
+        router.refresh();
+      } catch {
+        // An action can fail as an exception rather than as a value - the
+        // deployment is down, the request never arrives - and this `await` is
+        // what receives it. Without this, the rejection is unhandled and the
+        // `finally` below never runs, which is a button that says
+        // "Connecting…" for the rest of the session.
+        setError(UNREACHABLE);
+      } finally {
+        setBusy(false);
+        // Whatever happened, Link is finished with this token and the return
+        // page has no business resuming it.
+        forgetLinkToken();
       }
-      // The action revalidated the tree; this is what asks for it. The new
-      // connection is a server render away, not a piece of local state.
-      router.refresh();
     },
     [router]
   );
@@ -96,14 +115,25 @@ function ConnectThroughLink() {
   const { exchange, busy, error, setBusy, setError } = useExchange();
   const [token, setToken] = useState<string | null>(null);
 
+  /** The flow is over, however it ended: the stashed token is spent. */
+  const done = () => {
+    forgetLinkToken();
+    setToken(null);
+  };
+
   const { open, ready } = usePlaidLink({
     token,
     onSuccess: (publicToken) => {
       // Link can complete without one - a flow the user abandoned at the last
-      // step - and exchanging nothing is a call that can only fail.
+      // step - and exchanging nothing is a call that can only fail. The stash
+      // is cleared either way, by `done` or by the exchange's `finally`.
       if (publicToken) void exchange(publicToken);
-      setToken(null);
+      done();
     },
+    // Closed without finishing. The token is single-use and short-lived, and
+    // leaving it behind means the OAuth return page would try to resume a flow
+    // the user walked away from.
+    onExit: done,
   });
 
   // Link is built from the token, so it cannot be opened in the tick the token
@@ -116,18 +146,22 @@ function ConnectThroughLink() {
   const connect = async () => {
     setError(null);
     setBusy(true);
-    const result = await createLinkTokenAction();
-    setBusy(false);
-
-    if (!result.ok) {
-      setError(result.error);
-      return;
+    try {
+      const result = await createLinkTokenAction();
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      // Stashed before Link opens: an OAuth bank leaves this page entirely and
+      // comes back to `/plaid/oauth-return`, where this component's state is
+      // gone and only `sessionStorage` survives.
+      rememberLinkToken(result.data.linkToken);
+      setToken(result.data.linkToken);
+    } catch {
+      setError(UNREACHABLE);
+    } finally {
+      setBusy(false);
     }
-    // Stashed before Link opens: an OAuth bank leaves this page entirely and
-    // comes back to `/plaid/oauth-return`, where this component's state is
-    // gone and only `sessionStorage` survives.
-    rememberLinkToken(result.data.linkToken);
-    setToken(result.data.linkToken);
   };
 
   return <ConnectButton onClick={() => void connect()} busy={busy} error={error} />;
