@@ -6,7 +6,96 @@ rather than a release cadence.
 
 ## v0.2.0-plaid-sandbox — unreleased
 
-Phase 2: **Plaid Sandbox Connector.** In progress.
+Phase 2: **Plaid Sandbox Connector.** A signed-in owner links a bank through
+Plaid Link, the access token is stored encrypted, and **Sync now** pulls
+`/transactions/sync` into the card inbox under ADR 0004's merge rules — all of
+it proved by tests that need no Plaid credentials.
+
+### Next 15.5 and React 19
+
+- Upgraded, with `params` and `searchParams` now awaited; the `next` advisories
+  the audit was ignoring are gone with the version they applied to.
+
+### The connector
+
+- `PlaidProvider` in `packages/bank-connectors`, behind the existing
+  `BankProvider` interface: link token, exchange, accounts, `/transactions/sync`
+  one page at a time, item removal. Stateless, with the client injected, so the
+  whole of its coverage runs against fixtures and no Plaid account.
+- Every Plaid failure is mapped to one of four things a caller can act on —
+  rate limited, mutation during pagination, an item error the *user* has to
+  resolve, and everything else. Nothing of the axios error survives the
+  mapping, because the outgoing request body it carries is where the access
+  token lives.
+- Positive is money out, no sign flip. A negative row (a card payment, a
+  refund) is stored and filed `ignored` rather than counted as an expense on
+  top of the purchases it settles.
+
+### Storing a bank
+
+- `bank_connections` and `bank_accounts` get their repository. The access token
+  is AES-256-GCM encrypted against the connection's own id before it is
+  written, and there is exactly one function that turns it back into a string:
+  `withAccessToken`, which hands it to a callback and never returns it. Every
+  read names its columns, so widening a query cannot quietly put a credential
+  in a payload.
+- A Postgres advisory lock per connection, so two syncs of the same bank cannot
+  interleave.
+- Three write primitives for the merge rule: `applyModified` (provider-owned
+  columns only), `reconcilePending` (pending → posted, carrying the filing
+  across), `applyRemoved` (soft delete for a filed row, hard for one nobody
+  touched).
+- The transactions table already carried the bank columns from Phase 1's
+  schema; the domain type did not. `ExpenseTransaction` now names them
+  (`postedAt`, `pending`, `source`, `provider`, `externalId`, `bankAccountId`,
+  `removedAt`, `userEditedAt`), so a bank row and a hand-typed one are the same
+  type all the way to the screen. No migration: `0000_initial_schema.sql` is
+  unedited.
+
+### Pulling from it
+
+- `runSync` composes them page by page. A page is applied and its cursor
+  committed in one transaction, so a run that dies on page nine keeps the eight
+  before it — and a cursor is never persisted for a page that did not land,
+  which is the one mistake in this protocol that loses transactions for good.
+- Counts are what happened rather than what was attempted: a page that wrote
+  fewer rows than it was handed stops the run rather than reporting success.
+- A rate limit is an unfinished sync, not a failed one. What was committed
+  stands, and the screen says when to come back.
+
+### The screen
+
+- `/settings/connections`: connect a bank, see its accounts and balances,
+  **Sync now** per connection with the counts it produced. Every connection
+  carries a status, not only the broken ones — "connected" and "has not fetched
+  anything since April" are both true at once and only one of them is
+  reassuring.
+- `/plaid/oauth-return` for the institutions that authenticate on their own
+  site. The redirect URI is built from the request's origin or `AUTH_URL`,
+  never from client input.
+- A deployment with no Plaid credentials is a supported deployment: the screen
+  says Plaid is not configured rather than offering a button that can only
+  fail.
+
+### Proving it without credentials
+
+- A scripted `FakeBankProvider` behind the existing `E2E=1` door — two
+  accounts, two pages, a cursor chain it refuses to skip — so the sync service
+  and the Playwright journey need no Plaid account. It cannot exist in
+  production: the door refuses to boot there, and its constructor refuses
+  again.
+- The end-to-end run now connects a bank, finds the charge in the inbox filed
+  to the right card, and presses **Sync now**.
+- `pnpm --filter web plaid:smoke`: the one thing here that talks to real Plaid,
+  run by hand by somebody with Sandbox keys. It creates a Platypus OAuth Bank
+  Item, pages to exhaustion and prints six numbers. No keys is a clean skip;
+  `PLAID_ENV` naming anything but `sandbox` is a refusal. Never run by CI.
+
+### Environment
+
+- `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV`. `PLAID_ENV=sandbox` is
+  refused in production, credentials without `PLAID_ENV` are refused, and
+  `PLAID_ENV=production` makes the credentials and `CRON_SECRET` mandatory.
 
 ### CSV upload is `text/csv` only
 
@@ -18,6 +107,38 @@ Phase 2: **Plaid Sandbox Connector.** In progress.
   and they cover the one shape the route now accepts.
 - An import batch no longer carries a filename: a raw body has no form field
   to read one from.
+
+### Also
+
+- `db:seed --reset` now deletes the owner's linked banks along with their
+  ledger. Leaving them was the half-measure that cannot work: a connection
+  carries a spent `/transactions/sync` cursor, so a reset owner kept a bank
+  that would never hand over a transaction it had already delivered, and
+  re-linking it collided with the row on the unique `(provider, item_id)`.
+
+### Known debt, carried into Phase 3
+
+- **No webhooks.** `TRANSACTIONS.SYNC_UPDATES_AVAILABLE` is not received, so
+  nothing pulls on its own; **Sync now** is the only trigger.
+- **No cron.** `CRON_SECRET` is required by the boot assertion and checked by
+  nothing yet: there is no scheduled sync for it to protect.
+- **No re-auth.** When a bank asks the owner to sign in again the connection
+  records `reauth_required` and the screen says so, and that is as far as it
+  goes. Worse, pressing **Connect a bank** for a bank that is already linked
+  fails on the unique `(provider, item_id)` and reaches the browser as
+  "Something went wrong connecting to the server" — Link's update mode is the
+  fix and it is Phase 3.
+- **No disconnect.** There is no way to remove a connection from the UI;
+  `removeItem` exists on the provider and nothing calls it.
+- **CSV import does not dedupe against a bank feed**, or against a second
+  upload of the same file. A statement imported twice is two sets of rows.
+- **`UNKNOWN_ACCOUNT` is recorded, not returned.** A page naming an account the
+  connection does not have leaves the code on the connection; the count of
+  transactions it dropped is not in the sync result the screen shows.
+- **Account row order is not stable.** The accounts behind one connection are
+  written by a single statement and share a `created_at`, so the table's order
+  is a tie-break on a random uuid and can differ between two databases holding
+  the same data.
 
 ## v0.1.0-foundation — unreleased
 

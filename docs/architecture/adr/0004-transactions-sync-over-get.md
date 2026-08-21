@@ -19,6 +19,25 @@ Rules the sync service enforces:
 - **Pending → posted:** a posted transaction carrying `pendingTransactionId` inherits the pending row's user-owned columns; the pending row is then removed. A `removed` event for a categorized row soft-deletes it so a categorized expense is never silently lost.
 - Sign convention: **positive = money out**. Negative rows (payments, refunds) are stored with `status: 'ignored'` by default.
 
+## Implementation notes
+
+Two details of the merge rule as it is actually written, because both are
+places where the obvious implementation is subtly wrong.
+
+`reconcilePending` copies the pending row's user-owned columns onto the posted
+row **only when the pending row was edited by a person** (`user_edited_at` is
+not null). A pending row nobody touched is still dropped — the posted row
+supersedes it — but nothing is copied off it, because its untouched defaults
+would otherwise overwrite the categorisation the posted row was just inserted
+with. So the stamp gates the copy, not the delete.
+
+`applyModified` never writes `category`, `tax_deductible` or `vendor` at all,
+stamp or no stamp. Those three are the categoriser's guess on insert and the
+user's afterwards, and a `modified` event is the provider telling us an amount
+or a date moved — not an invitation to re-guess a filing somebody has since
+corrected. `upsertFromBank` is the one path that sets them, and only for a row
+it is creating.
+
 ## Consequences
 
 - Deduplication, pending reconciliation, and deletions are handled by Plaid's protocol rather than by date-window heuristics.
