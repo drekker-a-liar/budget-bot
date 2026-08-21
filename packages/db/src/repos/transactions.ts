@@ -15,7 +15,16 @@ import { isUuid, orUndefined, toIso } from './rows';
 type TransactionRow = typeof transactions.$inferSelect;
 
 export type NewTransaction = Omit<ExpenseTransaction, 'id' | 'createdAt' | 'updatedAt'>;
-export type TransactionUpdate = Partial<NewTransaction>;
+
+export type TransactionUpdate = Partial<Omit<NewTransaction, 'projectId'>> & {
+  /**
+   * `null` unfiles the row; leaving the key out leaves its filing alone. The
+   * two are different requests and the type has to be able to say which - a
+   * row that reads `unassigned` while still pointing at a job is counted
+   * twice, once in the inbox and once against that job's margin.
+   */
+  projectId?: string | null;
+};
 
 export interface TransactionFilter {
   projectId?: string;
@@ -140,6 +149,8 @@ export type ImportedTransaction = NewTransaction & {
   externalId: string;
   /** The bank's own text, kept verbatim beside the cleaned description. */
   rawDescriptor?: string | null;
+  /** Still authorizing: the amount and the date can both still change. */
+  pending?: boolean;
 };
 
 export interface ImportProvenance {
@@ -176,6 +187,7 @@ export async function bulkCreateImported(
           provider: provenance.provider,
           externalId: item.externalId,
           rawDescriptor: item.rawDescriptor ?? null,
+          pending: item.pending ?? false,
           importBatchId: provenance.importBatchId,
         }))
       )
@@ -191,7 +203,7 @@ export async function updateTransaction(
   updates: TransactionUpdate
 ): Promise<ExpenseTransaction | null> {
   if (!isUuid(id)) return null;
-  const [row] = await rejectingForeignProject(updates.projectId, () =>
+  const [row] = await rejectingForeignProject(updates.projectId ?? undefined, () =>
     db
       .update(transactions)
       .set({ ...toUpdate(updates), updatedAt: new Date() })

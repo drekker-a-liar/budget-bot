@@ -54,7 +54,9 @@ export async function assignTransactionAction(
   const parsed = AssignTransactionForm.safeParse(input);
   if (!parsed.success) return invalid(parsed.error);
 
-  const projectId = parsed.data.projectId || undefined;
+  // `null`, not `undefined`: an absent key means "leave the filing alone",
+  // which would put the row in the inbox while it still pointed at a job.
+  const projectId = parsed.data.projectId || null;
   try {
     const transaction = await transactionsRepo.updateTransaction(
       getDb(),

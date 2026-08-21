@@ -100,6 +100,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       status: row.amountCents < 0 ? ('ignored' as const) : ('unassigned' as const),
       taxDeductible: auto.taxDeductible,
       externalId: row.externalId,
+      pending: row.pending,
     };
   });
 

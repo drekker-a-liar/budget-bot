@@ -140,6 +140,20 @@ describe('POST /api/import/csv', () => {
     });
   });
 
+  it('keeps the bank’s word on whether a charge has settled', async () => {
+    await post(
+      textCsv(
+        [
+          'Date,Description,Amount,Status',
+          '2026-08-18,SETTLED CHARGE,10.00,Posted',
+          '2026-08-19,STILL AUTHORIZING,20.00,Pending',
+        ].join('\n')
+      )
+    );
+
+    expect(written().map((row) => row.pending)).toEqual([false, true]);
+  });
+
   it('gives every row an identity, so a later sync can recognise it', async () => {
     await post(textCsv(CSV));
 

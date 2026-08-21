@@ -94,6 +94,30 @@ describeDb('import batches', () => {
     expect(rows.map((row) => row.externalId).sort()).toEqual(['a', 'b']);
   });
 
+  it('records a charge the bank has not settled as still pending', async () => {
+    const batch = await importBatchesRepo.createImportBatch(getDb(), ownerId, {
+      source: 'csv',
+      filename: null,
+      rowCount: 2,
+      insertedCount: 2,
+      skippedCount: 0,
+    });
+
+    await transactionsRepo.bulkCreateImported(getDb(), ownerId, [
+      csvRow({ externalId: 'settled' }),
+      csvRow({ externalId: 'authorizing', pending: true }),
+    ], { source: 'csv', provider: 'csv', importBatchId: batch.id });
+
+    const rows = await getDb()
+      .select()
+      .from(transactions)
+      .where(eq(transactions.ownerId, ownerId));
+    expect(rows.map((row) => [row.externalId, row.pending]).sort()).toEqual([
+      ['authorizing', true],
+      ['settled', false],
+    ]);
+  });
+
   it('leaves the bank account null, because a file is not a linked account', async () => {
     const batch = await importBatchesRepo.createImportBatch(getDb(), ownerId, {
       source: 'csv',

@@ -217,10 +217,13 @@ describe('assigning a charge', () => {
   });
 
   it('puts it back in the inbox when the job is cleared', async () => {
+    // `null` rather than `undefined`: the repository reads an absent key as
+    // "leave the filing alone", so undefined would leave the row pointing at
+    // the job it was just taken off.
     await assignTransactionAction({ id: 'tx-1', projectId: '' });
 
     expect(repos.updateTransaction).toHaveBeenCalledWith({}, 'user-1', 'tx-1', {
-      projectId: undefined,
+      projectId: null,
       status: 'unassigned',
     });
   });

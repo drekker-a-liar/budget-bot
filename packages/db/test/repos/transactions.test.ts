@@ -291,4 +291,44 @@ describeDb('transactionsRepo owner isolation', () => {
     expect(await transactionsRepo.listTransactions(db, alice)).toHaveLength(1);
     expect(await transactionsRepo.listTransactions(db, bob)).toHaveLength(1);
   });
+
+  it('unfiles a charge when the update says the project is null', async () => {
+    // The inbox's "put it back" is `projectId: null`, and it has to clear the
+    // column rather than only changing the status - a row that says
+    // `unassigned` while still pointing at a job counts twice: once in the
+    // inbox, once against that job's margin.
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const project = await projectsRepo.createProject(db, ownerId, newProject());
+    const created = await transactionsRepo.createTransaction(db, ownerId, {
+      ...manual(),
+      projectId: project.id,
+      status: 'matched',
+    });
+
+    const updated = await transactionsRepo.updateTransaction(db, ownerId, created.id, {
+      projectId: null,
+      status: 'unassigned',
+    });
+
+    expect(updated).toMatchObject({ status: 'unassigned' });
+    expect(updated?.projectId).toBeUndefined();
+  });
+
+  it('leaves the filing alone when an update does not mention the project', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const project = await projectsRepo.createProject(db, ownerId, newProject());
+    const created = await transactionsRepo.createTransaction(db, ownerId, {
+      ...manual(),
+      projectId: project.id,
+      status: 'matched',
+    });
+
+    const updated = await transactionsRepo.updateTransaction(db, ownerId, created.id, {
+      category: 'tools',
+    });
+
+    expect(updated).toMatchObject({ category: 'tools', projectId: project.id });
+  });
 });
