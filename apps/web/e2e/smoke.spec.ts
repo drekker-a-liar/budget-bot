@@ -196,14 +196,11 @@ test.describe.serial('signed in through the test-only door', () => {
     await expect(row).toContainText(FAKE_BANK.cardMask);
 
     // The header pill reads the linked accounts rather than a hard-coded card,
-    // so connecting a bank is what put a name in it. Either account is a pass:
-    // the pill shows the oldest enabled one, and the two were written by a
-    // single statement sharing a `created_at`, so the winner is a tie-break on
-    // a random uuid. Each name is paired with its own mask, which is the part
-    // that would be wrong if the pill were reading them off different rows.
-    await expect(
-      page.getByText(/Fake Business Card ••• 4471:|Fake Business Checking ••• 0000:/)
-    ).toBeVisible();
+    // so connecting a bank is what put a name in it - and it is the *credit*
+    // account, not whichever of the two the fake happened to write first
+    // (spec §6). The name is paired with its own mask, which is the part that
+    // would be wrong if the pill were reading them off different rows.
+    await expect(page.getByText('Fake Business Card ••• 4471:')).toBeVisible();
   });
 
   test('sync now runs, and says honestly that there was nothing left', async () => {

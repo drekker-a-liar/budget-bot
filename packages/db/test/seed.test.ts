@@ -72,6 +72,7 @@ describeDb('seedOwner', () => {
   it('takes the linked banks with it, so a reset owner can link again', async () => {
     const db = getDb();
     const ownerId = await createOwner(db);
+    const bystander = await createOwner(db);
     const [connection] = await db
       .insert(bankConnections)
       .values({
@@ -90,11 +91,24 @@ describeDb('seedOwner', () => {
       name: 'Fake Business Card',
     });
 
+    // Somebody else's bank, linked at the same institution.
+    await db.insert(bankConnections).values({
+      ownerId: bystander,
+      itemId: 'item-bystander',
+      institutionName: 'Fake Bank',
+      accessTokenCiphertext: 'v1:k2:dddd:eeee:ffff',
+      encryptionKeyId: 'k2',
+    });
+
     await seedOwner(db, ownerId, { reset: true });
 
     // Both, and the accounts by the cascade rather than a second delete.
     expect(await bankRepo.listConnections(db, ownerId)).toEqual([]);
     expect(await bankRepo.getCardProfile(db, ownerId)).toBeNull();
+    // `deleteOwnerData` is owner-scoped, and this is what says so out loud: a
+    // reset is the most destructive thing in the package and the blast radius
+    // is the assertion worth having, not the delete's own where-clause.
+    expect(await bankRepo.listConnections(db, bystander)).toHaveLength(1);
   });
 
   it('seeds one owner without touching another', async () => {

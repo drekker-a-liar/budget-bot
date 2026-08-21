@@ -88,12 +88,62 @@ describeDb('bankRepo.getCardProfile', () => {
     expect((await bankRepo.getCardProfile(db, ownerId))?.cardName).toBe('Spark Business');
   });
 
-  it('reads anything that is not a credit line as a debit card', async () => {
+  it('has no card to show when nothing enabled is a credit line', async () => {
     const db = getDb();
     const ownerId = await createOwner(db);
     await linkCard(db, ownerId, { type: 'depository' });
 
-    expect((await bankRepo.getCardProfile(db, ownerId))?.cardType).toBe('debit');
+    // Spec §6: the profile is the first enabled *credit* account. A checking
+    // account drawn behind a credit-card icon, with a limit of $0 because a
+    // checking account has no limit, is worse than an empty header.
+    expect(await bankRepo.getCardProfile(db, ownerId)).toBeNull();
+  });
+
+  it('passes over the checking account a connection was linked with', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const [connection] = await db
+      .insert(bankConnections)
+      .values({
+        ownerId,
+        itemId: `item-${crypto.randomUUID()}`,
+        institutionName: 'Fake Bank',
+        accessTokenCiphertext: 'v1:k2:aaaa:bbbb:cccc',
+        encryptionKeyId: 'k2',
+      })
+      .returning({ id: bankConnections.id });
+
+    // The order Plaid lists them in, and the order they are written in: the
+    // checking account is older, so it wins every tie-break there is. The type
+    // is what has to decide this, not the clock.
+    await db.insert(bankAccounts).values({
+      ownerId,
+      connectionId: connection.id,
+      externalAccountId: 'acct-checking',
+      name: 'Fake Business Checking',
+      mask: '0000',
+      type: 'depository',
+      subtype: 'checking',
+      createdAt: new Date('2026-08-01T00:00:00.000Z'),
+    });
+    await db.insert(bankAccounts).values({
+      ownerId,
+      connectionId: connection.id,
+      externalAccountId: 'acct-credit',
+      name: 'Fake Business Card',
+      mask: '4471',
+      type: 'credit',
+      subtype: 'credit card',
+      createdAt: new Date('2026-08-02T00:00:00.000Z'),
+    });
+
+    const profile = await bankRepo.getCardProfile(db, ownerId);
+
+    expect(profile).toMatchObject({ cardName: 'Fake Business Card', last4: '4471' });
+    // And the write-back follows the read: renaming "the card" renames the
+    // card, not whichever row happened to be first.
+    const renamed = await bankRepo.updateCardProfile(db, ownerId, { cardName: 'Business Visa' });
+    expect(renamed).toMatchObject({ cardName: 'Business Visa', last4: '4471' });
   });
 
   it('ignores an account the owner has disabled', async () => {

@@ -10,8 +10,14 @@ import { isUuid, toIso, toIsoOrNull } from './rows';
  * The card the dashboard shows. `CardProfile` is the prototype's shape - one
  * card, flat - while the tables model many accounts behind many connections.
  * Until the card UI is rebuilt, the profile is synthesised from the first
- * enabled account: a view over the real tables rather than a second copy of
- * the data that could disagree with them.
+ * enabled *credit* account (spec §6): a view over the real tables rather than
+ * a second copy of the data that could disagree with them.
+ *
+ * Credit, and null when there is none, because the screen this feeds draws a
+ * credit card - a name behind a card icon, a balance against a limit. One
+ * Plaid Item usually carries a checking account too, and it is usually the
+ * older row, so without the filter the header pill labels somebody's current
+ * account as their card and reports its limit as $0.
  */
 
 export type CardProfileUpdate = Partial<Omit<CardProfile, 'id'>>;
@@ -21,7 +27,6 @@ interface CardRow {
   cardName: string | null;
   name: string | null;
   mask: string | null;
-  type: string | null;
   currentBalanceCents: number | null;
   limitCents: number | null;
   cycleResetDay: number | null;
@@ -36,9 +41,9 @@ function toCardProfile(row: CardRow): CardProfile {
     cardName: row.cardName ?? row.name ?? '',
     issuer: row.institutionName ?? '',
     last4: row.mask ?? '',
-    // Plaid's account types are broader than the two the card UI knows about;
-    // anything that is not a credit line spends like a debit card.
-    cardType: row.type === 'credit' ? 'credit' : 'debit',
+    // Not a guess: `firstEnabledCreditAccount` is the only way a row reaches
+    // here, and it returns credit lines or nothing.
+    cardType: 'credit',
     currentBalanceCents: (row.currentBalanceCents ?? 0) as CardProfile['currentBalanceCents'],
     creditLimitCents: (row.limitCents ?? 0) as CardProfile['creditLimitCents'],
     cycleResetDay: row.cycleResetDay ?? 1,
@@ -46,7 +51,7 @@ function toCardProfile(row: CardRow): CardProfile {
   };
 }
 
-async function firstEnabledAccount(
+async function firstEnabledCreditAccount(
   db: Database,
   ownerId: string
 ): Promise<CardRow | undefined> {
@@ -56,7 +61,6 @@ async function firstEnabledAccount(
       cardName: bankAccounts.cardName,
       name: bankAccounts.name,
       mask: bankAccounts.mask,
-      type: bankAccounts.type,
       currentBalanceCents: bankAccounts.currentBalanceCents,
       limitCents: bankAccounts.limitCents,
       cycleResetDay: bankAccounts.cycleResetDay,
@@ -66,18 +70,27 @@ async function firstEnabledAccount(
     })
     .from(bankAccounts)
     .innerJoin(bankConnections, eq(bankAccounts.connectionId, bankConnections.id))
-    .where(and(eq(bankAccounts.ownerId, ownerId), eq(bankAccounts.isEnabled, true)))
+    .where(
+      and(
+        eq(bankAccounts.ownerId, ownerId),
+        eq(bankAccounts.isEnabled, true),
+        // The whole of the fix: `created_at` alone picks whichever account the
+        // provider happened to list first, which for a Plaid Item is normally
+        // the checking one.
+        eq(bankAccounts.type, 'credit')
+      )
+    )
     .orderBy(asc(bankAccounts.createdAt), asc(bankAccounts.id))
     .limit(1);
   return row;
 }
 
-/** Null when the owner has not linked an account yet. */
+/** Null until the owner has an enabled credit account behind some connection. */
 export async function getCardProfile(
   db: Database,
   ownerId: string
 ): Promise<CardProfile | null> {
-  const row = await firstEnabledAccount(db, ownerId);
+  const row = await firstEnabledCreditAccount(db, ownerId);
   return row ? toCardProfile(row) : null;
 }
 
@@ -90,7 +103,7 @@ export async function updateCardProfile(
   ownerId: string,
   updates: CardProfileUpdate
 ): Promise<CardProfile | null> {
-  const existing = await firstEnabledAccount(db, ownerId);
+  const existing = await firstEnabledCreditAccount(db, ownerId);
   if (!existing) return null;
 
   await db
