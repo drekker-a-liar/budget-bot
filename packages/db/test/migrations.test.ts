@@ -30,6 +30,25 @@ describe('the committed migrations', () => {
     expect(sqlText).toContain('WHERE "external_id" IS NOT NULL');
   });
 
+  it('scopes every child table to its project by owner, not by project alone', () => {
+    for (const table of ['invoices', 'labor_entries', 'transactions']) {
+      expect(sqlText).toContain(
+        `ALTER TABLE "${table}" ADD CONSTRAINT "${table}_project_id_owner_id_fk" FOREIGN KEY ("project_id","owner_id") REFERENCES "public"."projects"("id","owner_id")`
+      );
+    }
+    expect(sqlText).toContain('CONSTRAINT "projects_id_owner_key" UNIQUE("id","owner_id")');
+  });
+
+  it('nulls only project_id when a project is deleted', () => {
+    // The risk this pins: drizzle-kit cannot emit the column list, so it is
+    // hand-written. Re-generating the migration silently drops it, and a bare
+    // SET NULL would try to null `owner_id` too and fail its NOT NULL - which
+    // would surface as "cannot delete a project", far from its cause.
+    expect(sqlText).toContain(
+      'REFERENCES "public"."projects"("id","owner_id") ON DELETE set null ("project_id")'
+    );
+  });
+
   it('never uses a floating point type for money', () => {
     expect(sqlText).not.toMatch(/\b(real|double precision|float)\b/i);
     expect(sqlText).toMatch(/"amount_cents" bigint/);

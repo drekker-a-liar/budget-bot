@@ -5,6 +5,8 @@ export * as invoicesRepo from './invoices';
 export * as bankRepo from './bank';
 export * as ownersRepo from './owners';
 
+export { UnknownProjectError } from './errors';
+
 export type { NewProject, ProjectUpdate } from './projects';
 export type {
   NewTransaction,

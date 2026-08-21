@@ -1,5 +1,5 @@
 {
-  "id": "0ecf59b3-dc00-4dde-874e-3c15289c4a81",
+  "id": "395df215-3623-41d2-926f-aea67c612650",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -440,7 +440,16 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "projects_id_owner_key": {
+          "name": "projects_id_owner_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "owner_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -749,19 +758,6 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "transactions_project_id_projects_id_fk": {
-          "name": "transactions_project_id_projects_id_fk",
-          "tableFrom": "transactions",
-          "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
         "transactions_bank_account_id_bank_accounts_id_fk": {
           "name": "transactions_bank_account_id_bank_accounts_id_fk",
           "tableFrom": "transactions",
@@ -784,6 +780,21 @@
           ],
           "columnsTo": [
             "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "transactions_project_id_owner_id_fk": {
+          "name": "transactions_project_id_owner_id_fk",
+          "tableFrom": "transactions",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id",
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id",
+            "owner_id"
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
@@ -922,15 +933,17 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "labor_entries_project_id_projects_id_fk": {
-          "name": "labor_entries_project_id_projects_id_fk",
+        "labor_entries_project_id_owner_id_fk": {
+          "name": "labor_entries_project_id_owner_id_fk",
           "tableFrom": "labor_entries",
           "tableTo": "projects",
           "columnsFrom": [
-            "project_id"
+            "project_id",
+            "owner_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "owner_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -1108,15 +1121,17 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "invoices_project_id_projects_id_fk": {
-          "name": "invoices_project_id_projects_id_fk",
+        "invoices_project_id_owner_id_fk": {
+          "name": "invoices_project_id_owner_id_fk",
           "tableFrom": "invoices",
           "tableTo": "projects",
           "columnsFrom": [
-            "project_id"
+            "project_id",
+            "owner_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "owner_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"

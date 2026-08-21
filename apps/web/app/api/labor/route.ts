@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { UnknownProjectError } from '@budget-bot/db';
 import { InvalidMoneyFieldError, readCents } from '@/lib/readCents';
 
 export async function GET(req: Request) {
@@ -32,6 +33,11 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ success: true, laborEntry: entry }, { status: 201 });
   } catch (error) {
+    // The caller named a project that is not theirs (or does not exist). That
+    // is a bad request, not a server fault.
+    if (error instanceof UnknownProjectError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     if (error instanceof InvalidMoneyFieldError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }

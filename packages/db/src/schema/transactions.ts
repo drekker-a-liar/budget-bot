@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   date,
+  foreignKey,
   index,
   pgTable,
   text,
@@ -41,7 +42,7 @@ export const transactions = pgTable(
     paymentMethod: paymentMethod('payment_method').notNull(),
     cardLast4: text('card_last4'),
     status: transactionStatus('status').notNull(),
-    projectId: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
+    projectId: uuid('project_id'),
     receiptNumber: text('receipt_number'),
     taxDeductible: boolean('tax_deductible').notNull().default(false),
     notes: text('notes'),
@@ -78,6 +79,23 @@ export const transactions = pgTable(
     updatedAt: updatedAt(),
   },
   (table) => [
+    /**
+     * Composite, so the project has to belong to the same owner as the
+     * expense. Unlike invoices and hours, a transaction outlives its project:
+     * the payment really happened, so deleting the job unfiles the expense
+     * rather than destroying the record of it.
+     *
+     * The generated `ON DELETE set null` is hand-edited in the migration to
+     * `SET NULL ("project_id")`. Without the column list Postgres nulls every
+     * column in the key, `owner_id` included, and the delete fails against its
+     * NOT NULL. drizzle-kit cannot express the list; a test asserts the
+     * committed SQL still carries it.
+     */
+    foreignKey({
+      name: 'transactions_project_id_owner_id_fk',
+      columns: [table.projectId, table.ownerId],
+      foreignColumns: [projects.id, projects.ownerId],
+    }).onDelete('set null'),
     /**
      * The deduplication key sync upserts on (spec §5). It has to be partial:
      * every manually entered row has a null `external_id`, and a plain unique

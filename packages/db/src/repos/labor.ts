@@ -2,6 +2,7 @@ import type { LaborEntry } from '@budget-bot/core';
 import { and, desc, eq } from 'drizzle-orm';
 import type { Database } from '../client';
 import { laborEntries } from '../schema';
+import { rejectingForeignProject } from './errors';
 import { isUuid, orUndefined, toIso } from './rows';
 
 type LaborRow = typeof laborEntries.$inferSelect;
@@ -47,7 +48,8 @@ export async function createLaborEntry(
   ownerId: string,
   input: NewLaborEntry
 ): Promise<LaborEntry> {
-  const [row] = await db
+  const [row] = await rejectingForeignProject(input.projectId, () =>
+    db
     .insert(laborEntries)
     .values({
       ownerId,
@@ -58,7 +60,8 @@ export async function createLaborEntry(
       workerName: input.workerName,
       notes: input.notes ?? null,
     })
-    .returning();
+    .returning()
+  );
   return toLaborEntry(row);
 }
 

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { categorizeVendor, multiplyCents } from '@budget-bot/core';
+import { UnknownProjectError } from '@budget-bot/db';
 import { InvalidMoneyFieldError, readCents } from '@/lib/readCents';
 
 export async function GET() {
@@ -58,6 +59,11 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ success: true, transaction: tx }, { status: 201 });
   } catch (error) {
+    // The caller named a project that is not theirs (or does not exist). That
+    // is a bad request, not a server fault.
+    if (error instanceof UnknownProjectError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     if (error instanceof InvalidMoneyFieldError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
@@ -84,6 +90,9 @@ export async function PATCH(req: Request) {
     }
     return NextResponse.json({ success: true, transaction: updated });
   } catch (error) {
+    if (error instanceof UnknownProjectError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     return NextResponse.json({ error: 'Failed to update transaction' }, { status: 500 });
   }
 }

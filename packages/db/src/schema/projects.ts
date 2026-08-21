@@ -1,4 +1,4 @@
-import { date, index, numeric, pgTable, text, uuid } from 'drizzle-orm/pg-core';
+import { date, index, numeric, pgTable, text, unique, uuid } from 'drizzle-orm/pg-core';
 import { cents, createdAt, ownerId, updatedAt } from './columns';
 import { pricingType, projectStatus } from './enums';
 
@@ -35,6 +35,13 @@ export const projects = pgTable(
     updatedAt: updatedAt(),
   },
   (table) => [
+    /**
+     * Redundant on its own - `id` is already unique - but it is what a child
+     * table's `(project_id, owner_id)` foreign key has to reference. That
+     * composite key is what makes attaching a row to someone else's project
+     * unrepresentable rather than merely discouraged.
+     */
+    unique('projects_id_owner_key').on(table.id, table.ownerId),
     index('projects_owner_created_idx').on(table.ownerId, table.createdAt),
     index('projects_owner_status_idx').on(table.ownerId, table.status),
   ]

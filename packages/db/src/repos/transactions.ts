@@ -2,6 +2,7 @@ import type { ExpenseTransaction } from '@budget-bot/core';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { Database } from '../client';
 import { transactions } from '../schema';
+import { rejectingForeignProject } from './errors';
 import { isUuid, orUndefined, toIso } from './rows';
 
 /**
@@ -105,7 +106,9 @@ export async function createTransaction(
   ownerId: string,
   input: NewTransaction
 ): Promise<ExpenseTransaction> {
-  const [row] = await db.insert(transactions).values(toInsert(ownerId, input)).returning();
+  const [row] = await rejectingForeignProject(input.projectId, () =>
+    db.insert(transactions).values(toInsert(ownerId, input)).returning()
+  );
   return toTransaction(row);
 }
 
@@ -119,10 +122,15 @@ export async function bulkCreateTransactions(
   items: NewTransaction[]
 ): Promise<ExpenseTransaction[]> {
   if (items.length === 0) return [];
-  const rows = await db
-    .insert(transactions)
-    .values(items.map((item) => toInsert(ownerId, item)))
-    .returning();
+  // No project id in the message: any row in the batch could be the one that
+  // trips the constraint, and naming the wrong one would be worse than naming
+  // none. The whole insert is one statement, so nothing lands either way.
+  const rows = await rejectingForeignProject(undefined, () =>
+    db
+      .insert(transactions)
+      .values(items.map((item) => toInsert(ownerId, item)))
+      .returning()
+  );
   return rows.map(toTransaction);
 }
 
@@ -133,11 +141,13 @@ export async function updateTransaction(
   updates: TransactionUpdate
 ): Promise<ExpenseTransaction | null> {
   if (!isUuid(id)) return null;
-  const [row] = await db
-    .update(transactions)
-    .set({ ...toUpdate(updates), updatedAt: new Date() })
-    .where(and(eq(transactions.ownerId, ownerId), eq(transactions.id, id)))
-    .returning();
+  const [row] = await rejectingForeignProject(updates.projectId, () =>
+    db
+      .update(transactions)
+      .set({ ...toUpdate(updates), updatedAt: new Date() })
+      .where(and(eq(transactions.ownerId, ownerId), eq(transactions.id, id)))
+      .returning()
+  );
   return row ? toTransaction(row) : null;
 }
 

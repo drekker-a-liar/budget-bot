@@ -2,6 +2,7 @@ import type { Invoice } from '@budget-bot/core';
 import { and, desc, eq } from 'drizzle-orm';
 import type { Database } from '../client';
 import { invoices } from '../schema';
+import { rejectingForeignProject } from './errors';
 import { isUuid, orUndefined, toIso } from './rows';
 
 type InvoiceRow = typeof invoices.$inferSelect;
@@ -66,7 +67,8 @@ export async function createInvoice(
   ownerId: string,
   input: NewInvoice
 ): Promise<Invoice> {
-  const [row] = await db
+  const [row] = await rejectingForeignProject(input.projectId, () =>
+    db
     .insert(invoices)
     .values({
       ownerId,
@@ -80,7 +82,8 @@ export async function createInvoice(
       paidDate: input.paidDate ?? null,
       notes: input.notes ?? null,
     })
-    .returning();
+    .returning()
+  );
   return toInvoice(row);
 }
 
@@ -91,10 +94,12 @@ export async function updateInvoice(
   updates: InvoiceUpdate
 ): Promise<Invoice | null> {
   if (!isUuid(id)) return null;
-  const [row] = await db
-    .update(invoices)
-    .set({ ...toUpdate(updates), updatedAt: new Date() })
-    .where(and(eq(invoices.ownerId, ownerId), eq(invoices.id, id)))
-    .returning();
+  const [row] = await rejectingForeignProject(updates.projectId, () =>
+    db
+      .update(invoices)
+      .set({ ...toUpdate(updates), updatedAt: new Date() })
+      .where(and(eq(invoices.ownerId, ownerId), eq(invoices.id, id)))
+      .returning()
+  );
   return row ? toInvoice(row) : null;
 }

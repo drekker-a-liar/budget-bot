@@ -1,4 +1,4 @@
-import { date, index, pgTable, text, uuid } from 'drizzle-orm/pg-core';
+import { date, foreignKey, index, pgTable, text, uuid } from 'drizzle-orm/pg-core';
 import { cents, createdAt, ownerId, updatedAt } from './columns';
 import { invoiceStatus } from './enums';
 import { projects } from './projects';
@@ -12,9 +12,7 @@ export const invoices = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     ownerId: ownerId(),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
+    projectId: uuid('project_id').notNull(),
     invoiceNumber: text('invoice_number').notNull(),
     amountCents: cents('amount_cents').notNull(),
     depositAmountCents: cents('deposit_amount_cents').notNull(),
@@ -27,6 +25,15 @@ export const invoices = pgTable(
     updatedAt: updatedAt(),
   },
   (table) => [
+    /**
+     * Composite, so the project has to belong to the same owner as the
+     * invoice. Cascade: an invoice is part of the job, and goes with it.
+     */
+    foreignKey({
+      name: 'invoices_project_id_owner_id_fk',
+      columns: [table.projectId, table.ownerId],
+      foreignColumns: [projects.id, projects.ownerId],
+    }).onDelete('cascade'),
     index('invoices_owner_paid_date_idx').on(table.ownerId, table.paidDate),
     index('invoices_owner_status_idx').on(table.ownerId, table.status),
     index('invoices_owner_project_idx').on(table.ownerId, table.projectId),
