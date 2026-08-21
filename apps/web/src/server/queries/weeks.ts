@@ -95,8 +95,11 @@ export function calculateWeeklyCashFlow(
 
   for (const row of transactions) {
     // An ignored row is a refund or a card payment: real, but counting it as
-    // spend would double-count the purchases it settles (spec §8).
-    if (row.status === 'ignored') continue;
+    // spend would double-count the purchases it settles (spec §8). A negative
+    // row the user did file against a job is still money coming back, not
+    // going out - the same rule `spendByCategory` and the business summary
+    // apply, so the KPI and this waterfall describe the same week.
+    if (row.status === 'ignored' || row.amountCents <= 0) continue;
     const bucket = bucketOf(dayNumberOf(row.postedAt ?? row.date));
     if (bucket >= 0) outflows[bucket] += row.amountCents;
   }

@@ -106,6 +106,18 @@ describe('calculateWeeklyCashFlow', () => {
       expect(weeks[3].outflowCents).toBe(0);
     });
 
+    it('leaves out a refund the user matched to a job, because no money left', () => {
+      // A negative row filed against a project is still money coming back.
+      // `spendByCategory` and `calculateBusinessSummary` both exclude it;
+      // the waterfall must agree or the KPI beside it tells a different story.
+      const weeks = calculateWeeklyCashFlow(
+        { transactions: [expense('2026-08-18', -300, 'matched')], invoices: [] },
+        NOW
+      );
+
+      expect(weeks[3].outflowCents).toBe(0);
+    });
+
     it('counts an unassigned charge, because the money still left', () => {
       const weeks = calculateWeeklyCashFlow(
         { transactions: [expense('2026-08-18', 88.65, 'unassigned')], invoices: [] },
