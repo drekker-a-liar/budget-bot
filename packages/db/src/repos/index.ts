@@ -7,6 +7,8 @@ export * as importBatchesRepo from './importBatches';
 export * as importsRepo from './imports';
 export * as ownersRepo from './owners';
 
+export { withSyncLock } from './sync-lock';
+
 export { ConnectionNotFoundError, UnknownProjectError } from './errors';
 
 export type { NewProject, ProjectUpdate } from './projects';
@@ -30,3 +32,4 @@ export type {
   SyncFailure,
   SyncOutcome,
 } from './bank';
+export type { SyncLockResult } from './sync-lock';
