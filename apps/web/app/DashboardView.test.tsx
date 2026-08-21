@@ -25,6 +25,22 @@ import {
  * connection is asserted here.
  */
 
+/**
+ * This is the heaviest island render in the suite - `Navigation`,
+ * `DashboardMetrics`, four `JobCostCard`s, `TransactionInbox` and
+ * `CashFlowWaterfall` all mount together for every test below - and it is
+ * plain synchronous `render()`/`userEvent` work, nothing waiting on a real
+ * timer. `turbo test` runs this file alongside `packages/db`'s Postgres
+ * suite at default concurrency, and under that CPU contention a render that
+ * is normally a few hundred ms can occasionally cross Vitest's 5s default
+ * (confirmed by forcing contention locally: `links onward to the pages that
+ * hold the full lists`, a plain synchronous test, timed out at exactly
+ * 5000ms with `lint typecheck test build` running concurrently). Raising the
+ * timeout for this file only is the documented last resort for exactly this
+ * shape of flake - there is no promise here to await.
+ */
+vi.setConfig({ testTimeout: 15_000 });
+
 const actions = vi.hoisted(() => ({
   assignTransactionAction: vi.fn(),
   updateTransactionCategoryAction: vi.fn(),
