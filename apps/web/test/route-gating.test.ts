@@ -90,14 +90,13 @@ for (const route of gatedRoutes) {
 
 beforeEach(() => {
   authMock.mockResolvedValue(null);
-  store.getAll.mockClear();
-  store.getProjects.mockClear();
+  for (const method of Object.values(store)) method.mockClear();
 });
 
 describe('the route list this test walks', () => {
   it('came off disk, and is not empty', () => {
     expect(routes.length).toBeGreaterThan(0);
-    expect(routes.map((route) => route.path)).toContain('/api/data');
+    expect(routes.map((route) => route.path)).toContain('/api/import/csv');
   });
 
   it('accounts for every route.ts under app/api, with none skipped', () => {
@@ -142,13 +141,13 @@ describe('with a session', () => {
   it('a read reaches the store, scoped to the signed-in user', async () => {
     authMock.mockResolvedValue(SIGNED_IN);
     const { storeFor } = await import('@/lib/db');
-    const { GET } = await import('@/app/api/projects/route');
+    const { GET } = await import('@/app/api/labor/route');
 
-    const response = await GET();
+    const response = await GET(requestFor('GET', '/api/labor'));
 
     expect(response.status).toBe(200);
     expect(storeFor).toHaveBeenCalledWith('user-1');
-    expect(store.getProjects).toHaveBeenCalled();
+    expect(store.getLaborEntries).toHaveBeenCalled();
   });
 });
 

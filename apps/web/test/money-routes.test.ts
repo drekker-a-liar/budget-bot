@@ -9,15 +9,11 @@ vi.mock('@/auth', () => ({
 }));
 
 const db = vi.hoisted(() => ({
-  createProject: vi.fn((input: object) => ({ ...input, id: 'proj-1', createdAt: 'now' })),
-  createInvoice: vi.fn((input: object) => ({ ...input, id: 'inv-1', createdAt: 'now' })),
   createLaborEntry: vi.fn((input: object) => ({ ...input, id: 'lab-1', createdAt: 'now' })),
   createTransaction: vi.fn((input: object) => ({ ...input, id: 'tx-1', createdAt: 'now' })),
 }));
 
 vi.mock('@/lib/db', () => ({ storeFor: () => db }));
-const { POST: createProject } = await import('@/app/api/projects/route');
-const { POST: createInvoice } = await import('@/app/api/invoices/route');
 const { POST: createLabor } = await import('@/app/api/labor/route');
 const { POST: createTransaction } = await import('@/app/api/transactions/route');
 
@@ -34,18 +30,6 @@ beforeEach(() => {
 
 describe('money fields in API routes', () => {
   it.each([
-    [
-      'projects',
-      createProject,
-      { name: 'Deck', clientName: 'R Henderson', quotedTotal: 'not a number' },
-      'Invalid amount for quotedTotal',
-    ],
-    [
-      'invoices',
-      createInvoice,
-      { projectId: 'proj-1', invoiceNumber: 'INV-1', amount: 'N/A' },
-      'Invalid amount for amount',
-    ],
     [
       'labor',
       createLabor,
@@ -71,32 +55,18 @@ describe('money fields in API routes', () => {
   // The regression this contract exists to stop: every route but one wrapped
   // the value in `Number(...)` first, so a comma-formatted amount became NaN
   // and then `|| 0` stored it as $0 with no complaint.
-  it('reads a comma-formatted quoted total instead of storing zero', async () => {
-    const response = await createProject(
-      post({ name: 'Deck', clientName: 'R Henderson', quotedTotal: '1,234.56' })
+  it('reads a comma-formatted amount instead of storing zero', async () => {
+    const response = await createTransaction(
+      post({ description: 'ACE HARDWARE', amount: '1,234.56' })
     );
 
     expect(response.status).toBe(201);
-    expect(db.createProject).toHaveBeenCalledWith(
-      expect.objectContaining({ quotedTotalCents: 123456 })
+    expect(db.createTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({ amountCents: 123456 })
     );
   });
 
   it('keeps the existing defaults for absent optional amounts', async () => {
-    await createProject(post({ name: 'Deck', clientName: 'R Henderson', quotedTotal: 4500 }));
-    expect(db.createProject).toHaveBeenCalledWith(
-      expect.objectContaining({
-        quotedTotalCents: 450000,
-        quotedMaterialsCents: 0, // absent -> $0
-        targetHourlyRateCents: 8500, // absent -> the $85/hr default
-      })
-    );
-
-    await createInvoice(post({ projectId: 'proj-1', invoiceNumber: 'INV-1', amount: 1950 }));
-    expect(db.createInvoice).toHaveBeenCalledWith(
-      expect.objectContaining({ amountCents: 195000, depositAmountCents: 0 })
-    );
-
     await createLabor(post({ projectId: 'proj-1', hours: 6 }));
     expect(db.createLaborEntry).toHaveBeenCalledWith(
       expect.objectContaining({ hourlyRateCents: 8500 })

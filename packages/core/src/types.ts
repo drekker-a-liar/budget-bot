@@ -67,6 +67,24 @@ export interface ProjectFinancialKPIs {
   isOverBudget: boolean;
 }
 
+/**
+ * One week of cash in and cash out, on a cash basis (ADR 0006).
+ *
+ * The shape only; the aggregation that fills it is the application's for now
+ * and moves into this package with the monthly margin work (sub-project 4),
+ * which is where the calendar and time-zone questions get settled properly.
+ */
+export interface WeeklyCashFlow {
+  /** The Monday the week starts on, as `YYYY-MM-DD`. */
+  weekStart: string;
+  /** Money in: invoices by the date they were paid. */
+  inflowCents: Cents;
+  /** Money out: non-ignored expenses by the date they posted. */
+  outflowCents: Cents;
+  /** `inflowCents - outflowCents`. Negative is a week that lost money. */
+  netCents: Cents;
+}
+
 export interface BusinessFinancialSummary {
   totalRevenueYTDCents: Cents;
   totalMaterialsYTDCents: Cents;

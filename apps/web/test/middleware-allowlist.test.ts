@@ -20,7 +20,7 @@ const paths = appUrlPaths();
 describe('every route in app/', () => {
   it('was found, so this test is not silently checking nothing', () => {
     expect(paths).toContain('/');
-    expect(paths).toContain('/api/data');
+    expect(paths).toContain('/api/import/csv');
     expect(paths.length).toBeGreaterThan(5);
   });
 

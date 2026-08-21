@@ -5,56 +5,74 @@ import {
   addCents,
   formatCents,
   multiplyCents,
-  parseMoney,
   subtractCents,
-  ExpenseTransaction,
-  Invoice,
-  CardProfile,
+  type Cents,
+  type WeeklyCashFlow,
 } from '@budget-bot/core';
-import {
-  TrendingUp,
-  ArrowUpRight,
-  ArrowDownRight,
-  ShieldCheck,
-  Calendar,
-  DollarSign
-} from 'lucide-react';
+
+/**
+ * Week-to-week cash in against cash out.
+ *
+ * Every figure on this component comes from its props. It used to carry four
+ * weeks of invented literals - "Week 1 (Jul 27 - Aug 02) … $1,049.35" - which
+ * were rendered next to real data and were indistinguishable from it, and an
+ * `estimatedLiquidCash = 18450` that was nobody's bank balance. A dashboard
+ * that reports a number nobody can trace is worse than one that reports
+ * nothing, so what cannot be computed is an em dash now.
+ */
 
 interface CashFlowWaterfallProps {
-  transactions: ExpenseTransaction[];
-  invoices: Invoice[];
-  cardProfile?: CardProfile | null;
+  /** Oldest first. Zero-filled by the caller, so gaps are visible as zero. */
+  weeks: WeeklyCashFlow[];
+  /** Null until a bank account is linked, which is Phase 2. */
+  availableCreditCents?: Cents | null;
+  /** The card's limit, for context beside the credit available on it. */
+  creditLimitCents?: Cents | null;
+}
+
+const EM_DASH = '—';
+
+/** A week's label, from the Monday it starts on: "Aug 17 - Aug 23". */
+function weekLabel(weekStart: string): string {
+  const start = new Date(`${weekStart}T00:00:00Z`);
+  const end = new Date(start.getTime() + 6 * 86_400_000);
+  const format = (date: Date) =>
+    date.toLocaleDateString('en-US', { month: 'short', day: '2-digit', timeZone: 'UTC' });
+  return `${format(start)} - ${format(end)}`;
 }
 
 export function CashFlowWaterfall({
-  transactions,
-  invoices,
-  cardProfile,
+  weeks,
+  availableCreditCents = null,
+  creditLimitCents = null,
 }: CashFlowWaterfallProps) {
-  // Aggregate last 4 weeks of data
-  const weeks = [
-    { label: 'Week 1 (Jul 27 - Aug 02)', inflow: parseMoney(2500), outflow: parseMoney(1450.65), net: parseMoney(1049.35) },
-    { label: 'Week 2 (Aug 03 - Aug 09)', inflow: parseMoney(6800), outflow: parseMoney(2162.20), net: parseMoney(4637.80) },
-    { label: 'Week 3 (Aug 10 - Aug 16)', inflow: parseMoney(1950), outflow: parseMoney(1124.60), net: parseMoney(825.40) },
-    { label: 'Current Week (Aug 17 - 23)', inflow: parseMoney(1800), outflow: parseMoney(1188.75), net: parseMoney(611.25) },
-  ];
-
-  const totalInflow = addCents(...weeks.map((w) => w.inflow));
-  const totalOutflow = addCents(...weeks.map((w) => w.outflow));
+  const totalInflow = addCents(...weeks.map((w) => w.inflowCents));
+  const totalOutflow = addCents(...weeks.map((w) => w.outflowCents));
   const netCashPeriod = subtractCents(totalInflow, totalOutflow);
+  const weeklyBurn =
+    weeks.length > 0 ? multiplyCents(totalOutflow, 1 / weeks.length) : (0 as Cents);
 
-  // Operating cash runway calculation
-  const weeklyBurn = multiplyCents(totalOutflow, 1 / weeks.length);
-  const availableCredit = cardProfile
-    ? subtractCents(cardProfile.creditLimitCents, cardProfile.currentBalanceCents)
-    : parseMoney(15000);
-  const estimatedLiquidCash = parseMoney(18450); // Cash reserve in checking
+  /**
+   * How many weeks the available credit covers at the recent burn rate. Null
+   * when there is no card linked to draw on, or nothing being spent: a runway
+   * figure invented from a default credit line is exactly the kind of number
+   * that gets believed.
+   */
   const runwayWeeks =
-    Math.round((addCents(estimatedLiquidCash, availableCredit) / (weeklyBurn || 1)) * 10) / 10;
+    availableCreditCents === null || weeklyBurn <= 0
+      ? null
+      : Math.round((availableCreditCents / weeklyBurn) * 10) / 10;
+
+  // Bars are scaled against the biggest single figure in the window, so the
+  // shape of the period is legible whatever the amounts happen to be.
+  const scale = Math.max(
+    1,
+    ...weeks.map((w) => Math.max(w.inflowCents, w.outflowCents))
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-      {/* Top Banner: Liquidity & Runway */}
+      {/* Top Banner: period totals and what is left to draw on */}
       <div
         style={{
           display: 'grid',
@@ -63,14 +81,14 @@ export function CashFlowWaterfall({
         }}
       >
         <div className="swiss-card">
-          <span className="swiss-label">Estimated Liquid Buffer</span>
+          <span className="swiss-label">Cash In ({weeks.length}-Week)</span>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.25rem' }}>
-            <span className="swiss-header tnum" style={{ fontSize: '2rem', color: '#f8fafc' }}>
-              {formatCents(estimatedLiquidCash, { showCents: false })}
+            <span className="swiss-header tnum" style={{ fontSize: '2rem', color: 'var(--severity-healthy)' }}>
+              {formatCents(totalInflow, { showCents: false })}
             </span>
           </div>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-            Operating Checking + Retainage
+            Invoices paid in the period
           </div>
         </div>
 
@@ -78,12 +96,15 @@ export function CashFlowWaterfall({
           <span className="swiss-label">Available Card Credit</span>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.25rem' }}>
             <span className="swiss-header tnum" style={{ fontSize: '2rem', color: 'var(--accent-cyan)' }}>
-              {formatCents(availableCredit, { showCents: false })}
+              {availableCreditCents === null
+                ? EM_DASH
+                : formatCents(availableCreditCents, { showCents: false })}
             </span>
           </div>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-            Capital One Spark (Limit{' '}
-            {cardProfile ? formatCents(cardProfile.creditLimitCents, { showCents: false }) : '\u2014'})
+            {creditLimitCents === null
+              ? 'No card linked yet'
+              : `Limit ${formatCents(creditLimitCents, { showCents: false })}`}
           </div>
         </div>
 
@@ -96,25 +117,32 @@ export function CashFlowWaterfall({
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>/ week</span>
           </div>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-            Materials, Fuel, Subs & Tools
+            Materials, Fuel, Subs &amp; Tools
           </div>
         </div>
 
         <div className="swiss-card">
-          <span className="swiss-label">Operating Runway</span>
+          <span className="swiss-label">Credit Runway</span>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.25rem' }}>
-            <span className="swiss-header tnum" style={{ fontSize: '2rem', color: 'var(--severity-healthy)' }}>
-              {runwayWeeks}
+            <span
+              className="swiss-header tnum"
+              style={{ fontSize: '2rem', color: 'var(--severity-healthy)' }}
+            >
+              {runwayWeeks === null ? EM_DASH : runwayWeeks}
             </span>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>weeks</span>
+            {runwayWeeks !== null && (
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>weeks</span>
+            )}
           </div>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-            Safe working capital cushion
+            {runwayWeeks === null
+              ? 'Needs a linked card and some spend'
+              : 'Available credit at the recent burn rate'}
           </div>
         </div>
       </div>
 
-      {/* 4-Week Cash Flow Breakdown */}
+      {/* Week-by-week breakdown */}
       <div className="swiss-card">
         <div className="swiss-card-header">
           <div>
@@ -122,23 +150,27 @@ export function CashFlowWaterfall({
               Week-to-Week Cash Flow Waterfall
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-              Client deposits & invoice payouts vs card charges & supplier orders
+              Client deposits &amp; invoice payouts vs card charges &amp; supplier orders
             </div>
           </div>
-          <div className="badge-healthy">
-            NET +{formatCents(netCashPeriod, { showCents: false })} (30-DAY)
+          <div className={netCashPeriod >= 0 ? 'badge-healthy' : 'badge-critical'}>
+            NET {netCashPeriod >= 0 ? '+' : '-'}
+            {formatCents(
+              netCashPeriod < 0 ? multiplyCents(netCashPeriod, -1) : netCashPeriod,
+              { showCents: false }
+            )}
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
-          {weeks.map((w, idx) => {
-            const maxVal = parseMoney(7000);
-            const inflowWidth = Math.min(100, (w.inflow / maxVal) * 100);
-            const outflowWidth = Math.min(100, (w.outflow / maxVal) * 100);
-
-            return (
+        {weeks.length === 0 ? (
+          <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+            No cash movement recorded yet.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
+            {weeks.map((week) => (
               <div
-                key={idx}
+                key={week.weekStart}
                 style={{
                   background: 'var(--bg-panel)',
                   padding: '1rem',
@@ -148,10 +180,18 @@ export function CashFlowWaterfall({
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                   <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#f8fafc' }}>
-                    {w.label}
+                    {weekLabel(week.weekStart)}
                   </div>
-                  <div className="tnum" style={{ fontWeight: 700, fontSize: '0.85rem', color: w.net >= 0 ? 'var(--severity-healthy)' : 'var(--severity-critical)' }}>
-                    Net: {w.net >= 0 ? '+' : ''}{formatCents(w.net)}
+                  <div
+                    className="tnum"
+                    style={{
+                      fontWeight: 700,
+                      fontSize: '0.85rem',
+                      color: week.netCents >= 0 ? 'var(--severity-healthy)' : 'var(--severity-critical)',
+                    }}
+                  >
+                    Net: {week.netCents >= 0 ? '+' : ''}
+                    {formatCents(week.netCents)}
                   </div>
                 </div>
 
@@ -159,12 +199,15 @@ export function CashFlowWaterfall({
                 <div style={{ marginBottom: '0.35rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>
                     <span>Client Inflows (Deposits/Invoices)</span>
-                    <span className="tnum" style={{ color: 'var(--severity-healthy)', fontWeight: 600 }}>+{formatCents(w.inflow)}</span>
+                    <span className="tnum" style={{ color: 'var(--severity-healthy)', fontWeight: 600 }}>
+                      +{formatCents(week.inflowCents)}
+                    </span>
                   </div>
                   <div style={{ height: '8px', background: 'var(--bg-input)', borderRadius: '4px', overflow: 'hidden' }}>
                     <div
+                      title={`Inflow ${formatCents(week.inflowCents)}`}
                       style={{
-                        width: `${inflowWidth}%`,
+                        width: `${(week.inflowCents / scale) * 100}%`,
                         height: '100%',
                         background: 'var(--severity-healthy)',
                         borderRadius: '4px',
@@ -177,12 +220,15 @@ export function CashFlowWaterfall({
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>
                     <span>Card Expenses (Materials/Gas/Tools)</span>
-                    <span className="tnum" style={{ color: 'var(--severity-critical)', fontWeight: 600 }}>-{formatCents(w.outflow)}</span>
+                    <span className="tnum" style={{ color: 'var(--severity-critical)', fontWeight: 600 }}>
+                      -{formatCents(week.outflowCents)}
+                    </span>
                   </div>
                   <div style={{ height: '8px', background: 'var(--bg-input)', borderRadius: '4px', overflow: 'hidden' }}>
                     <div
+                      title={`Outflow ${formatCents(week.outflowCents)}`}
                       style={{
-                        width: `${outflowWidth}%`,
+                        width: `${(week.outflowCents / scale) * 100}%`,
                         height: '100%',
                         background: 'var(--severity-critical)',
                         borderRadius: '4px',
@@ -191,9 +237,9 @@ export function CashFlowWaterfall({
                   </div>
                 </div>
               </div>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
