@@ -3,10 +3,13 @@ import { addCents, percent, type Cents, type ExpenseCategory, type TransactionSt
 /**
  * Where the money went, split by category.
  *
- * Rows the user filed as `ignored` are left out of both the totals and the
- * denominator, for the same reason the weekly cash flow leaves them out: a
- * card payment or a refund is money moving, not money spent, and counting it
- * would make the denominator smaller than the categories it is dividing.
+ * Only money that actually went out is counted, in the totals and in the
+ * denominator alike. That means two exclusions, not one: rows the user filed
+ * as `ignored`, and any row with a negative amount. `ignored` is the default
+ * a refund arrives with, not a guarantee it keeps - the user can file one
+ * against a job - and a negative left in the denominator makes it smaller
+ * than the categories it is meant to divide, which is how this page came to
+ * report "Materials & Lumber 135%".
  */
 
 export interface CategorySpend {
@@ -36,7 +39,7 @@ const CATEGORIES: ExpenseCategory[] = [
 ];
 
 export function spendByCategory(rows: SpendRow[]): SpendBreakdown {
-  const spent = rows.filter((row) => row.status !== 'ignored');
+  const spent = rows.filter((row) => row.status !== 'ignored' && row.amountCents > 0);
   const totalCents = addCents(...spent.map((row) => row.amountCents));
 
   const byCategory = Object.fromEntries(

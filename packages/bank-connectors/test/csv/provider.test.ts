@@ -112,6 +112,29 @@ describe('CsvProvider.parse', () => {
     expect(rows.map((r) => r.amountCents)).toEqual([11475, -50000]);
   });
 
+  it('reads a Credit written as a negative as money in, not money out', () => {
+    // Some banks sign the Credit column and some do not. The column says which
+    // direction the money went; negating whatever is written in it would turn
+    // a signed export inside out and file every payment as a purchase.
+    const { rows } = parse(
+      [
+        'Date,Description,Debit,Credit',
+        '2026-08-18,PAYMENT THANK YOU,,-500.00',
+        '2026-08-19,REFUND,,(250.00)',
+      ].join('\n')
+    );
+
+    expect(rows.map((r) => r.amountCents)).toEqual([-50000, -25000]);
+  });
+
+  it('reads a Debit written as a negative as money out', () => {
+    const { rows } = parse(
+      'Date,Description,Debit,Credit\n2026-08-18,THE HOME DEPOT,-114.75,'
+    );
+
+    expect(rows[0].amountCents).toBe(11475);
+  });
+
   it('reads accounting parentheses as the negative they are', () => {
     const { rows } = parse('Date,Description,Amount\n2026-08-18,REFUND,(114.75)');
 

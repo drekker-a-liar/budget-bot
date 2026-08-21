@@ -23,15 +23,13 @@ import { isPublicPath } from '@/lib/publicPaths';
 vi.mock('@/auth', () => ({ auth: vi.fn(async () => null) }));
 
 const repos = vi.hoisted(() => ({
-  createImportBatch: vi.fn(async () => ({ id: 'batch-1' })),
-  bulkCreateImported: vi.fn(async () => []),
+  importCsvBatch: vi.fn(async () => ({ batch: { id: 'batch-1' }, inserted: [] })),
 }));
 
 vi.mock('@budget-bot/db', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@budget-bot/db')>()),
   getDb: () => ({}),
-  importBatchesRepo: { createImportBatch: repos.createImportBatch },
-  transactionsRepo: { bulkCreateImported: repos.bulkCreateImported },
+  importsRepo: { importCsvBatch: repos.importCsvBatch },
 }));
 
 const { auth } = await import('@/auth');
@@ -150,16 +148,20 @@ describe('with a session', () => {
     authMock.mockResolvedValue(SIGNED_IN);
     const { POST } = await import('@/app/api/import/csv/route');
 
+    const body = 'Date,Description,Amount\n2026-08-18,THE HOME DEPOT,10.00';
     const response = await POST(
       new Request('http://localhost/api/import/csv', {
         method: 'POST',
-        headers: { 'Content-Type': 'text/csv' },
-        body: 'Date,Description,Amount\n2026-08-18,THE HOME DEPOT,10.00',
+        headers: {
+          'Content-Type': 'text/csv',
+          'Content-Length': String(Buffer.byteLength(body)),
+        },
+        body,
       })
     );
 
     expect(response.status).toBe(200);
-    expect(repos.createImportBatch).toHaveBeenCalledWith({}, 'user-1', expect.any(Object));
+    expect(repos.importCsvBatch).toHaveBeenCalledWith({}, 'user-1', expect.any(Object));
   });
 });
 

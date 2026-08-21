@@ -7,10 +7,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      server-only:
-        specifier: ^0.0.1
-        version: 0.0.1
     devDependencies:
       turbo:
         specifier: ^2.10.11

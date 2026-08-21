@@ -46,10 +46,24 @@ describe('spendByCategory', () => {
     expect(spend.byCategory.overhead).toEqual({ amountCents: 0, pct: 0 });
   });
 
+  it('leaves out a refund the user never got round to filing as ignored', () => {
+    // `ignored` is a default, not a guarantee - a negative row that is still
+    // `matched` is the same refund and must not shrink the denominator either.
+    const spend = spendByCategory([
+      row('materials', 1000),
+      row('overhead', -2500, 'matched'),
+    ]);
+
+    expect(spend.totalCents).toBe(100000);
+    expect(spend.byCategory.materials.pct).toBe(100);
+    expect(spend.byCategory.overhead).toEqual({ amountCents: 0, pct: 0 });
+  });
+
   it('never reports a share above 100% or below zero', () => {
     const spend = spendByCategory([
       row('materials', 1000),
       row('overhead', -2500, 'ignored'),
+      row('subcontractor', -400, 'matched'),
       row('tools', 100),
     ]);
 

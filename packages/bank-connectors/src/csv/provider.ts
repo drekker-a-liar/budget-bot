@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { CsvRowSchema, multiplyCents, type Cents } from '@budget-bot/core';
+import { CsvRowSchema, type Cents } from '@budget-bot/core';
 import { NotSupportedError } from '../errors';
 import type {
   BankProvider,
@@ -66,24 +66,37 @@ function cell(fields: string[], index: number | null): string {
 }
 
 /**
- * Which text carries the amount, and whether it was money in.
+ * Which text carries the amount, and what its column says about direction.
  *
- * A `Credit` column is a positive number meaning the opposite of what this
- * system means by positive, so its sign is flipped after parsing rather than
- * by rewriting the text - `(500.00)` and `-500.00` and `500.00` all have to
- * end up on the same side, and only the parser knows which side they started.
+ * A single `Amount` column is signed by the bank and is taken at face value.
+ * A `Debit`/`Credit` pair is not: the *column* is the statement of direction,
+ * and banks disagree about whether to sign the number inside it as well. Some
+ * write `Credit 500.00`, some `Credit -500.00`, some `Credit (500.00)`, and
+ * all three mean the same $500 coming in. So the magnitude is taken from the
+ * cell and the sign from the column it was in - negating whatever was written
+ * would turn a signed export inside out and file every card payment as a
+ * purchase.
  */
+type AmountSource = 'amount' | 'debit' | 'credit';
+
 function amountTextFor(
   columns: CsvColumns,
   fields: string[]
-): { text: string; fromCredit: boolean } {
+): { text: string; source: AmountSource } {
   const amount = cell(fields, columns.amount);
-  if (amount !== '') return { text: amount, fromCredit: false };
+  if (amount !== '') return { text: amount, source: 'amount' };
 
   const debit = cell(fields, columns.debit);
-  if (debit !== '') return { text: debit, fromCredit: false };
+  if (debit !== '') return { text: debit, source: 'debit' };
 
-  return { text: cell(fields, columns.credit), fromCredit: true };
+  return { text: cell(fields, columns.credit), source: 'credit' };
+}
+
+/** Positive is money out (spec §8), given where the number came from. */
+function signedCents(parsed: Cents, source: AmountSource): Cents {
+  if (source === 'amount') return parsed;
+  const magnitude = Math.abs(parsed);
+  return (source === 'credit' ? -magnitude : magnitude) as Cents;
 }
 
 const PENDING_WORDS = ['pending', 'authorized', 'authorised', 'processing', 'true', 'yes'];
@@ -150,9 +163,7 @@ function readRow(
     return { line: record.line, reason: describeIssues(parsed.error.issues) };
   }
 
-  const amountCents = amount.fromCredit
-    ? multiplyCents(parsed.data.amount, -1)
-    : parsed.data.amount;
+  const amountCents = signedCents(parsed.data.amount, amount.source);
 
   if (amountCents === 0) {
     return { line: record.line, reason: 'amount: the amount is zero' };

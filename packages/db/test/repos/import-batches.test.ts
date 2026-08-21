@@ -1,7 +1,8 @@
 import { parseMoney } from '@budget-bot/core';
 import { and, eq } from 'drizzle-orm';
-import { beforeEach, expect, it } from 'vitest';
-import { importBatchesRepo, transactionsRepo } from '../../src/repos';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { importsRepo, importBatchesRepo, transactionsRepo } from '../../src/repos';
+import { UnknownProjectError } from '../../src/repos/errors';
 import { importBatches, transactions } from '../../src/schema';
 import { createOwner, describeDb, useTestDb } from '../helpers/db';
 
@@ -183,6 +184,68 @@ describeDb('import batches', () => {
         importBatchId: batch.id,
       })
     ).resolves.toEqual([]);
+  });
+
+  describe('importing a whole file at once', () => {
+    const batch = {
+      source: 'csv' as const,
+      filename: 'august.csv',
+      rowCount: 2,
+      insertedCount: 2,
+      skippedCount: 0,
+    };
+
+    it('writes the batch and its rows together', async () => {
+      const result = await importsRepo.importCsvBatch(getDb(), ownerId, {
+        batch,
+        rows: [csvRow({ externalId: 'a' }), csvRow({ externalId: 'b' })],
+        provider: 'csv',
+      });
+
+      expect(result.batch.id).toMatch(/^[0-9a-f-]{36}$/);
+      expect(result.inserted).toHaveLength(2);
+
+      const rows = await getDb()
+        .select()
+        .from(transactions)
+        .where(eq(transactions.importBatchId, result.batch.id));
+      expect(rows).toHaveLength(2);
+    });
+
+    it('leaves no batch behind when the rows cannot be inserted', async () => {
+      // The failure this exists for: the batch row is written first, so a
+      // rejected insert used to leave an import in the ledger that had brought
+      // nothing in - and, once undo exists, one that would undo nothing.
+      await expect(
+        importsRepo.importCsvBatch(getDb(), ownerId, {
+          batch,
+          rows: [
+            csvRow({ externalId: 'a' }),
+            csvRow({
+              externalId: 'b',
+              projectId: '11111111-1111-4111-8111-111111111111',
+            }),
+          ],
+          provider: 'csv',
+        })
+      ).rejects.toThrow(UnknownProjectError);
+
+      expect(await getDb().select().from(importBatches)).toEqual([]);
+      expect(await getDb().select().from(transactions)).toEqual([]);
+    });
+
+    it('still records a batch that brought nothing in, so the upload is visible', async () => {
+      // A file whose every row was unreadable is not a failure: the user needs
+      // to see that the upload happened and skipped everything.
+      const result = await importsRepo.importCsvBatch(getDb(), ownerId, {
+        batch: { ...batch, rowCount: 2, insertedCount: 0, skippedCount: 2 },
+        rows: [],
+        provider: 'csv',
+      });
+
+      expect(result.inserted).toEqual([]);
+      expect(await getDb().select().from(importBatches)).toHaveLength(1);
+    });
   });
 
   it('stamps the batch with the owner who uploaded it, and nobody else', async () => {

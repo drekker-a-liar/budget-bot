@@ -1,4 +1,4 @@
-import type { Database } from '../client';
+import type { Executor } from '../client';
 import { importBatches } from '../schema';
 
 /**
@@ -29,7 +29,7 @@ export interface ImportBatch extends NewImportBatch {
 }
 
 export async function createImportBatch(
-  db: Database,
+  db: Executor,
   ownerId: string,
   input: NewImportBatch
 ): Promise<ImportBatch> {

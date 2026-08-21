@@ -16,20 +16,22 @@ vi.mock('@/auth', () => ({
 }));
 
 const db = vi.hoisted(() => ({
-  createImportBatch: vi.fn(async (_db: unknown, ownerId: string, input: object) => ({
-    id: 'batch-1',
-    ownerId,
-    createdAt: 'now',
-    ...input,
-  })),
-  bulkCreateImported: vi.fn(async (_db: unknown, _ownerId: string, items: object[]) => items),
+  importCsvBatch: vi.fn(
+    async (
+      _db: unknown,
+      ownerId: string,
+      input: { batch: object; rows: object[] }
+    ) => ({
+      batch: { id: 'batch-1', ownerId, createdAt: 'now', ...input.batch },
+      inserted: input.rows,
+    })
+  ),
 }));
 
 vi.mock('@budget-bot/db', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@budget-bot/db')>()),
   getDb: () => ({}),
-  importBatchesRepo: { createImportBatch: db.createImportBatch },
-  transactionsRepo: { bulkCreateImported: db.bulkCreateImported },
+  importsRepo: { importCsvBatch: db.importCsvBatch },
 }));
 
 const { auth } = await import('@/auth');
@@ -42,10 +44,18 @@ const CSV = [
   '2026-08-19,AUTOPAY PAYMENT THANK YOU,-1250.00',
 ].join('\n');
 
+/**
+ * A real client always sends a length; the `Request` constructor does not add
+ * one, so the helpers do. The route refuses an unmeasured body (411), and a
+ * test that forgot the header would be testing that refusal by accident.
+ */
 function textCsv(body: string): Request {
   return new Request('http://localhost/api/import/csv', {
     method: 'POST',
-    headers: { 'Content-Type': 'text/csv' },
+    headers: {
+      'Content-Type': 'text/csv',
+      'Content-Length': String(Buffer.byteLength(body)),
+    },
     body,
   });
 }
@@ -53,7 +63,13 @@ function textCsv(body: string): Request {
 function multipart(body: string, filename = 'august.csv'): Request {
   const form = new FormData();
   form.set('file', new File([body], filename, { type: 'text/csv' }));
-  return new Request('http://localhost/api/import/csv', { method: 'POST', body: form });
+  const request = new Request('http://localhost/api/import/csv', {
+    method: 'POST',
+    body: form,
+  });
+  // The multipart envelope is a few hundred bytes more than the file.
+  request.headers.set('Content-Length', String(Buffer.byteLength(body) + 512));
+  return request;
 }
 
 async function post(request: Request) {
@@ -63,7 +79,14 @@ async function post(request: Request) {
 
 /** The rows the route decided to write. */
 function written(): Array<Record<string, unknown>> {
-  return (db.bulkCreateImported.mock.calls.at(-1)?.[2] ?? []) as Array<Record<string, unknown>>;
+  return (db.importCsvBatch.mock.calls.at(-1)?.[2]?.rows ?? []) as Array<
+    Record<string, unknown>
+  >;
+}
+
+/** The batch row the route decided to write. */
+function batchWritten(): Record<string, unknown> {
+  return (db.importCsvBatch.mock.calls.at(-1)?.[2]?.batch ?? {}) as Record<string, unknown>;
 }
 
 beforeEach(() => {
@@ -121,7 +144,8 @@ describe('POST /api/import/csv', () => {
   it('records the batch under the signed-in owner, with the file it came from', async () => {
     await post(multipart(CSV, 'capital-one-august.csv'));
 
-    expect(db.createImportBatch).toHaveBeenCalledWith({}, 'user-1', {
+    expect(db.importCsvBatch).toHaveBeenCalledWith({}, 'user-1', expect.any(Object));
+    expect(batchWritten()).toEqual({
       source: 'csv',
       filename: 'capital-one-august.csv',
       rowCount: 3,
@@ -130,13 +154,14 @@ describe('POST /api/import/csv', () => {
     });
   });
 
-  it('writes the rows against the same owner, and points them at the batch', async () => {
+  it('writes the batch and its rows as one call, so neither can land alone', async () => {
     await post(textCsv(CSV));
 
-    expect(db.bulkCreateImported).toHaveBeenCalledWith({}, 'user-1', expect.any(Array), {
-      source: 'csv',
+    expect(db.importCsvBatch).toHaveBeenCalledOnce();
+    expect(db.importCsvBatch).toHaveBeenCalledWith({}, 'user-1', {
+      batch: expect.any(Object),
+      rows: expect.any(Array),
       provider: 'csv',
-      importBatchId: 'batch-1',
     });
   });
 
@@ -171,7 +196,84 @@ describe('POST /api/import/csv', () => {
 
     expect(status).toBe(200);
     expect(body).toMatchObject({ inserted: 0, skipped: 1 });
-    expect(db.createImportBatch).toHaveBeenCalled();
+    expect(db.importCsvBatch).toHaveBeenCalled();
+  });
+
+  describe('the size cap', () => {
+    // An App Router route handler has no body limit of its own, and a
+    // self-hoster's box has no platform limit in front of it either, so
+    // `req.text()` would happily buffer whatever arrived. A year of card
+    // statements is well under 1 MiB.
+    const CAP = 5 * 1024 * 1024;
+
+    function withLength(bytes: number, body: string): Request {
+      return new Request('http://localhost/api/import/csv', {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/csv', 'Content-Length': String(bytes) },
+        body,
+      });
+    }
+
+    it('refuses a body that says it is over the cap, before reading it', async () => {
+      const { status, body } = await post(withLength(CAP + 1, CSV));
+
+      expect(status).toBe(413);
+      expect(body.error).toMatch(/5 MiB|too large/i);
+      expect(db.importCsvBatch).not.toHaveBeenCalled();
+      expect(db.importCsvBatch).not.toHaveBeenCalled();
+    });
+
+    it('refuses a body that will not say how big it is', async () => {
+      // 411 rather than 413: nothing is known to be too large, only unmeasured,
+      // and the caller can fix it by sending a length.
+      const request = new Request('http://localhost/api/import/csv', {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/csv' },
+        body: CSV,
+      });
+      request.headers.delete('Content-Length');
+
+      const { status, body } = await post(request);
+
+      expect(status).toBe(411);
+      expect(body.error).toMatch(/length/i);
+      expect(db.importCsvBatch).not.toHaveBeenCalled();
+    });
+
+    it('accepts a body under the cap', async () => {
+      const { status } = await post(withLength(Buffer.byteLength(CSV), CSV));
+
+      expect(status).toBe(200);
+    });
+
+    it('stops reading a body that lied about its length', async () => {
+      // Content-Length is the caller's word for it. The read is capped too, so
+      // a stream that keeps going past the cap is cut off rather than buffered.
+      const oversized = `Date,Description,Amount\n${'2026-08-18,PADDING,1.00\n'.repeat(
+        250_000
+      )}`;
+      expect(Buffer.byteLength(oversized)).toBeGreaterThan(CAP);
+
+      const { status } = await post(withLength(10, oversized));
+
+      expect(status).toBe(413);
+      expect(db.importCsvBatch).not.toHaveBeenCalled();
+    });
+
+    it('refuses an uploaded file that is over the cap', async () => {
+      const form = new FormData();
+      form.set('file', new File(['x'.repeat(CAP + 1)], 'huge.csv', { type: 'text/csv' }));
+      const request = new Request('http://localhost/api/import/csv', {
+        method: 'POST',
+        body: form,
+      });
+      request.headers.set('Content-Length', String(CAP - 1));
+
+      const { status } = await post(request);
+
+      expect(status).toBe(413);
+      expect(db.importCsvBatch).not.toHaveBeenCalled();
+    });
   });
 
   it('refuses a request with no file at all', async () => {
@@ -179,15 +281,19 @@ describe('POST /api/import/csv', () => {
 
     expect(status).toBe(400);
     expect(body.error).toMatch(/no csv file/i);
-    expect(db.createImportBatch).not.toHaveBeenCalled();
+    expect(db.importCsvBatch).not.toHaveBeenCalled();
   });
 
   it('refuses a form that carries no file field', async () => {
     const form = new FormData();
     form.set('notes', 'oops');
-    const { status } = await post(
-      new Request('http://localhost/api/import/csv', { method: 'POST', body: form })
-    );
+    const request = new Request('http://localhost/api/import/csv', {
+      method: 'POST',
+      body: form,
+    });
+    request.headers.set('Content-Length', '512');
+
+    const { status } = await post(request);
 
     expect(status).toBe(400);
   });
@@ -197,17 +303,29 @@ describe('POST /api/import/csv', () => {
 
     expect(status).toBe(400);
     expect(body.error).toMatch(/date|description|amount/i);
-    expect(db.createImportBatch).not.toHaveBeenCalled();
+    expect(db.importCsvBatch).not.toHaveBeenCalled();
   });
 
   it('turns a write that names a foreign project into a 400, not a 500', async () => {
     const { UnknownProjectError } = await import('@budget-bot/db');
-    db.bulkCreateImported.mockRejectedValueOnce(new UnknownProjectError('proj-x'));
+    db.importCsvBatch.mockRejectedValueOnce(new UnknownProjectError('proj-x'));
 
     const { status, body } = await post(textCsv(CSV));
 
     expect(status).toBe(400);
     expect(body.error).toMatch(/proj-x/);
+  });
+
+  it('reports no batch id when the write was rolled back', async () => {
+    // The batch and its rows are one transaction, so a failure leaves nothing
+    // behind - and the response must not name an import that does not exist.
+    // packages/db asserts the rollback itself against real Postgres.
+    const { UnknownProjectError } = await import('@budget-bot/db');
+    db.importCsvBatch.mockRejectedValueOnce(new UnknownProjectError('proj-x'));
+
+    const { body } = await post(textCsv(CSV));
+
+    expect(body.batchId).toBeUndefined();
   });
 
   it('refuses without a session, before it reads the body', async () => {
@@ -216,7 +334,6 @@ describe('POST /api/import/csv', () => {
     const { status } = await post(multipart(CSV));
 
     expect(status).toBe(401);
-    expect(db.createImportBatch).not.toHaveBeenCalled();
-    expect(db.bulkCreateImported).not.toHaveBeenCalled();
+    expect(db.importCsvBatch).not.toHaveBeenCalled();
   });
 });

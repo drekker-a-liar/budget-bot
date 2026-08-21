@@ -3,8 +3,7 @@ import { CsvProvider, type CsvRowError } from '@budget-bot/bank-connectors';
 import { categorizeVendor } from '@budget-bot/core';
 import {
   getDb,
-  importBatchesRepo,
-  transactionsRepo,
+  importsRepo,
   UnknownProjectError,
   type ImportedTransaction,
 } from '@budget-bot/db';
@@ -35,23 +34,106 @@ import { currentOwnerId } from '@/lib/ownerSession';
  */
 const CSV_ACCOUNT = 'csv-upload';
 
+/**
+ * As much of a file as this route will read.
+ *
+ * A route handler has no body limit of its own, and a self-hoster running this
+ * on their own box has no platform limit in front of it either, so an
+ * unbounded `req.text()` is a way to fill the server's memory from outside.
+ * Five MiB is generous for what this is: a year of one contractor's card
+ * statements is well under one.
+ */
+const CSV_IMPORT_MAX_BYTES = 5 * 1024 * 1024;
+
 interface Upload {
   text: string;
   filename: string | null;
 }
 
+/** A refusal, distinguishable from a parse failure by its status. */
+class UploadRefused extends Error {
+  constructor(
+    readonly status: 400 | 411 | 413,
+    message: string
+  ) {
+    super(message);
+    this.name = 'UploadRefused';
+  }
+}
+
+/**
+ * What the caller says it is about to send.
+ *
+ * Checked before anything is read, so an oversized body is refused at the
+ * front door rather than after it has been buffered. An absent length is a 411
+ * rather than a 413: nothing is known to be too large, only unmeasured, and
+ * the caller can fix it by sending one.
+ */
+function assertDeclaredSizeIsSane(req: Request): void {
+  const declared = req.headers.get('content-length');
+  if (declared === null) {
+    throw new UploadRefused(411, 'Send a Content-Length; this endpoint will not read an unmeasured body.');
+  }
+
+  const bytes = Number(declared);
+  if (!Number.isFinite(bytes) || bytes < 0) {
+    throw new UploadRefused(411, 'Content-Length is not a number of bytes.');
+  }
+  if (bytes > CSV_IMPORT_MAX_BYTES) {
+    throw new UploadRefused(413, 'That file is larger than the 5 MiB import limit.');
+  }
+}
+
+/**
+ * The body, read a chunk at a time and abandoned the moment it goes past the
+ * cap. `Content-Length` is the caller's word for it; this is the part that
+ * does not take their word.
+ */
+async function readCappedText(req: Request): Promise<string> {
+  if (!req.body) return '';
+
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  const reader = req.body.getReader();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > CSV_IMPORT_MAX_BYTES) {
+        throw new UploadRefused(413, 'That file is larger than the 5 MiB import limit.');
+      }
+      chunks.push(value);
+    }
+  } finally {
+    await reader.cancel().catch(() => {
+      // The stream is already going away; nothing here depends on how.
+    });
+  }
+
+  return new TextDecoder().decode(Buffer.concat(chunks));
+}
+
 /** The file, however the caller chose to send it. */
 async function readUpload(req: Request): Promise<Upload | null> {
+  assertDeclaredSizeIsSane(req);
   const contentType = req.headers.get('content-type') ?? '';
 
   if (contentType.includes('multipart/form-data')) {
+    // The declared length has already been checked, so `formData()` is not
+    // being handed an unbounded body. The file itself is checked as well,
+    // because one part of a multipart body can be far larger than the header
+    // suggested if the header was wrong.
     const form = await req.formData();
     const file = form.get('file');
     if (!(file instanceof File)) return null;
+    if (file.size > CSV_IMPORT_MAX_BYTES) {
+      throw new UploadRefused(413, 'That file is larger than the 5 MiB import limit.');
+    }
     return { text: await file.text(), filename: file.name || null };
   }
 
-  const text = await req.text();
+  const text = await readCappedText(req);
   if (text.trim() === '') return null;
   return { text, filename: null };
 }
@@ -67,7 +149,10 @@ export async function POST(req: Request): Promise<NextResponse> {
   let upload: Upload | null;
   try {
     upload = await readUpload(req);
-  } catch {
+  } catch (error) {
+    if (error instanceof UploadRefused) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     // A malformed multipart body is the caller's mistake, not a fault here.
     upload = null;
   }
@@ -105,18 +190,20 @@ export async function POST(req: Request): Promise<NextResponse> {
   });
 
   try {
-    const batch = await importBatchesRepo.createImportBatch(getDb(), ownerId, {
-      source: 'csv',
-      filename: upload.filename,
-      rowCount: items.length + parsed.errors.length,
-      insertedCount: items.length,
-      skippedCount: parsed.errors.length,
-    });
-
-    await transactionsRepo.bulkCreateImported(getDb(), ownerId, items, {
-      source: 'csv',
+    // One write: the batch and its rows land together or not at all, so a
+    // rejected insert cannot leave an import in the ledger that brought
+    // nothing in. The repository owns the transaction; this route only says
+    // what to write.
+    const { batch } = await importsRepo.importCsvBatch(getDb(), ownerId, {
+      batch: {
+        source: 'csv',
+        filename: upload.filename,
+        rowCount: items.length + parsed.errors.length,
+        insertedCount: items.length,
+        skippedCount: parsed.errors.length,
+      },
+      rows: items,
       provider: 'csv',
-      importBatchId: batch.id,
     });
 
     return NextResponse.json({

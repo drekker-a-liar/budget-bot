@@ -1,6 +1,6 @@
 import type { ExpenseTransaction } from '@budget-bot/core';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
-import type { Database } from '../client';
+import type { Database, Executor } from '../client';
 import { transactions } from '../schema';
 import { rejectingForeignProject } from './errors';
 import { isUuid, orUndefined, toIso } from './rows';
@@ -171,7 +171,7 @@ export interface ImportProvenance {
  * meaning would have to be unpicked when real ones arrive in Phase 2.
  */
 export async function bulkCreateImported(
-  db: Database,
+  db: Executor,
   ownerId: string,
   items: ImportedTransaction[],
   provenance: ImportProvenance
