@@ -1,6 +1,7 @@
 import {
   createCipheriv,
   createDecipheriv,
+  createHash,
   randomBytes as nodeRandomBytes,
 } from 'node:crypto';
 
@@ -17,6 +18,16 @@ import {
  * travels in the clear so a rotation can be rolled forward row by row, and the
  * AAD - the owning row's id - means a ciphertext copied into another row fails
  * to authenticate rather than decrypting into someone else's account.
+ *
+ * The key id is a **fingerprint of the key**, not a position in an ordering.
+ * It used to be the constant `'k2'` for whatever `BANK_TOKEN_ENCRYPTION_KEY`
+ * held and `'k1'` for whatever `..._PREVIOUS` held, which made rotation
+ * impossible rather than merely awkward: every row ever written carried `k2`,
+ * and a rotation moved the old key to `k1` - an id no row carried - while
+ * handing `k2` to the *new* key, so every existing row then failed to
+ * authenticate. An id derived from the key material follows its key wherever
+ * it is configured, which is what lets a deployment tell a row it has already
+ * re-encrypted from one it has not.
  */
 
 const VERSION = 'v1';
@@ -25,10 +36,19 @@ const KEY_BYTES = 32;
 /** 96 bits: the IV length AES-GCM is specified and fastest for. */
 const IV_BYTES = 12;
 
-/** Key id written into every row this deployment encrypts today. */
-export const CURRENT_KEY_ID = 'k2';
-/** Key id rows carry when they were written before the last rotation. */
-export const PREVIOUS_KEY_ID = 'k1';
+/** Hex characters of the key fingerprint written into each ciphertext. */
+const KEY_ID_LENGTH = 8;
+
+/**
+ * The id a key is known by: the first 8 hex characters of `sha256(key)`.
+ *
+ * A hash rather than the key itself, because this travels in the clear in
+ * every row; short because it only has to tell one deployment's handful of
+ * keys apart, and it is a lookup key, not a checksum.
+ */
+export function keyIdFor(key: Buffer): string {
+  return createHash('sha256').update(key).digest('hex').slice(0, KEY_ID_LENGTH);
+}
 
 export interface EncryptTokenOptions {
   /** Recorded in the ciphertext and in `bank_connections.encryption_key_id`. */
@@ -94,8 +114,9 @@ export function decryptToken(ciphertext: string, options: DecryptTokenOptions): 
   const key = options.keys[keyId];
   if (!key) {
     throw new Error(
-      `No encryption key '${keyId}' is configured. A row was written under a key ` +
-        'this deployment no longer holds; restore it as BANK_TOKEN_ENCRYPTION_KEY_PREVIOUS.'
+      `Unknown key id '${keyId}': no configured encryption key has that fingerprint. ` +
+        'A row was written under a key this deployment no longer holds; restore it ' +
+        'as BANK_TOKEN_ENCRYPTION_KEY_PREVIOUS.'
     );
   }
   assertKeyLength(key, `Encryption key '${keyId}'`);
@@ -127,7 +148,9 @@ function decodeKey(value: string, variable: string): Buffer {
 /**
  * Builds the keyring from the environment. `BANK_TOKEN_ENCRYPTION_KEY` writes;
  * `BANK_TOKEN_ENCRYPTION_KEY_PREVIOUS`, when a rotation is in flight, only
- * reads. Both are 32 random bytes, base64.
+ * reads. Both are 32 random bytes, base64, and each is registered under its
+ * own fingerprint - so which *variable* a key arrived in is a fact about this
+ * deployment's configuration today, and never about the rows it wrote.
  */
 export function loadKeysFromEnv(
   env: Record<string, string | undefined> = process.env
@@ -139,14 +162,17 @@ export function loadKeysFromEnv(
     );
   }
 
-  const keys: Record<string, Buffer> = {
-    [CURRENT_KEY_ID]: decodeKey(current, 'BANK_TOKEN_ENCRYPTION_KEY'),
-  };
+  const currentKey = decodeKey(current, 'BANK_TOKEN_ENCRYPTION_KEY');
+  const keys: Record<string, Buffer> = { [keyIdFor(currentKey)]: currentKey };
 
   const previous = env.BANK_TOKEN_ENCRYPTION_KEY_PREVIOUS;
   if (previous) {
-    keys[PREVIOUS_KEY_ID] = decodeKey(previous, 'BANK_TOKEN_ENCRYPTION_KEY_PREVIOUS');
+    // Naming the same key twice - a rotation half set up, or one finished
+    // without clearing the variable - collapses to one entry rather than
+    // being an error, because it describes a keyring that is exactly right.
+    const previousKey = decodeKey(previous, 'BANK_TOKEN_ENCRYPTION_KEY_PREVIOUS');
+    keys[keyIdFor(previousKey)] = previousKey;
   }
 
-  return { current: { keyId: CURRENT_KEY_ID, key: keys[CURRENT_KEY_ID] }, keys };
+  return { current: { keyId: keyIdFor(currentKey), key: currentKey }, keys };
 }
