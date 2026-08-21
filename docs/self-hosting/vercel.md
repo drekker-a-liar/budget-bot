@@ -107,6 +107,18 @@ and boot, not live.
 whose *verified* primary address is on `ALLOWED_EMAILS`; anyone else gets
 `AccessDenied` and leaves no row behind.
 
+**Do this by hand, once, and watch it work.** It is the only part of the locked
+door that has never run against GitHub. The allow list is checked against the
+*verified primary* address, which Auth.js does not hand over by default — this
+deployment overrides GitHub's `userinfo` request to go and fetch it, before any
+`users` or `accounts` row is created. That override is covered by unit tests
+and by nothing else: if it is wrong, either nobody can sign in, or the address
+being checked is an unverified one somebody else could have claimed. One real
+sign-in settles which. If your account has more than one address on it, the
+useful version of this check is that signing in with the *allow-listed* one
+works and that an address on your account which is **not** on the list is
+refused with `AccessDenied` and leaves no row in `users`.
+
 Signing in once creates your user row. Then, to start from demo data rather
 than an empty dashboard:
 
@@ -131,6 +143,28 @@ And confirm previews are not holding production secrets:
 ```bash
 vercel env ls
 ```
+
+### Confirm a broken environment is fatal here too
+
+`instrumentation.ts` calls `assertProductionSecurity()` at boot, and a throw
+there is meant to stop the deployment serving anything at all. That is proven
+locally and in CI; what has never been proven is Vercel's half of it — whether
+a throw in `instrumentation.ts` takes the function down or is swallowed into a
+warning and a running server. The difference matters: the second one is a
+deployment that is not protecting anything while looking healthy.
+
+So break it once, on purpose:
+
+1. Remove `ALLOWED_EMAILS` from the Production environment and redeploy.
+2. `curl -I https://<your-host>/` and `curl -s https://<your-host>/api/health`.
+   **Every route must return 500**, `/api/health` included — it is public, so
+   if anything still answers 200 the throw is not fatal here and the boot
+   assertion is not the guarantee this document says it is. Say so in an issue
+   rather than working around it.
+3. Put `ALLOWED_EMAILS` back and redeploy. Check `/api/health` answers
+   `{"ok":true,"authConfigured":true}` again before you walk away.
+
+Do it while the deployment is new and holds nothing you would miss.
 
 ## Custom domains
 

@@ -44,9 +44,10 @@ skips them when that is genuinely the right call.
 - **Green `pnpm turbo lint typecheck test build`,** and a green `pnpm e2e` if
   you touched auth, a page or a server action.
 - **No secrets, ever.** Not in a test fixture, not in a comment, not "just for
-  now". `.gitleaks.toml` allows exactly three things and each one is annotated
-  with why it is not a secret; if your change needs a fourth, say so in the
-  pull request rather than editing the file quietly.
+  now". `.gitleaks.toml` allows exactly two things — two *exact value
+  literals*, never a path — and each is annotated with why it is not a secret
+  and pinned a second time by a unit test; if your change needs a third, say
+  so in the pull request rather than editing the file quietly.
 - **A commit message that says why.** The what is in the diff.
 
 ## Where things go
@@ -67,6 +68,26 @@ one.
 Schema changes are migrations generated with
 `pnpm --filter @budget-bot/db db:generate` and committed.
 `drizzle-kit push` is never used.
+
+### Migrations, once this has been deployed
+
+`0000_initial_schema.sql` was amended in place several times while it was
+being written, and that was the right call: it had never run anywhere but
+disposable databases, and one clean migration is worth more than an audit
+trail of a schema nobody used.
+
+**That stops at the first production `pnpm db:migrate`.** From then on, every
+change is a *new numbered migration* and a committed one is never edited —
+drizzle's journal keys on the file's hash, so an amended file either re-runs or
+is silently skipped depending on what a given database has already recorded,
+and which of those you get is not something you find out until it has happened
+to production data.
+
+Keep the tests that assert on the migration SQL as a string. The initial
+migration carries a hand-edited `ON DELETE set null ("project_id")` column list
+that drizzle-kit cannot express, and that test is the only thing standing
+between a regenerated migration and a delete that fails against a `NOT NULL`
+owner column.
 
 ## Known security debt
 

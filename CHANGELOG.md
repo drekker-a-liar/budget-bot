@@ -66,6 +66,24 @@ deployed.
 - CodeQL weekly, Dependabot grouped weekly, gitleaks and eslint on pre-commit,
   typecheck on pre-push.
 
+### Fixed after the whole-branch review
+
+- `pnpm check:security` no longer loads the repository's `.env` before reading
+  the environment — it could print "safe to deploy to production" about a
+  development environment. It reads `process.env`, or an explicit
+  `--env-file <path>`, and prints which of the two it judged.
+- The CSV importer accepts `MM/DD/YYYY` (US ordering) as well as ISO dates, so
+  a real bank export no longer comes back with every row skipped. `DD/MM/YYYY`
+  is refused rather than guessed at.
+- Weekly cash outflow excludes `ignored` and negative rows, so the "Weekly Net
+  Cash Flow" KPI and the cash-flow waterfall beside it stop disagreeing about
+  the same week.
+- Encryption key ids are a fingerprint of the key rather than the constants
+  `k1`/`k2`, which could not survive a rotation. No token has ever been
+  stored, so nothing has to be re-encrypted.
+- A deficit renders with its minus sign, and a YTD loss is no longer drawn in
+  the healthy colour.
+
 ### Known debt
 
 - Eight `next` advisories are allow-listed by exact id in `pnpm-workspace.yaml`
