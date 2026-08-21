@@ -27,6 +27,20 @@ function safeProduction(): RawEnv {
   };
 }
 
+/**
+ * The four variables a live Plaid deployment has to have together. Spread into
+ * a case and then taken apart one at a time, so each test says which single
+ * missing variable it is about.
+ */
+function livePlaid(): RawEnv {
+  return {
+    PLAID_ENV: 'production',
+    PLAID_CLIENT_ID: 'plaid-client-id',
+    PLAID_SECRET: 'plaid-secret',
+    CRON_SECRET: 'cron-shared-secret',
+  };
+}
+
 function failureFor(overrides: RawEnv): string {
   try {
     assertProductionSecurity({ ...safeProduction(), ...overrides });
@@ -70,9 +84,26 @@ describe('assertProductionSecurity', () => {
     ],
     [
       'Plaid is live but the cron endpoint has no shared secret',
-      { PLAID_ENV: 'production' },
+      { ...livePlaid(), CRON_SECRET: undefined },
       /CRON_SECRET/,
     ],
+    [
+      'Plaid is live but has no client id',
+      { ...livePlaid(), PLAID_CLIENT_ID: undefined },
+      /PLAID_CLIENT_ID/,
+    ],
+    [
+      'Plaid is live but has no secret',
+      { ...livePlaid(), PLAID_SECRET: undefined },
+      /PLAID_SECRET/,
+    ],
+    /**
+     * The one Plaid check that is about a value being *present and wrong*
+     * rather than absent. A production deployment pointed at Sandbox shows
+     * fabricated transactions as if they were the owner's money, and every
+     * other check here would pass while it did.
+     */
+    ['Plaid is pointed at Sandbox', { PLAID_ENV: 'sandbox' }, /PLAID_ENV/],
     [
       'the end-to-end sign-in door is open',
       { E2E: '1' },
@@ -96,10 +127,41 @@ describe('assertProductionSecurity', () => {
     expect(() => assertProductionSecurity({ ...safeProduction(), E2E: '0' })).not.toThrow();
   });
 
-  it('lets Plaid sandbox run without a cron secret', () => {
+  /**
+   * The three states `PLAID_ENV` can be in, and what each one means here.
+   *
+   * Unset is "Plaid is not configured", which is a real deployment: the
+   * connections screen degrades to its not-configured state rather than
+   * throwing (spec §7), so nothing about banking is required. `production` is
+   * "Plaid is live", which drags in the credentials and the cron secret. And
+   * `sandbox` in production is refused outright - previews stay on Sandbox by
+   * scoping the variable to the preview environment, not by letting a
+   * production boot accept it.
+   */
+  it('accepts a production deployment that is not using Plaid at all', () => {
+    const raw = safeProduction();
+    expect(raw.PLAID_ENV).toBeUndefined();
+    expect(() => assertProductionSecurity(raw)).not.toThrow();
+  });
+
+  it('accepts a production deployment with Plaid fully configured', () => {
     expect(() =>
-      assertProductionSecurity({ ...safeProduction(), PLAID_ENV: 'sandbox' })
+      assertProductionSecurity({ ...safeProduction(), ...livePlaid() })
     ).not.toThrow();
+  });
+
+  it('refuses Sandbox in production, and says why in the message', () => {
+    const message = failureFor({ PLAID_ENV: 'sandbox' });
+
+    expect(message).toMatch(/PLAID_ENV/);
+    expect(message).toMatch(/must not talk to Plaid Sandbox/i);
+  });
+
+  it('refuses Sandbox even when everything else about Plaid is present', () => {
+    // The credentials being there is not a reason to let it through: a
+    // Sandbox client id and secret are exactly what a misconfigured
+    // production deployment would have.
+    expect(failureFor({ ...livePlaid(), PLAID_ENV: 'sandbox' })).toMatch(/PLAID_ENV/);
   });
 
   it('names every failing check at once, so one restart shows the whole list', () => {

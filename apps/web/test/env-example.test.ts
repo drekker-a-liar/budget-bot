@@ -71,6 +71,8 @@ describe('.env.example', () => {
       'BANK_TOKEN_ENCRYPTION_KEY',
       // Conditional on PLAID_ENV, but conditional in preview too.
       'CRON_SECRET',
+      'PLAID_CLIENT_ID',
+      'PLAID_SECRET',
     ];
 
     for (const key of enforced) {
@@ -110,6 +112,7 @@ describe('.env.example', () => {
       'AUTH_GITHUB_SECRET',
       'BANK_TOKEN_ENCRYPTION_KEY',
       'BANK_TOKEN_ENCRYPTION_KEY_PREVIOUS',
+      'PLAID_SECRET',
       'CRON_SECRET',
     ]);
 

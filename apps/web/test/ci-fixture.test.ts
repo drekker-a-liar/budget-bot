@@ -46,7 +46,12 @@ const EXPECTED_DUMMIES: Record<string, string> = {
   AUTH_SECRET: 'notnotnotnotnotnotnotnotnotnotnot',
   AUTH_GITHUB_SECRET: 'notarealgithuboauthclientsecret0',
   BANK_TOKEN_ENCRYPTION_KEY: 'bm90LWEtcmVhbC1rZXktLW5vdC1hLXJlYWwta2V5MzI=',
+  PLAID_SECRET: 'notarealplaidsecret00000000000',
+  CRON_SECRET: 'notarealcronsecret000000000000000',
 };
+
+/** Not secret-shaped by name, but a credential all the same, so pinned too. */
+const PLAID_CLIENT_ID = 'notarealplaidclientid0000';
 
 /** Not secret-shaped by name, but exempted in `.gitleaks.toml`, so pinned too. */
 const GITHUB_CLIENT_ID = 'Iv1.0123456789abcdef';
@@ -68,7 +73,10 @@ describe('the CI production fixture', () => {
       AUTH_GITHUB_SECRET: EXPECTED_DUMMIES.AUTH_GITHUB_SECRET,
       ALLOWED_EMAILS: 'ci@example.com',
       BANK_TOKEN_ENCRYPTION_KEY: EXPECTED_DUMMIES.BANK_TOKEN_ENCRYPTION_KEY,
-      PLAID_ENV: 'sandbox',
+      PLAID_ENV: 'production',
+      PLAID_CLIENT_ID,
+      PLAID_SECRET: EXPECTED_DUMMIES.PLAID_SECRET,
+      CRON_SECRET: EXPECTED_DUMMIES.CRON_SECRET,
       E2E: '0',
     });
   });
@@ -108,9 +116,28 @@ describe('the CI production fixture', () => {
     expect(fixture.E2E).toBe('0');
   });
 
-  it('keeps Plaid in sandbox, so no cron secret is implied', () => {
-    expect(fixture.PLAID_ENV).toBe('sandbox');
-    expect(fixture.CRON_SECRET).toBeUndefined();
+  /**
+   * The fixture cannot be a Sandbox one any more: `sandbox` in production is
+   * refused, so an environment carrying it could never be the *complete* one
+   * whose whole job is to prove the assertion accepts something. Being the
+   * live-Plaid environment means it has to carry the three variables that
+   * come with it, which is what the next case checks.
+   */
+  it('is a live-Plaid environment, complete with everything that implies', () => {
+    expect(fixture.PLAID_ENV).toBe('production');
+    expect(fixture.PLAID_CLIENT_ID).toBe(PLAID_CLIENT_ID);
+    expect(fixture.PLAID_SECRET).toBe(EXPECTED_DUMMIES.PLAID_SECRET);
+    expect(fixture.CRON_SECRET).toBe(EXPECTED_DUMMIES.CRON_SECRET);
+  });
+
+  it('carries Plaid dummies that say what they are, rather than entropy', () => {
+    // The same standard the encryption key is held to: a committed credential
+    // has to be readable English that announces itself. A real Plaid client id
+    // is 24 hex-ish characters and a real secret is 30; these are the right
+    // length and spell out that they are not real.
+    for (const value of [PLAID_CLIENT_ID, EXPECTED_DUMMIES.PLAID_SECRET]) {
+      expect(value).toMatch(/^notareal[a-z]+0+$/);
+    }
   });
 });
 
@@ -138,5 +165,11 @@ describe('the boot assertion, judging the fixture', () => {
 
   it('refuses it with the test door propped open', () => {
     expect(() => assertProductionSecurity({ ...production, E2E: '1' })).toThrow(/E2E/);
+  });
+
+  it('refuses it with Plaid moved to Sandbox', () => {
+    expect(() => assertProductionSecurity({ ...production, PLAID_ENV: 'sandbox' })).toThrow(
+      /PLAID_ENV/
+    );
   });
 });
