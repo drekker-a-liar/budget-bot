@@ -1,0 +1,21 @@
+{
+  "institution": {
+    "institution_id": "ins_127287",
+    "name": "Platypus OAuth Bank",
+    "products": [
+      "transactions",
+      "balance"
+    ],
+    "country_codes": [
+      "US"
+    ],
+    "url": "https://www.platypus.com",
+    "primary_color": "#0a85ea",
+    "logo": null,
+    "routing_numbers": [
+      "011401533"
+    ],
+    "oauth": true
+  },
+  "request_id": "req-institution-1"
+}

@@ -1,0 +1,51 @@
+{
+  "accounts": [
+    {
+      "account_id": "acct-credit-1",
+      "balances": {
+        "available": 2350.44,
+        "current": 2649.56,
+        "limit": 5000,
+        "iso_currency_code": "USD",
+        "unofficial_currency_code": null
+      },
+      "mask": "3210",
+      "name": "Platypus Business Card",
+      "official_name": "Platypus Business Rewards Visa",
+      "type": "credit",
+      "subtype": "credit card"
+    },
+    {
+      "account_id": "acct-checking-1",
+      "balances": {
+        "available": 12450.11,
+        "current": 12980.11,
+        "limit": null,
+        "iso_currency_code": "USD",
+        "unofficial_currency_code": null
+      },
+      "mask": "0000",
+      "name": "Platypus Business Checking",
+      "official_name": "Platypus Business Interest Checking",
+      "type": "depository",
+      "subtype": "checking"
+    }
+  ],
+  "item": {
+    "item_id": "item-1",
+    "institution_id": "ins_127287",
+    "institution_name": "Platypus OAuth Bank",
+    "webhook": null,
+    "error": null,
+    "available_products": [
+      "balance",
+      "identity"
+    ],
+    "billed_products": [
+      "transactions"
+    ],
+    "consent_expiration_time": null,
+    "update_type": "background"
+  },
+  "request_id": "req-accounts-1"
+}

@@ -1,0 +1,16 @@
+{
+  "status": 429,
+  "headers": {
+    "retry-after": "12"
+  },
+  "data": {
+    "error_type": "RATE_LIMIT_EXCEEDED",
+    "error_code": "TRANSACTIONS_LIMIT",
+    "error_message": "rate limit exceeded for attempts to access this item. please try again later",
+    "display_message": null,
+    "request_id": "req-error-rate-limit",
+    "status": 429,
+    "documentation_url": "https://plaid.com/docs/errors/rate-limit-exceeded/#transactions_limit",
+    "suggested_action": null
+  }
+}

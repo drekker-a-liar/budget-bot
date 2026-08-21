@@ -1,0 +1,26 @@
+{
+  "item": {
+    "item_id": "item-1",
+    "institution_id": "ins_127287",
+    "institution_name": "Platypus OAuth Bank",
+    "webhook": null,
+    "error": null,
+    "available_products": [
+      "balance",
+      "identity"
+    ],
+    "billed_products": [
+      "transactions"
+    ],
+    "products": [
+      "transactions"
+    ],
+    "consented_products": [
+      "transactions"
+    ],
+    "consent_expiration_time": null,
+    "update_type": "background"
+  },
+  "status": null,
+  "request_id": "req-item-1"
+}

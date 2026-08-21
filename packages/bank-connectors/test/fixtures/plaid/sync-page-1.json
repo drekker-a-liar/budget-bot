@@ -1,0 +1,171 @@
+{
+  "accounts": [
+    {
+      "account_id": "acct-credit-1",
+      "balances": {
+        "available": 2350.44,
+        "current": 2649.56,
+        "limit": 5000,
+        "iso_currency_code": "USD",
+        "unofficial_currency_code": null
+      },
+      "mask": "3210",
+      "name": "Platypus Business Card",
+      "official_name": "Platypus Business Rewards Visa",
+      "type": "credit",
+      "subtype": "credit card"
+    },
+    {
+      "account_id": "acct-checking-1",
+      "balances": {
+        "available": 12450.11,
+        "current": 12980.11,
+        "limit": null,
+        "iso_currency_code": "USD",
+        "unofficial_currency_code": null
+      },
+      "mask": "0000",
+      "name": "Platypus Business Checking",
+      "official_name": "Platypus Business Interest Checking",
+      "type": "depository",
+      "subtype": "checking"
+    }
+  ],
+  "added": [
+    {
+      "account_id": "acct-credit-1",
+      "account_owner": null,
+      "amount": 114.75,
+      "authorized_date": "2026-08-17",
+      "authorized_datetime": "2026-08-17T16:41:00Z",
+      "date": "2026-08-18",
+      "datetime": "2026-08-18T14:02:11Z",
+      "iso_currency_code": "USD",
+      "location": {
+        "address": null,
+        "city": null,
+        "region": null,
+        "postal_code": null,
+        "country": null,
+        "lat": null,
+        "lon": null,
+        "store_number": null
+      },
+      "merchant_name": "The Home Depot",
+      "name": "HOME DEPOT #1234",
+      "payment_channel": "in store",
+      "payment_meta": {
+        "reference_number": null,
+        "ppd_id": null,
+        "payee": null,
+        "by_order_of": null,
+        "payer": null,
+        "payment_method": null,
+        "payment_processor": null,
+        "reason": null
+      },
+      "pending": false,
+      "pending_transaction_id": null,
+      "personal_finance_category": {
+        "primary": "GENERAL_MERCHANDISE",
+        "detailed": "GENERAL_MERCHANDISE_SUPERSTORES",
+        "confidence_level": "VERY_HIGH"
+      },
+      "transaction_code": null,
+      "transaction_id": "txn-1",
+      "unofficial_currency_code": null
+    },
+    {
+      "account_id": "acct-credit-1",
+      "account_owner": null,
+      "amount": 62.1,
+      "authorized_date": "2026-08-17",
+      "authorized_datetime": "2026-08-17T19:20:41Z",
+      "date": "2026-08-17",
+      "datetime": "2026-08-17T19:22:00Z",
+      "iso_currency_code": "USD",
+      "location": {
+        "address": null,
+        "city": null,
+        "region": null,
+        "postal_code": null,
+        "country": null,
+        "lat": null,
+        "lon": null,
+        "store_number": null
+      },
+      "merchant_name": "Lowe's",
+      "name": "LOWES #00417",
+      "payment_channel": "in store",
+      "payment_meta": {
+        "reference_number": null,
+        "ppd_id": null,
+        "payee": null,
+        "by_order_of": null,
+        "payer": null,
+        "payment_method": null,
+        "payment_processor": null,
+        "reason": null
+      },
+      "pending": false,
+      "pending_transaction_id": null,
+      "personal_finance_category": {
+        "primary": "HOME_IMPROVEMENT",
+        "detailed": "HOME_IMPROVEMENT_HARDWARE",
+        "confidence_level": "VERY_HIGH"
+      },
+      "transaction_code": null,
+      "transaction_id": "txn-2",
+      "unofficial_currency_code": null
+    },
+    {
+      "account_id": "acct-credit-1",
+      "account_owner": null,
+      "amount": -500,
+      "authorized_date": null,
+      "authorized_datetime": null,
+      "date": "2026-08-16",
+      "datetime": "2026-08-16T09:00:00Z",
+      "iso_currency_code": "USD",
+      "location": {
+        "address": null,
+        "city": null,
+        "region": null,
+        "postal_code": null,
+        "country": null,
+        "lat": null,
+        "lon": null,
+        "store_number": null
+      },
+      "merchant_name": null,
+      "name": "PAYMENT THANK YOU",
+      "payment_channel": "other",
+      "payment_meta": {
+        "reference_number": null,
+        "ppd_id": null,
+        "payee": null,
+        "by_order_of": null,
+        "payer": null,
+        "payment_method": null,
+        "payment_processor": null,
+        "reason": null
+      },
+      "pending": false,
+      "pending_transaction_id": null,
+      "personal_finance_category": {
+        "primary": "LOAN_PAYMENTS",
+        "detailed": "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT",
+        "confidence_level": "VERY_HIGH"
+      },
+      "transaction_code": "payment",
+      "transaction_id": "txn-3",
+      "unofficial_currency_code": null
+    }
+  ],
+  "modified": [],
+  "removed": [],
+  "next_cursor": "cursor-1",
+  "has_more": true,
+  "transactions_update_status": "HISTORICAL_UPDATE_COMPLETE",
+  "request_id": "req-sync-1"
+}
