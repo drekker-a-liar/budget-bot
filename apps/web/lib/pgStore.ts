@@ -30,6 +30,15 @@ import type {
 let cachedOwnerId: string | undefined;
 
 async function owner(): Promise<[Database, string]> {
+  // Checked before anything else, including the cache: an environment variable
+  // naming the user is a development convenience, and in a deployed
+  // environment it would be an unauthenticated way to read someone's books.
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'DEV_OWNER_EMAIL owner resolution is disabled in production; Task 4 replaces it with the session'
+    );
+  }
+
   const db = getDb();
   if (cachedOwnerId) return [db, cachedOwnerId];
 

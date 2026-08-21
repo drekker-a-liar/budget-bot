@@ -35,6 +35,16 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     if (body.action === 'reset') {
+      // Against the JSON file this rewrites demo data; against Postgres it
+      // deletes every row the owner has. It exists for local development and
+      // is removed with the JSON store, so it must not be reachable from a
+      // deployed environment in the meantime.
+      if (process.env.NODE_ENV === 'production') {
+        return NextResponse.json(
+          { error: 'Resetting to seed data is disabled in production' },
+          { status: 403 }
+        );
+      }
       const data = await db.resetToSeed();
       return NextResponse.json({ success: true, message: 'Reset to seed data', data });
     }
