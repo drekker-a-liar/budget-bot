@@ -574,6 +574,47 @@ describeDb('runSync', () => {
     expect(after.lastSyncedAt).not.toBeNull();
   });
 
+  it('files a card charge to the card and a bank charge as a transfer', async () => {
+    // The account the charge landed on is the only thing that says how it was
+    // paid. A credit line is a card, and the mask is the card's last four, so
+    // the ledger can say which one. A checking account is not: the mask is the
+    // *account* number, and printing it as a card's last four would be a wrong
+    // fact about a real card, so it is left off and the charge is a transfer.
+    await sync({
+      pages: [
+        page({
+          added: [
+            txn({ externalId: 'txn-card', amountCents: cents(11475), rawDescriptor: 'MENARDS' }),
+            txn({
+              externalId: 'txn-bank',
+              amountCents: cents(6210),
+              rawDescriptor: 'CITY WATER AUTOPAY',
+              accountExternalId: CHECKING,
+            }),
+          ],
+          nextCursor: 'cursor-1',
+        }),
+      ],
+    }).run();
+
+    const onCard = await transactionsRepo.getByExternalId(
+      db,
+      ownerId,
+      await accountIdFor(CREDIT),
+      'txn-card'
+    );
+    const onBank = await transactionsRepo.getByExternalId(
+      db,
+      ownerId,
+      await accountIdFor(CHECKING),
+      'txn-bank'
+    );
+
+    expect(onCard).toMatchObject({ paymentMethod: 'card', cardLast4: '4471' });
+    expect(onBank).toMatchObject({ paymentMethod: 'transfer' });
+    expect(onBank?.cardLast4).toBeUndefined();
+  });
+
   it('refuses to call a page a success when the upsert wrote fewer rows than it was given', async () => {
     // A row belonging to somebody else, on the same account and external id.
     // `upsertFromBank` asserts the owner in its `setWhere`, so the conflicting
@@ -608,6 +649,28 @@ describeDb('runSync', () => {
     expect(await cursorOf()).toBeNull();
     expect(await transactionsRepo.listTransactions(db, ownerId)).toHaveLength(0);
     expect((await reload()).lastErrorCode).toBe(SYNC_WRITE_SHORTFALL);
+  });
+
+  it('does not read a page that names one charge twice as a shortfall', async () => {
+    // `upsertFromBank` collapses a page onto the dedupe key before it writes,
+    // so a provider that lists the same transaction twice - which
+    // `/transactions/sync` does when a charge is amended inside one page -
+    // produces one row for two entries. Counting what was *given* rather than
+    // what was distinct would call that a shortfall and roll the page back.
+    const out = await sync({
+      pages: [
+        page({
+          added: [
+            txn({ externalId: 'txn-twice', amountCents: cents(1000), rawDescriptor: 'MENARDS' }),
+            txn({ externalId: 'txn-twice', amountCents: cents(1000), rawDescriptor: 'MENARDS' }),
+          ],
+          nextCursor: 'cursor-1',
+        }),
+      ],
+    }).run();
+
+    expect(out).toMatchObject({ added: 1, pages: 1 });
+    expect(await cursorOf()).toBe('cursor-1');
   });
 
   it('never lets the shortfall message carry the token or a row of somebody else’s', async () => {

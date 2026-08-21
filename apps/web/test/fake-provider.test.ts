@@ -237,6 +237,27 @@ describe('the production guard', () => {
     );
   });
 
+  it('refuses even when handed an environment that does not admit to it', () => {
+    // The guard is supposed to be a check on the *runtime*, independent of the
+    // environment check in `assertProductionSecurity` - and a guard that only
+    // reads the object it was passed is not that: any caller with its own
+    // `raw` walks straight past it. So it asks both, and either one saying
+    // production is enough.
+    vi.stubEnv('NODE_ENV', 'production');
+
+    expect(() => new FakeBankProvider(defaultFakeScript(), { NODE_ENV: 'development' })).toThrow(
+      FakeBankProviderInProductionError
+    );
+  });
+
+  it('refuses when the environment it was handed says production', () => {
+    vi.stubEnv('NODE_ENV', 'development');
+
+    expect(() => new FakeBankProvider(defaultFakeScript(), { NODE_ENV: 'production' })).toThrow(
+      FakeBankProviderInProductionError
+    );
+  });
+
   it('is constructible everywhere else', () => {
     vi.stubEnv('NODE_ENV', 'development');
 

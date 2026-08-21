@@ -96,7 +96,15 @@ export class FakeBankProvider implements BankProvider {
   #failuresLeft: number;
 
   constructor(script: FakeBankScript, raw: RawEnv = process.env) {
-    if (raw.NODE_ENV === 'production') throw new FakeBankProviderInProductionError();
+    // Both, because either one saying production is enough. Reading only the
+    // environment it was handed would make this a check on an *argument*
+    // rather than on the runtime, and any caller with its own `raw` - which is
+    // every test in this repository - would walk straight past it. The claim
+    // above is that the two guards are independent; asking `process.env` as
+    // well is what makes that true.
+    if (raw.NODE_ENV === 'production' || process.env.NODE_ENV === 'production') {
+      throw new FakeBankProviderInProductionError();
+    }
 
     this.#script = script;
     this.#failuresLeft = script.failAtPage?.times ?? Number.POSITIVE_INFINITY;

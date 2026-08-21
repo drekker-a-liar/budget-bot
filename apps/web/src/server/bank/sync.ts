@@ -139,6 +139,7 @@ function identityOf(row: BankTransactionRow): string {
 function toRow(transaction: NormalizedTransaction, account: BankAccount): BankTransactionRow {
   const description = transaction.merchantName ?? transaction.rawDescriptor;
   const auto = categorizeVendor(description);
+  const onACard = account.type === 'credit';
 
   return {
     date: transaction.date,
@@ -146,8 +147,14 @@ function toRow(transaction: NormalizedTransaction, account: BankAccount): BankTr
     vendor: auto.cleanVendor,
     amountCents: transaction.amountCents,
     category: auto.category,
-    paymentMethod: 'card' as const,
-    cardLast4: account.mask ?? undefined,
+    // How it was paid is a fact about the account it landed on, and a credit
+    // line is the only one of them that is a card. A charge on a checking
+    // account is money leaving a bank account - an autopay, a transfer, a
+    // debit - and the mask on that account is the *account* number, so
+    // printing it as a card's last four would put a wrong fact about a real
+    // card on the ledger. `transfer` is the closest thing the domain has.
+    paymentMethod: onACard ? ('card' as const) : ('transfer' as const),
+    cardLast4: onACard ? (account.mask ?? undefined) : undefined,
     // Positive is money out (ADR 0004). A negative row is a refund or a card
     // payment: real, stored, and kept out of the metrics, because counting it
     // as an expense would double-count the purchases it settles.
