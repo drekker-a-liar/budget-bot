@@ -4,7 +4,6 @@ import {
   calculateBusinessSummary,
   type BusinessFinancialSummary,
   type CardProfile,
-  type ExpenseTransaction,
   type Invoice,
   type Project,
   type WeeklyCashFlow,
@@ -18,6 +17,7 @@ import {
   transactionsRepo,
 } from '@budget-bot/db';
 import { countUnassigned } from './projects';
+import { spendByCategory, type SpendBreakdown } from './spend';
 import { calculateWeeklyCashFlow } from './weeks';
 
 /**
@@ -31,7 +31,7 @@ import { calculateWeeklyCashFlow } from './weeks';
 export interface CashflowPageData {
   summary: BusinessFinancialSummary;
   weeks: WeeklyCashFlow[];
-  transactions: ExpenseTransaction[];
+  spend: SpendBreakdown;
   invoices: Invoice[];
   projects: Project[];
   cardProfile: CardProfile | null;
@@ -52,7 +52,7 @@ export const getCashflowPage = cache(
     return {
       summary: calculateBusinessSummary(projects, transactions, laborEntries, invoices, now),
       weeks: calculateWeeklyCashFlow({ transactions, invoices }, now),
-      transactions,
+      spend: spendByCategory(transactions),
       invoices,
       projects,
       cardProfile,

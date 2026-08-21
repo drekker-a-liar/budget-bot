@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useTransition } from 'react';
-import { addCents, formatCents, type ExpenseCategory } from '@budget-bot/core';
+import { formatCents, type ExpenseCategory } from '@budget-bot/core';
 import { FileText } from 'lucide-react';
 import { CashFlowWaterfall } from '@/components/CashFlowWaterfall';
 import { Navigation } from '@/components/Navigation';
@@ -28,7 +28,7 @@ const CATEGORIES: Array<{ name: string; key: ExpenseCategory; color: string }> =
 export function CashFlowView({
   summary,
   weeks,
-  transactions,
+  spend,
   invoices,
   projects,
   cardProfile,
@@ -45,9 +45,6 @@ export function CashFlowView({
       if (!result.ok) setError(result.error);
     });
   };
-
-  const totalSpendCents = addCents(...transactions.map((t) => t.amountCents));
-  const spendDenominator = totalSpendCents || 1;
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -109,7 +106,7 @@ export function CashFlowView({
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                   Total Disbursed:{' '}
                   <strong className="tnum" style={{ color: '#f8fafc' }}>
-                    {formatCents(totalSpendCents)}
+                    {formatCents(spend.totalCents)}
                   </strong>
                 </div>
               </div>
@@ -117,10 +114,7 @@ export function CashFlowView({
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', marginTop: '1rem' }}>
               {CATEGORIES.map((cat) => {
-                const amountCents = addCents(
-                  ...transactions.filter((t) => t.category === cat.key).map((t) => t.amountCents)
-                );
-                const pct = Math.round((amountCents / spendDenominator) * 1000) / 10;
+                const { amountCents, pct } = spend.byCategory[cat.key];
 
                 return (
                   <div key={cat.key}>
@@ -137,7 +131,7 @@ export function CashFlowView({
                     <div style={{ height: '6px', background: 'var(--bg-input)', borderRadius: '3px', overflow: 'hidden' }}>
                       <div
                         style={{
-                          width: `${Math.max(0, pct)}%`,
+                          width: `${pct}%`,
                           height: '100%',
                           backgroundColor: cat.color,
                           borderRadius: '3px',

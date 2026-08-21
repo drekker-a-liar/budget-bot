@@ -163,7 +163,30 @@ describe('money', () => {
     expect(repos.createTransaction).toHaveBeenCalledWith(
       {},
       'user-1',
-      expect.objectContaining({ amountCents: -11475 })
+      // Negative is money in (spec §8), and defaults to ignored so that a
+      // refund is not counted as an expense - the same rule the CSV importer
+      // applies, whether the row was typed or uploaded.
+      expect.objectContaining({ amountCents: -11475, status: 'ignored' })
+    );
+  });
+
+  it('files a positive expense against the job it was given', async () => {
+    await createTransactionAction({ vendor: 'LOWES', amount: '10', projectId: 'proj-1' });
+
+    expect(repos.createTransaction).toHaveBeenCalledWith(
+      {},
+      'user-1',
+      expect.objectContaining({ status: 'matched', projectId: 'proj-1' })
+    );
+  });
+
+  it('leaves a positive expense with no job in the inbox', async () => {
+    await createTransactionAction({ vendor: 'LOWES', amount: '10' });
+
+    expect(repos.createTransaction).toHaveBeenCalledWith(
+      {},
+      'user-1',
+      expect.objectContaining({ status: 'unassigned' })
     );
   });
 });

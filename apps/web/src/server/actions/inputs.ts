@@ -61,6 +61,15 @@ const optionalMoney = (fallbackDollars: number) =>
     .transform((value) => (value === undefined || value === '' ? fallbackDollars : value))
     .pipe(money);
 
+/** The status a new expense starts in, given its sign and its filing. */
+function negativeOrFiled(
+  amountCents: number,
+  projectId: string | undefined
+): 'ignored' | 'matched' | 'unassigned' {
+  if (amountCents < 0) return 'ignored';
+  return projectId ? 'matched' : 'unassigned';
+}
+
 const text = z.string().default('');
 /**
  * A field that has to be filled in. The message covers absent as well as
@@ -147,7 +156,10 @@ export const CreateTransactionForm = z
     category: form.category,
     paymentMethod: form.paymentMethod,
     projectId: form.projectId || undefined,
-    status: form.projectId ? ('matched' as const) : ('unassigned' as const),
+    // Positive is money out (spec §8). A negative amount is a refund or a
+    // card payment, and defaults to `ignored` however it arrived - the same
+    // rule the CSV importer applies, so the two entry paths agree.
+    status: negativeOrFiled(form.amount, form.projectId),
     taxDeductible: form.taxDeductible,
     notes: form.notes,
   }))
