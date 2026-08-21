@@ -22,8 +22,29 @@ import Link from 'next/link';
 
 interface DashboardMetricsProps {
   summary: BusinessFinancialSummary;
+  /**
+   * How to reach the triage inbox from here. The dashboard renders the inbox
+   * further down its own page and passes a handler that scrolls to it; a page
+   * that has no inbox of its own leaves this out and the card links to
+   * `/transactions` instead.
+   */
   onOpenInbox?: () => void;
 }
+
+/** Shared so the button and the link are the same affordance, differently wired. */
+const TRIAGE_STYLE: React.CSSProperties = {
+  background: 'transparent',
+  border: 'none',
+  padding: 0,
+  cursor: 'pointer',
+  color: 'var(--accent-cyan)',
+  textDecoration: 'none',
+  fontWeight: 700,
+  fontSize: '0.72rem',
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '0.2rem',
+};
 
 export function DashboardMetrics({ summary, onOpenInbox }: DashboardMetricsProps) {
   return (
@@ -143,20 +164,15 @@ export function DashboardMetrics({ summary, onOpenInbox }: DashboardMetricsProps
         </div>
         <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.5rem' }}>
           <span style={{ color: 'var(--text-secondary)' }}>Home Depot &amp; Lowe&apos;s swipes</span>
-          <Link
-            href="/transactions"
-            style={{
-              color: 'var(--accent-cyan)',
-              textDecoration: 'none',
-              fontWeight: 700,
-              fontSize: '0.72rem',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.2rem',
-            }}
-          >
-            Triage Swipes <ArrowUpRight size={12} />
-          </Link>
+          {onOpenInbox ? (
+            <button type="button" onClick={onOpenInbox} style={TRIAGE_STYLE}>
+              Triage Swipes <ArrowUpRight size={12} />
+            </button>
+          ) : (
+            <Link href="/transactions" style={TRIAGE_STYLE}>
+              Triage Swipes <ArrowUpRight size={12} />
+            </Link>
+          )}
         </div>
       </div>
 
