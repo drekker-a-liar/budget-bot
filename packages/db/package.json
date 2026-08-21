@@ -1,0 +1,36 @@
+{
+  "name": "@budget-bot/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema/index.ts",
+    "./crypto": "./src/crypto/index.ts",
+    "./seed": "./src/seed/index.ts"
+  },
+  "scripts": {
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:seed": "tsx scripts/seed.ts",
+    "db:test:setup": "tsx scripts/test-setup.ts",
+    "db:import-json": "tsx scripts/import-json-db.ts",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@budget-bot/core": "workspace:*",
+    "drizzle-orm": "^0.44.7",
+    "postgres": "^3.4.7"
+  },
+  "devDependencies": {
+    "@budget-bot/config": "workspace:*",
+    "@types/node": "^20.17.19",
+    "drizzle-kit": "^0.31.6",
+    "eslint": "^9.39.5",
+    "tsx": "^4.20.6",
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.11"
+  }
+}
