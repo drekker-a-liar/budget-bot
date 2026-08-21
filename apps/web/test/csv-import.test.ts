@@ -1,16 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// The JSON store is stubbed at the module boundary; every assertion is on the
-// route's response or on the rows it decided to import.
-vi.mock('@/lib/db', () => ({
-  db: {
-    bulkImportTransactions: vi.fn((items) =>
-      items.map((item: object, i: number) => ({ ...item, id: `tx-${i}`, createdAt: 'now' }))
-    ),
-  },
+// The session and the store are stubbed at the module boundary; every
+// assertion is on the route's response or on the rows it decided to import.
+vi.mock('@/auth', () => ({
+  auth: vi.fn(async () => ({ user: { id: 'user-1' }, expires: '2026-09-01' })),
 }));
 
-const { db } = await import('@/lib/db');
+const db = vi.hoisted(() => ({
+  bulkImportTransactions: vi.fn((items: object[]) =>
+    items.map((item: object, i: number) => ({ ...item, id: `tx-${i}`, createdAt: 'now' }))
+  ),
+}));
+
+vi.mock('@/lib/db', () => ({ storeFor: () => db }));
 const { POST: importTransactions } = await import('@/app/api/transactions/import/route');
 
 const post = (body: unknown) =>

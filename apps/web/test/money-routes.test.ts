@@ -1,19 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// The JSON store is stubbed at the module boundary: these tests are about how
-// a route reads money out of a request body, not about persistence. Every
-// assertion is on the route's response or on the cents value handed to the
-// store, both of which are real behaviour.
-vi.mock('@/lib/db', () => ({
-  db: {
-    createProject: vi.fn((input) => ({ ...input, id: 'proj-1', createdAt: 'now' })),
-    createInvoice: vi.fn((input) => ({ ...input, id: 'inv-1', createdAt: 'now' })),
-    createLaborEntry: vi.fn((input) => ({ ...input, id: 'lab-1', createdAt: 'now' })),
-    createTransaction: vi.fn((input) => ({ ...input, id: 'tx-1', createdAt: 'now' })),
-  },
+// The session and the store are stubbed at the module boundary: these tests
+// are about how a route reads money out of a request body, not about who is
+// signed in or about persistence. Every assertion is on the route's response
+// or on the cents value handed to the store, both of which are real behaviour.
+vi.mock('@/auth', () => ({
+  auth: vi.fn(async () => ({ user: { id: 'user-1' }, expires: '2026-09-01' })),
 }));
 
-const { db } = await import('@/lib/db');
+const db = vi.hoisted(() => ({
+  createProject: vi.fn((input: object) => ({ ...input, id: 'proj-1', createdAt: 'now' })),
+  createInvoice: vi.fn((input: object) => ({ ...input, id: 'inv-1', createdAt: 'now' })),
+  createLaborEntry: vi.fn((input: object) => ({ ...input, id: 'lab-1', createdAt: 'now' })),
+  createTransaction: vi.fn((input: object) => ({ ...input, id: 'tx-1', createdAt: 'now' })),
+}));
+
+vi.mock('@/lib/db', () => ({ storeFor: () => db }));
 const { POST: createProject } = await import('@/app/api/projects/route');
 const { POST: createInvoice } = await import('@/app/api/invoices/route');
 const { POST: createLabor } = await import('@/app/api/labor/route');

@@ -1,16 +1,22 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { storeForSession, unauthorized } from '@/lib/apiSession';
 import { UnknownProjectError } from '@budget-bot/db';
 import { InvalidMoneyFieldError, readCents } from '@/lib/readCents';
 
 export async function GET(req: Request) {
+  const store = await storeForSession();
+  if (!store) return unauthorized();
+
   const { searchParams } = new URL(req.url);
   const projectId = searchParams.get('projectId') || undefined;
-  const invoices = await db.getInvoices(projectId);
+  const invoices = await store.getInvoices(projectId);
   return NextResponse.json({ invoices });
 }
 
 export async function POST(req: Request) {
+  const store = await storeForSession();
+  if (!store) return unauthorized();
+
   try {
     const body = await req.json();
     const {
@@ -29,7 +35,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing projectId or amount' }, { status: 400 });
     }
 
-    const inv = await db.createInvoice({
+    const inv = await store.createInvoice({
       projectId,
       invoiceNumber: invoiceNumber || `INV-${Date.now().toString().slice(-6)}`,
       amountCents: readCents(amount, 'amount'),
@@ -56,6 +62,9 @@ export async function POST(req: Request) {
 }
 
 export async function PATCH(req: Request) {
+  const store = await storeForSession();
+  if (!store) return unauthorized();
+
   try {
     const body = await req.json();
     const { id, ...updates } = body;
@@ -67,7 +76,7 @@ export async function PATCH(req: Request) {
       updates.paidDate = new Date().toISOString().slice(0, 10);
     }
 
-    const updated = await db.updateInvoice(id, updates);
+    const updated = await store.updateInvoice(id, updates);
     if (!updated) {
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
     }

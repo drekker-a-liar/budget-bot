@@ -1,13 +1,19 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { storeForSession, unauthorized } from '@/lib/apiSession';
 import { InvalidMoneyFieldError, readCents } from '@/lib/readCents';
 
 export async function GET() {
-  const projects = await db.getProjects();
+  const store = await storeForSession();
+  if (!store) return unauthorized();
+
+  const projects = await store.getProjects();
   return NextResponse.json({ projects });
 }
 
 export async function POST(req: Request) {
+  const store = await storeForSession();
+  if (!store) return unauthorized();
+
   try {
     const body = await req.json();
     const {
@@ -32,7 +38,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    const project = await db.createProject({
+    const project = await store.createProject({
       name,
       clientName,
       clientPhone: clientPhone || '',

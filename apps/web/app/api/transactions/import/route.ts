@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { storeForSession, unauthorized } from '@/lib/apiSession';
 import {
   categorizeVendor,
   CsvRowSchema,
@@ -33,6 +33,9 @@ function describeIssues(error: { issues: { path: PropertyKey[]; message: string 
 }
 
 export async function POST(req: Request) {
+  const store = await storeForSession();
+  if (!store) return unauthorized();
+
   try {
     const body = await req.json();
     const { items, rawCsv, simulatedType } = body;
@@ -65,7 +68,7 @@ export async function POST(req: Request) {
           notes: 'Paint order for living room job',
         },
       ];
-      return importResult(await db.bulkImportTransactions(simulated), []);
+      return importResult(await store.bulkImportTransactions(simulated), []);
     }
 
     // CSV Parse. One unreadable cell must not cost the user the rest of the
@@ -124,13 +127,13 @@ export async function POST(req: Request) {
         });
       }
 
-      const created = imported.length > 0 ? await db.bulkImportTransactions(imported) : [];
+      const created = imported.length > 0 ? await store.bulkImportTransactions(imported) : [];
       return importResult(created, errors);
     }
 
     // Direct items array
     if (Array.isArray(items) && items.length > 0) {
-      return importResult(await db.bulkImportTransactions(items), []);
+      return importResult(await store.bulkImportTransactions(items), []);
     }
 
     return NextResponse.json({ error: 'No valid transaction data provided' }, { status: 400 });

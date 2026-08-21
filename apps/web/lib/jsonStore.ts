@@ -149,20 +149,6 @@ function writeDb(data: DatabaseSchema): void {
 }
 
 export const jsonStore: Store = {
-  // Reset
-  async resetToSeed(): Promise<DatabaseSchema> {
-    const data: DatabaseSchema = {
-      projects: SEED_PROJECTS,
-      transactions: SEED_TRANSACTIONS,
-      laborEntries: SEED_LABOR,
-      invoices: SEED_INVOICES,
-      cardProfile: SEED_CARD_PROFILE,
-      version: 1,
-    };
-    writeDb(data);
-    return data;
-  },
-
   async getAll(): Promise<DatabaseSchema> {
     return ensureDb();
   },

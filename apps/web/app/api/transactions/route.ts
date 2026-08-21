@@ -1,15 +1,21 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { storeForSession, unauthorized } from '@/lib/apiSession';
 import { categorizeVendor, multiplyCents } from '@budget-bot/core';
 import { UnknownProjectError } from '@budget-bot/db';
 import { InvalidMoneyFieldError, readCents } from '@/lib/readCents';
 
 export async function GET() {
-  const transactions = await db.getTransactions();
+  const store = await storeForSession();
+  if (!store) return unauthorized();
+
+  const transactions = await store.getTransactions();
   return NextResponse.json({ transactions });
 }
 
 export async function POST(req: Request) {
+  const store = await storeForSession();
+  if (!store) return unauthorized();
+
   try {
     const body = await req.json();
     const {
@@ -42,7 +48,7 @@ export async function POST(req: Request) {
     const resolvedTaxDeductible =
       taxDeductible !== undefined ? taxDeductible : auto.taxDeductible;
 
-    const tx = await db.createTransaction({
+    const tx = await store.createTransaction({
       description,
       vendor: resolvedVendor,
       amountCents,
@@ -72,6 +78,9 @@ export async function POST(req: Request) {
 }
 
 export async function PATCH(req: Request) {
+  const store = await storeForSession();
+  if (!store) return unauthorized();
+
   try {
     const body = await req.json();
     const { id, ...updates } = body;
@@ -84,7 +93,7 @@ export async function PATCH(req: Request) {
       updates.status = 'matched';
     }
 
-    const updated = await db.updateTransaction(id, updates);
+    const updated = await store.updateTransaction(id, updates);
     if (!updated) {
       return NextResponse.json({ error: 'Transaction not found' }, { status: 404 });
     }
@@ -98,13 +107,16 @@ export async function PATCH(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const store = await storeForSession();
+  if (!store) return unauthorized();
+
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
     if (!id) {
       return NextResponse.json({ error: 'Transaction ID required' }, { status: 400 });
     }
-    const deleted = await db.deleteTransaction(id);
+    const deleted = await store.deleteTransaction(id);
     return NextResponse.json({ success: deleted });
   } catch (error) {
     return NextResponse.json({ error: 'Failed to delete transaction' }, { status: 500 });

@@ -9,7 +9,6 @@ import {
   CreditCard,
   TrendingUp,
   Plus,
-  RefreshCw,
   Clock,
   Receipt,
   FileText
@@ -20,16 +19,12 @@ interface NavigationProps {
   unassignedCount?: number;
   cardProfile?: CardProfile | null;
   onOpenQuickAdd?: (tab?: 'project' | 'expense' | 'labor' | 'invoice') => void;
-  onResetData?: () => void;
-  isResetting?: boolean;
 }
 
 export function Navigation({
   unassignedCount = 0,
   cardProfile,
   onOpenQuickAdd,
-  onResetData,
-  isResetting = false,
 }: NavigationProps) {
   const pathname = usePathname();
 
@@ -194,27 +189,6 @@ export function Navigation({
             </div>
           )}
 
-          {/* Reset Demo Data Button */}
-          {onResetData && (
-            <button
-              onClick={onResetData}
-              disabled={isResetting}
-              style={{
-                background: 'transparent',
-                border: '1px solid var(--border-subtle)',
-                color: 'var(--text-muted)',
-                borderRadius: '6px',
-                padding: '0.4rem',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-              title="Reset Demo Data"
-            >
-              <RefreshCw size={13} className={isResetting ? 'animate-spin' : ''} />
-            </button>
-          )}
         </div>
       </div>
     </header>

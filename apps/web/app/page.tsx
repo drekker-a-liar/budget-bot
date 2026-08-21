@@ -47,7 +47,6 @@ export default function HomePage() {
   });
 
   const [loading, setLoading] = useState(true);
-  const [isResetting, setIsResetting] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [quickAddTab, setQuickAddTab] = useState<'project' | 'expense' | 'labor' | 'invoice'>('expense');
   const [quickAddProjectId, setQuickAddProjectId] = useState<string | undefined>(undefined);
@@ -69,21 +68,6 @@ export default function HomePage() {
   useEffect(() => {
     fetchData();
   }, []);
-
-  const handleResetData = async () => {
-    if (!confirm('Reset all transactions, projects, and invoices to standard demo data?')) return;
-    setIsResetting(true);
-    try {
-      await fetch('/api/data', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'reset' }),
-      });
-      await fetchData();
-    } finally {
-      setIsResetting(false);
-    }
-  };
 
   const handleAssignProject = async (transactionId: string, projectId: string) => {
     try {
@@ -215,8 +199,6 @@ export default function HomePage() {
         unassignedCount={data.summary.unassignedTransactionsCount}
         cardProfile={data.cardProfile}
         onOpenQuickAdd={openQuickAdd}
-        onResetData={handleResetData}
-        isResetting={isResetting}
       />
 
       {/* Main Content Area */}

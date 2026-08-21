@@ -1,16 +1,22 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { storeForSession, unauthorized } from '@/lib/apiSession';
 import { UnknownProjectError } from '@budget-bot/db';
 import { InvalidMoneyFieldError, readCents } from '@/lib/readCents';
 
 export async function GET(req: Request) {
+  const store = await storeForSession();
+  if (!store) return unauthorized();
+
   const { searchParams } = new URL(req.url);
   const projectId = searchParams.get('projectId') || undefined;
-  const laborEntries = await db.getLaborEntries(projectId);
+  const laborEntries = await store.getLaborEntries(projectId);
   return NextResponse.json({ laborEntries });
 }
 
 export async function POST(req: Request) {
+  const store = await storeForSession();
+  if (!store) return unauthorized();
+
   try {
     const body = await req.json();
     const { projectId, date, hours, hourlyRate, workerName, notes } = body;
@@ -19,7 +25,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing projectId or hours' }, { status: 400 });
     }
 
-    const entry = await db.createLaborEntry({
+    const entry = await store.createLaborEntry({
       projectId,
       date: date || new Date().toISOString().slice(0, 10),
       hours: Number(hours),
@@ -46,13 +52,16 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const store = await storeForSession();
+  if (!store) return unauthorized();
+
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
     if (!id) {
       return NextResponse.json({ error: 'Missing labor ID' }, { status: 400 });
     }
-    const deleted = await db.deleteLaborEntry(id);
+    const deleted = await store.deleteLaborEntry(id);
     return NextResponse.json({ success: deleted });
   } catch (error) {
     return NextResponse.json({ error: 'Failed to delete labor entry' }, { status: 500 });

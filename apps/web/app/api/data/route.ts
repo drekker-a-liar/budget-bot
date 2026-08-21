@@ -1,10 +1,23 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { storeForSession, unauthorized } from '@/lib/apiSession';
 import { calculateProjectKPIs, calculateBusinessSummary } from '@budget-bot/core';
 
+/**
+ * Everything the dashboard draws, in one response.
+ *
+ * TEMP: the pages still fetch this from the browser. Task 5 moves the reads
+ * into Server Components and this route goes with them.
+ *
+ * The `POST {action:'reset'}` that used to live here is gone: against Postgres
+ * it deleted every row an owner had, and a demo-data button is not worth an
+ * endpoint that can do that. `pnpm db:seed` and `SEED_DEMO=1` replace it.
+ */
 export async function GET() {
+  const store = await storeForSession();
+  if (!store) return unauthorized();
+
   try {
-    const raw = await db.getAll();
+    const raw = await store.getAll();
     const projectKPIs = raw.projects.map((p) =>
       calculateProjectKPIs(p, raw.transactions, raw.laborEntries, raw.invoices)
     );
@@ -31,25 +44,3 @@ export async function GET() {
   }
 }
 
-export async function POST(req: Request) {
-  try {
-    const body = await req.json();
-    if (body.action === 'reset') {
-      // Against the JSON file this rewrites demo data; against Postgres it
-      // deletes every row the owner has. It exists for local development and
-      // is removed with the JSON store, so it must not be reachable from a
-      // deployed environment in the meantime.
-      if (process.env.NODE_ENV === 'production') {
-        return NextResponse.json(
-          { error: 'Resetting to seed data is disabled in production' },
-          { status: 403 }
-        );
-      }
-      const data = await db.resetToSeed();
-      return NextResponse.json({ success: true, message: 'Reset to seed data', data });
-    }
-    return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
-  } catch (error) {
-    return NextResponse.json({ error: 'Failed to process request' }, { status: 500 });
-  }
-}

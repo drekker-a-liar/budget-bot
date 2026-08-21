@@ -31,7 +31,6 @@ export type NewLaborEntry = Omit<LaborEntry, 'id' | 'createdAt' | 'updatedAt'>;
 export type NewInvoice = Omit<Invoice, 'id' | 'createdAt' | 'updatedAt'>;
 
 export interface Store {
-  resetToSeed(): Promise<DatabaseSnapshot>;
   getAll(): Promise<DatabaseSnapshot>;
 
   getProjects(): Promise<Project[]>;

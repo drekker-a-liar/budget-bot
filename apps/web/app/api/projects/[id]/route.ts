@@ -1,17 +1,20 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { storeForSession, unauthorized } from '@/lib/apiSession';
 import { calculateProjectKPIs } from '@budget-bot/core';
 
 export async function GET(
   req: Request,
   { params }: { params: { id: string } }
 ) {
-  const project = await db.getProjectById(params.id);
+  const store = await storeForSession();
+  if (!store) return unauthorized();
+
+  const project = await store.getProjectById(params.id);
   if (!project) {
     return NextResponse.json({ error: 'Project not found' }, { status: 404 });
   }
 
-  const raw = await db.getAll();
+  const raw = await store.getAll();
   const kpi = calculateProjectKPIs(
     project,
     raw.transactions,
@@ -37,9 +40,12 @@ export async function PUT(
   req: Request,
   { params }: { params: { id: string } }
 ) {
+  const store = await storeForSession();
+  if (!store) return unauthorized();
+
   try {
     const body = await req.json();
-    const updated = await db.updateProject(params.id, body);
+    const updated = await store.updateProject(params.id, body);
     if (!updated) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
@@ -53,7 +59,10 @@ export async function DELETE(
   req: Request,
   { params }: { params: { id: string } }
 ) {
-  const deleted = await db.deleteProject(params.id);
+  const store = await storeForSession();
+  if (!store) return unauthorized();
+
+  const deleted = await store.deleteProject(params.id);
   if (!deleted) {
     return NextResponse.json({ error: 'Project not found' }, { status: 404 });
   }
