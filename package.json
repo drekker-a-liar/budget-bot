@@ -18,5 +18,8 @@
   },
   "devDependencies": {
     "turbo": "^2.10.11"
+  },
+  "dependencies": {
+    "server-only": "^0.0.1"
   }
 }

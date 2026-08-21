@@ -12,7 +12,7 @@ import {
 } from '@budget-bot/core';
 import { Navigation } from '@/components/Navigation';
 import { CashFlowWaterfall } from '@/components/CashFlowWaterfall';
-import { QuickAddModal, NewProjectPayload } from '@/components/QuickAddModal';
+import { QuickAddModal } from '@/components/QuickAddModal';
 import { SeverityBadge } from '@/components/SeverityBadge';
 import {
   TrendingUp,
@@ -80,41 +80,9 @@ export default function CashFlowPage() {
     }
   };
 
-  const handleCreateExpense = async (exp: any) => {
-    await fetch('/api/transactions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(exp),
-    });
-    await fetchData();
-  };
 
-  const handleCreateProject = async (proj: NewProjectPayload) => {
-    await fetch('/api/projects', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(proj),
-    });
-    await fetchData();
-  };
 
-  const handleCreateLabor = async (lab: any) => {
-    await fetch('/api/labor', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(lab),
-    });
-    await fetchData();
-  };
 
-  const handleCreateInvoice = async (inv: any) => {
-    await fetch('/api/invoices', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(inv),
-    });
-    await fetchData();
-  };
 
   const openQuickAdd = (tab: 'project' | 'expense' | 'labor' | 'invoice' = 'invoice') => {
     setQuickAddTab(tab);
@@ -309,10 +277,7 @@ export default function CashFlowPage() {
         projects={data.projects}
         isOpen={quickAddOpen}
         onClose={() => setQuickAddOpen(false)}
-        onCreateProject={handleCreateProject}
-        onCreateExpense={handleCreateExpense}
-        onCreateLabor={handleCreateLabor}
-        onCreateInvoice={handleCreateInvoice}
+        onCreated={fetchData}
       />
     </div>
   );

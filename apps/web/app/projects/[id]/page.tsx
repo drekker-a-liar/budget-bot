@@ -102,32 +102,8 @@ export default function ProjectDetailPage() {
     }
   };
 
-  const handleCreateExpense = async (exp: any) => {
-    await fetch('/api/transactions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...exp, projectId: id }),
-    });
-    await fetchProjectData();
-  };
 
-  const handleCreateLabor = async (lab: any) => {
-    await fetch('/api/labor', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...lab, projectId: id }),
-    });
-    await fetchProjectData();
-  };
 
-  const handleCreateInvoice = async (inv: any) => {
-    await fetch('/api/invoices', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...inv, projectId: id }),
-    });
-    await fetchProjectData();
-  };
 
   const openQuickAdd = (tab: 'project' | 'expense' | 'labor' | 'invoice' = 'expense') => {
     setQuickAddTab(tab);
@@ -519,10 +495,7 @@ export default function ProjectDetailPage() {
         projects={project ? [project] : []}
         isOpen={quickAddOpen}
         onClose={() => setQuickAddOpen(false)}
-        onCreateProject={async () => {}}
-        onCreateExpense={handleCreateExpense}
-        onCreateLabor={handleCreateLabor}
-        onCreateInvoice={handleCreateInvoice}
+        onCreated={fetchProjectData}
       />
     </div>
   );

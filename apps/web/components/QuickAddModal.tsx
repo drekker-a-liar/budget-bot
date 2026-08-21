@@ -1,32 +1,52 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Project, ExpenseCategory, PricingType, ProjectStatus } from '@budget-bot/core';
+import React, { useEffect, useState, useTransition } from 'react';
+import { Project, ExpenseCategory, PricingType } from '@budget-bot/core';
 import { Receipt, Clock, Hammer, FileText, X } from 'lucide-react';
+import { createInvoiceAction } from '@/src/server/actions/invoices';
+import { createLaborEntryAction } from '@/src/server/actions/labor';
+import { createProjectAction } from '@/src/server/actions/projects';
+import { createTransactionAction } from '@/src/server/actions/transactions';
+import type { ActionResult, FieldErrors } from '@/src/server/actions/result';
 
 /**
- * What the project form posts to /api/projects: dollars as the user typed
- * them, not cents. The route runs them through parseMoney (ADR 0007).
+ * The one place a contractor types anything in.
+ *
+ * It calls the server actions directly rather than taking four `onCreate...`
+ * callbacks, because every page was passing the same four `fetch` wrappers and
+ * the modal is the thing that knows what it collected. Money is submitted as
+ * the user typed it - `1,234.56`, `$85` - and `parseMoney` runs once, on the
+ * server, inside the action's schema (ADR 0007).
+ *
+ * Validation failure comes back as a value, not an exception, so the messages
+ * land next to the fields and nothing the user typed is lost.
  */
-export type NewProjectPayload = Omit<
-  Partial<Project>,
-  'quotedTotalCents' | 'quotedMaterialsCents' | 'targetHourlyRateCents'
-> & {
-  quotedTotal: number;
-  quotedMaterials: number;
-  targetHourlyRate: number;
-};
+
+export type QuickAddTab = 'project' | 'expense' | 'labor' | 'invoice';
 
 interface QuickAddModalProps {
-  initialTab?: 'project' | 'expense' | 'labor' | 'invoice';
+  initialTab?: QuickAddTab;
   initialProjectId?: string;
   projects: Project[];
   isOpen: boolean;
   onClose: () => void;
-  onCreateProject: (data: NewProjectPayload) => Promise<void>;
-  onCreateExpense: (data: any) => Promise<void>;
-  onCreateLabor: (data: any) => Promise<void>;
-  onCreateInvoice: (data: any) => Promise<void>;
+  /**
+   * Fired after a successful write. Server-rendered pages need nothing here -
+   * the action revalidates them - so this exists only for the pages that still
+   * fetch their own data.
+   */
+  onCreated?: () => void;
+}
+
+/** The message against one field, if the server had one. */
+function FieldError({ errors, field }: { errors: FieldErrors; field: string }) {
+  const message = errors[field]?.[0];
+  if (!message) return null;
+  return (
+    <div role="alert" style={{ fontSize: '0.7rem', color: 'var(--severity-critical)', marginTop: '0.2rem' }}>
+      {message}
+    </div>
+  );
 }
 
 export function QuickAddModal({
@@ -35,12 +55,12 @@ export function QuickAddModal({
   projects,
   isOpen,
   onClose,
-  onCreateProject,
-  onCreateExpense,
-  onCreateLabor,
-  onCreateInvoice,
+  onCreated,
 }: QuickAddModalProps) {
-  const [activeTab, setActiveTab] = useState<'project' | 'expense' | 'labor' | 'invoice'>(initialTab);
+  const [activeTab, setActiveTab] = useState<QuickAddTab>(initialTab);
+  const [pending, startTransition] = useTransition();
+  const [formError, setFormError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   useEffect(() => {
     if (initialTab) {
@@ -54,14 +74,13 @@ export function QuickAddModal({
   const [projPhone, setProjPhone] = useState('');
   const [projAddress, setProjAddress] = useState('');
   const [projDesc, setProjDesc] = useState('');
-  const [projPricingType, setProjPricingType] = useState<PricingType>('fixed');
+  const [projPricingType] = useState<PricingType>('fixed');
   const [projQuotedTotal, setProjQuotedTotal] = useState('4500');
   const [projQuotedMaterials, setProjQuotedMaterials] = useState('1500');
   const [projQuotedHours, setProjQuotedHours] = useState('32');
-  const [projTargetRate, setProjTargetRate] = useState('85');
 
   // Expense Form State
-  const [expProjectId, setExpProjectId] = useState(initialProjectId || (projects[0]?.id || ''));
+  const [expProjectId, setExpProjectId] = useState(initialProjectId || '');
   const [expVendor, setExpVendor] = useState('The Home Depot');
   const [expDesc, setExpDesc] = useState('');
   const [expAmount, setExpAmount] = useState('');
@@ -77,100 +96,38 @@ export function QuickAddModal({
 
   // Invoice Form State
   const [invProjectId, setInvProjectId] = useState(initialProjectId || (projects[0]?.id || ''));
-  const [invNumber, setInvNumber] = useState(`INV-2026-0${Math.floor(10 + Math.random() * 89)}`);
+  const [invNumber, setInvNumber] = useState('');
   const [invAmount, setInvAmount] = useState('2500');
   const [invDeposit, setInvDeposit] = useState('1000');
-  const [invDueDate, setInvDueDate] = useState(new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10));
-
-  const [loading, setLoading] = useState(false);
+  const [invDueDate, setInvDueDate] = useState(
+    new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10)
+  );
 
   if (!isOpen) return null;
 
-  const handleProjectSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      await onCreateProject({
-        name: projName,
-        clientName: projClient,
-        clientPhone: projPhone,
-        clientAddress: projAddress,
-        description: projDesc,
-        pricingType: projPricingType,
-        quotedTotal: parseFloat(projQuotedTotal) || 0,
-        quotedMaterials: parseFloat(projQuotedMaterials) || 0,
-        quotedLaborHours: parseFloat(projQuotedHours) || 0,
-        targetHourlyRate: parseFloat(projTargetRate) || 85,
-        targetMarginPct: 45,
-        status: 'in_progress' as ProjectStatus,
-        startDate: new Date().toISOString().slice(0, 10),
-      });
-      onClose();
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleExpenseSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!expAmount) return;
-    setLoading(true);
-    try {
-      await onCreateExpense({
-        projectId: expProjectId || undefined,
-        vendor: expVendor,
-        description: expDesc || `${expVendor} purchase`,
-        amount: parseFloat(expAmount),
-        category: expCategory,
-        date: expDate,
-        paymentMethod: 'card',
-        cardLast4: '4892',
-        status: expProjectId ? 'matched' : 'unassigned',
-        taxDeductible: true,
-      });
-      onClose();
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleLaborSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!labHours) return;
-    setLoading(true);
-    try {
-      await onCreateLabor({
-        projectId: labProjectId,
-        date: labDate,
-        hours: parseFloat(labHours),
-        hourlyRate: parseFloat(labRate),
-        workerName: 'Mike (Lead)',
-        notes: labNotes,
-      });
-      onClose();
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleInvoiceSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!invAmount) return;
-    setLoading(true);
-    try {
-      await onCreateInvoice({
-        projectId: invProjectId,
-        invoiceNumber: invNumber,
-        amount: parseFloat(invAmount),
-        depositAmount: parseFloat(invDeposit),
-        dueDate: invDueDate,
-        dateIssued: new Date().toISOString().slice(0, 10),
-        status: 'sent',
-      });
-      onClose();
-    } finally {
-      setLoading(false);
-    }
+  /**
+   * One submit path for all four tabs: clear the last complaint, run the
+   * action, and either close or show what was wrong. `useTransition` keeps the
+   * form interactive while the server works and marks it pending.
+   */
+  const submit = <T,>(
+    event: React.FormEvent,
+    action: (input: unknown) => Promise<ActionResult<T>>,
+    payload: unknown
+  ) => {
+    event.preventDefault();
+    setFormError(null);
+    setFieldErrors({});
+    startTransition(async () => {
+      const result = await action(payload);
+      if (result.ok) {
+        onCreated?.();
+        onClose();
+        return;
+      }
+      setFormError(result.error);
+      setFieldErrors(result.fieldErrors ?? {});
+    });
   };
 
   return (
@@ -183,6 +140,7 @@ export function QuickAddModal({
           </div>
           <button
             onClick={onClose}
+            aria-label="Close"
             style={{
               background: 'transparent',
               border: 'none',
@@ -206,101 +164,77 @@ export function QuickAddModal({
             marginBottom: '1.25rem',
           }}
         >
-          <button
-            type="button"
-            onClick={() => setActiveTab('expense')}
-            style={{
-              padding: '0.45rem',
-              borderRadius: '4px',
-              fontSize: '0.75rem',
-              fontWeight: activeTab === 'expense' ? 700 : 500,
-              background: activeTab === 'expense' ? 'var(--bg-card)' : 'transparent',
-              color: activeTab === 'expense' ? 'var(--accent-cyan)' : 'var(--text-secondary)',
-              border: activeTab === 'expense' ? '1px solid var(--border-strong)' : 'none',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0.3rem',
-            }}
-          >
-            <Receipt size={13} />
-            <span>Receipt</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('labor')}
-            style={{
-              padding: '0.45rem',
-              borderRadius: '4px',
-              fontSize: '0.75rem',
-              fontWeight: activeTab === 'labor' ? 700 : 500,
-              background: activeTab === 'labor' ? 'var(--bg-card)' : 'transparent',
-              color: activeTab === 'labor' ? 'var(--accent-indigo)' : 'var(--text-secondary)',
-              border: activeTab === 'labor' ? '1px solid var(--border-strong)' : 'none',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0.3rem',
-            }}
-          >
-            <Clock size={13} />
-            <span>Labor</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('project')}
-            style={{
-              padding: '0.45rem',
-              borderRadius: '4px',
-              fontSize: '0.75rem',
-              fontWeight: activeTab === 'project' ? 700 : 500,
-              background: activeTab === 'project' ? 'var(--bg-card)' : 'transparent',
-              color: activeTab === 'project' ? '#ffffff' : 'var(--text-secondary)',
-              border: activeTab === 'project' ? '1px solid var(--border-strong)' : 'none',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0.3rem',
-            }}
-          >
-            <Hammer size={13} />
-            <span>Project</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('invoice')}
-            style={{
-              padding: '0.45rem',
-              borderRadius: '4px',
-              fontSize: '0.75rem',
-              fontWeight: activeTab === 'invoice' ? 700 : 500,
-              background: activeTab === 'invoice' ? 'var(--bg-card)' : 'transparent',
-              color: activeTab === 'invoice' ? 'var(--severity-healthy)' : 'var(--text-secondary)',
-              border: activeTab === 'invoice' ? '1px solid var(--border-strong)' : 'none',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0.3rem',
-            }}
-          >
-            <FileText size={13} />
-            <span>Invoice</span>
-          </button>
+          {(
+            [
+              ['expense', 'Receipt', Receipt, 'var(--accent-cyan)'],
+              ['labor', 'Labor', Clock, 'var(--accent-indigo)'],
+              ['project', 'Project', Hammer, '#ffffff'],
+              ['invoice', 'Invoice', FileText, 'var(--severity-healthy)'],
+            ] as const
+          ).map(([tab, label, Icon, activeColor]) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              aria-pressed={activeTab === tab}
+              style={{
+                padding: '0.45rem',
+                borderRadius: '4px',
+                fontSize: '0.75rem',
+                fontWeight: activeTab === tab ? 700 : 500,
+                background: activeTab === tab ? 'var(--bg-card)' : 'transparent',
+                color: activeTab === tab ? activeColor : 'var(--text-secondary)',
+                border: activeTab === tab ? '1px solid var(--border-strong)' : 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.3rem',
+              }}
+            >
+              <Icon size={13} />
+              <span>{label}</span>
+            </button>
+          ))}
         </div>
+
+        {formError && (
+          <div
+            role="alert"
+            style={{
+              marginBottom: '0.85rem',
+              padding: '0.5rem 0.65rem',
+              borderRadius: '4px',
+              fontSize: '0.78rem',
+              color: 'var(--severity-critical)',
+              background: 'rgba(239, 68, 68, 0.08)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+            }}
+          >
+            {formError}
+          </div>
+        )}
 
         {/* Tab 1: Expense / Receipt */}
         {activeTab === 'expense' && (
-          <form onSubmit={handleExpenseSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+          <form
+            onSubmit={(e) =>
+              submit(e, createTransactionAction, {
+                projectId: expProjectId,
+                vendor: expVendor,
+                description: expDesc,
+                amount: expAmount,
+                category: expCategory,
+                date: expDate,
+                paymentMethod: 'card',
+              })
+            }
+            style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}
+          >
             <div>
-              <label className="swiss-label">Link to Project / Job</label>
+              <label className="swiss-label" htmlFor="exp-project">Link to Project / Job</label>
               <select
+                id="exp-project"
                 value={expProjectId}
                 onChange={(e) => setExpProjectId(e.target.value)}
                 className="form-input"
@@ -317,54 +251,58 @@ export function QuickAddModal({
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
               <div>
-                <label className="swiss-label">Vendor</label>
+                <label className="swiss-label" htmlFor="exp-vendor">Vendor</label>
                 <input
+                  id="exp-vendor"
                   type="text"
                   value={expVendor}
                   onChange={(e) => setExpVendor(e.target.value)}
                   placeholder="The Home Depot, Lowe's, Shell"
-                  required
                   className="form-input"
                   style={{ marginTop: '0.25rem' }}
                 />
+                <FieldError errors={fieldErrors} field="vendor" />
               </div>
 
               <div>
-                <label className="swiss-label">Amount ($)</label>
+                <label className="swiss-label" htmlFor="exp-amount">Amount ($)</label>
                 <input
-                  type="number"
-                  step="0.01"
+                  id="exp-amount"
+                  type="text"
+                  inputMode="decimal"
                   value={expAmount}
                   onChange={(e) => setExpAmount(e.target.value)}
                   placeholder="145.50"
-                  required
                   className="form-input"
                   style={{ marginTop: '0.25rem' }}
                 />
+                <FieldError errors={fieldErrors} field="amount" />
               </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
               <div>
-                <label className="swiss-label">Expense Category</label>
+                <label className="swiss-label" htmlFor="exp-category">Expense Category</label>
                 <select
+                  id="exp-category"
                   value={expCategory}
                   onChange={(e) => setExpCategory(e.target.value as ExpenseCategory)}
                   className="form-input"
                   style={{ marginTop: '0.25rem' }}
                 >
-                  <option value="materials">Materials & Supplies</option>
-                  <option value="tools">Tools & Equipment</option>
-                  <option value="mileage_fuel">Fuel & Van Transit</option>
-                  <option value="permits_fees">Permits & Dump Fees</option>
+                  <option value="materials">Materials &amp; Supplies</option>
+                  <option value="tools">Tools &amp; Equipment</option>
+                  <option value="mileage_fuel">Fuel &amp; Van Transit</option>
+                  <option value="permits_fees">Permits &amp; Dump Fees</option>
                   <option value="subcontractor">Subcontractor</option>
                   <option value="overhead">Overhead / Office</option>
                 </select>
               </div>
 
               <div>
-                <label className="swiss-label">Purchase Date</label>
+                <label className="swiss-label" htmlFor="exp-date">Purchase Date</label>
                 <input
+                  id="exp-date"
                   type="date"
                   value={expDate}
                   onChange={(e) => setExpDate(e.target.value)}
@@ -375,8 +313,9 @@ export function QuickAddModal({
             </div>
 
             <div>
-              <label className="swiss-label">Description / Receipt Notes</label>
+              <label className="swiss-label" htmlFor="exp-desc">Description / Receipt Notes</label>
               <input
+                id="exp-desc"
                 type="text"
                 value={expDesc}
                 onChange={(e) => setExpDesc(e.target.value)}
@@ -390,8 +329,8 @@ export function QuickAddModal({
               <button type="button" onClick={onClose} className="btn-secondary">
                 Cancel
               </button>
-              <button type="submit" disabled={loading} className="btn-primary">
-                {loading ? 'Saving...' : 'Record Expense'}
+              <button type="submit" disabled={pending} className="btn-primary">
+                {pending ? 'Saving...' : 'Record Expense'}
               </button>
             </div>
           </form>
@@ -399,54 +338,72 @@ export function QuickAddModal({
 
         {/* Tab 2: Labor Hours */}
         {activeTab === 'labor' && (
-          <form onSubmit={handleLaborSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+          <form
+            onSubmit={(e) =>
+              submit(e, createLaborEntryAction, {
+                projectId: labProjectId,
+                date: labDate,
+                hours: labHours,
+                hourlyRate: labRate,
+                workerName: 'Mike (Lead)',
+                notes: labNotes,
+              })
+            }
+            style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}
+          >
             <div>
-              <label className="swiss-label">Project / Job</label>
+              <label className="swiss-label" htmlFor="lab-project">Project / Job</label>
               <select
+                id="lab-project"
                 value={labProjectId}
                 onChange={(e) => setLabProjectId(e.target.value)}
-                required
                 className="form-input"
                 style={{ marginTop: '0.25rem' }}
               >
+                <option value="">Select a job...</option>
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
                 ))}
               </select>
+              <FieldError errors={fieldErrors} field="projectId" />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
               <div>
-                <label className="swiss-label">Hours Worked</label>
+                <label className="swiss-label" htmlFor="lab-hours">Hours Worked</label>
                 <input
-                  type="number"
-                  step="0.5"
+                  id="lab-hours"
+                  type="text"
+                  inputMode="decimal"
                   value={labHours}
                   onChange={(e) => setLabHours(e.target.value)}
-                  required
                   className="form-input"
                   style={{ marginTop: '0.25rem' }}
                 />
+                <FieldError errors={fieldErrors} field="hours" />
               </div>
 
               <div>
-                <label className="swiss-label">Billable Rate ($/hr)</label>
+                <label className="swiss-label" htmlFor="lab-rate">Billable Rate ($/hr)</label>
                 <input
-                  type="number"
+                  id="lab-rate"
+                  type="text"
+                  inputMode="decimal"
                   value={labRate}
                   onChange={(e) => setLabRate(e.target.value)}
-                  required
                   className="form-input"
                   style={{ marginTop: '0.25rem' }}
                 />
+                <FieldError errors={fieldErrors} field="hourlyRate" />
               </div>
             </div>
 
             <div>
-              <label className="swiss-label">Work Date</label>
+              <label className="swiss-label" htmlFor="lab-date">Work Date</label>
               <input
+                id="lab-date"
                 type="date"
                 value={labDate}
                 onChange={(e) => setLabDate(e.target.value)}
@@ -456,8 +413,9 @@ export function QuickAddModal({
             </div>
 
             <div>
-              <label className="swiss-label">Tasks Performed</label>
+              <label className="swiss-label" htmlFor="lab-notes">Tasks Performed</label>
               <input
+                id="lab-notes"
                 type="text"
                 value={labNotes}
                 onChange={(e) => setLabNotes(e.target.value)}
@@ -471,8 +429,8 @@ export function QuickAddModal({
               <button type="button" onClick={onClose} className="btn-secondary">
                 Cancel
               </button>
-              <button type="submit" disabled={loading} className="btn-primary">
-                {loading ? 'Saving...' : 'Log Labor Hours'}
+              <button type="submit" disabled={pending} className="btn-primary">
+                {pending ? 'Saving...' : 'Log Labor Hours'}
               </button>
             </div>
           </form>
@@ -480,37 +438,55 @@ export function QuickAddModal({
 
         {/* Tab 3: New Project */}
         {activeTab === 'project' && (
-          <form onSubmit={handleProjectSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+          <form
+            onSubmit={(e) =>
+              submit(e, createProjectAction, {
+                name: projName,
+                clientName: projClient,
+                clientPhone: projPhone,
+                clientAddress: projAddress,
+                description: projDesc,
+                pricingType: projPricingType,
+                quotedTotal: projQuotedTotal,
+                quotedMaterials: projQuotedMaterials,
+                quotedLaborHours: projQuotedHours,
+              })
+            }
+            style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}
+          >
             <div>
-              <label className="swiss-label">Project Name</label>
+              <label className="swiss-label" htmlFor="proj-name">Project Name</label>
               <input
+                id="proj-name"
                 type="text"
                 value={projName}
                 onChange={(e) => setProjName(e.target.value)}
                 placeholder="e.g. Master Bath Tile & Vanity Remodel"
-                required
                 className="form-input"
                 style={{ marginTop: '0.25rem' }}
               />
+              <FieldError errors={fieldErrors} field="name" />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
               <div>
-                <label className="swiss-label">Client Name</label>
+                <label className="swiss-label" htmlFor="proj-client">Client Name</label>
                 <input
+                  id="proj-client"
                   type="text"
                   value={projClient}
                   onChange={(e) => setProjClient(e.target.value)}
                   placeholder="John & Lisa Smith"
-                  required
                   className="form-input"
                   style={{ marginTop: '0.25rem' }}
                 />
+                <FieldError errors={fieldErrors} field="clientName" />
               </div>
 
               <div>
-                <label className="swiss-label">Client Phone</label>
+                <label className="swiss-label" htmlFor="proj-phone">Client Phone</label>
                 <input
+                  id="proj-phone"
                   type="text"
                   value={projPhone}
                   onChange={(e) => setProjPhone(e.target.value)}
@@ -522,8 +498,9 @@ export function QuickAddModal({
             </div>
 
             <div>
-              <label className="swiss-label">Job Site Address</label>
+              <label className="swiss-label" htmlFor="proj-address">Job Site Address</label>
               <input
+                id="proj-address"
                 type="text"
                 value={projAddress}
                 onChange={(e) => setProjAddress(e.target.value)}
@@ -535,32 +512,39 @@ export function QuickAddModal({
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
               <div>
-                <label className="swiss-label">Quoted Price ($)</label>
+                <label className="swiss-label" htmlFor="proj-total">Quoted Price ($)</label>
                 <input
-                  type="number"
+                  id="proj-total"
+                  type="text"
+                  inputMode="decimal"
                   value={projQuotedTotal}
                   onChange={(e) => setProjQuotedTotal(e.target.value)}
-                  required
                   className="form-input"
                   style={{ marginTop: '0.25rem' }}
                 />
+                <FieldError errors={fieldErrors} field="quotedTotal" />
               </div>
 
               <div>
-                <label className="swiss-label">Est. Materials ($)</label>
+                <label className="swiss-label" htmlFor="proj-materials">Est. Materials ($)</label>
                 <input
-                  type="number"
+                  id="proj-materials"
+                  type="text"
+                  inputMode="decimal"
                   value={projQuotedMaterials}
                   onChange={(e) => setProjQuotedMaterials(e.target.value)}
                   className="form-input"
                   style={{ marginTop: '0.25rem' }}
                 />
+                <FieldError errors={fieldErrors} field="quotedMaterials" />
               </div>
 
               <div>
-                <label className="swiss-label">Est. Hours</label>
+                <label className="swiss-label" htmlFor="proj-hours">Est. Hours</label>
                 <input
-                  type="number"
+                  id="proj-hours"
+                  type="text"
+                  inputMode="decimal"
                   value={projQuotedHours}
                   onChange={(e) => setProjQuotedHours(e.target.value)}
                   className="form-input"
@@ -573,8 +557,8 @@ export function QuickAddModal({
               <button type="button" onClick={onClose} className="btn-secondary">
                 Cancel
               </button>
-              <button type="submit" disabled={loading} className="btn-primary">
-                {loading ? 'Creating...' : 'Create Project'}
+              <button type="submit" disabled={pending} className="btn-primary">
+                {pending ? 'Creating...' : 'Create Project'}
               </button>
             </div>
           </form>
@@ -582,65 +566,86 @@ export function QuickAddModal({
 
         {/* Tab 4: Invoice */}
         {activeTab === 'invoice' && (
-          <form onSubmit={handleInvoiceSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+          <form
+            onSubmit={(e) =>
+              submit(e, createInvoiceAction, {
+                projectId: invProjectId,
+                invoiceNumber: invNumber,
+                amount: invAmount,
+                depositAmount: invDeposit,
+                dueDate: invDueDate,
+              })
+            }
+            style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}
+          >
             <div>
-              <label className="swiss-label">Project / Client</label>
+              <label className="swiss-label" htmlFor="inv-project">Project / Client</label>
               <select
+                id="inv-project"
                 value={invProjectId}
                 onChange={(e) => setInvProjectId(e.target.value)}
-                required
                 className="form-input"
                 style={{ marginTop: '0.25rem' }}
               >
+                <option value="">Select a job...</option>
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name} ({p.clientName})
                   </option>
                 ))}
               </select>
+              <FieldError errors={fieldErrors} field="projectId" />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
               <div>
-                <label className="swiss-label">Invoice Number</label>
+                <label className="swiss-label" htmlFor="inv-number">Invoice Number</label>
                 <input
+                  id="inv-number"
                   type="text"
                   value={invNumber}
                   onChange={(e) => setInvNumber(e.target.value)}
-                  required
+                  placeholder="INV-2026-045"
                   className="form-input"
                   style={{ marginTop: '0.25rem' }}
                 />
+                <FieldError errors={fieldErrors} field="invoiceNumber" />
               </div>
 
               <div>
-                <label className="swiss-label">Total Amount ($)</label>
+                <label className="swiss-label" htmlFor="inv-amount">Total Amount ($)</label>
                 <input
-                  type="number"
+                  id="inv-amount"
+                  type="text"
+                  inputMode="decimal"
                   value={invAmount}
                   onChange={(e) => setInvAmount(e.target.value)}
-                  required
                   className="form-input"
                   style={{ marginTop: '0.25rem' }}
                 />
+                <FieldError errors={fieldErrors} field="amount" />
               </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
               <div>
-                <label className="swiss-label">Deposit Requested ($)</label>
+                <label className="swiss-label" htmlFor="inv-deposit">Deposit Requested ($)</label>
                 <input
-                  type="number"
+                  id="inv-deposit"
+                  type="text"
+                  inputMode="decimal"
                   value={invDeposit}
                   onChange={(e) => setInvDeposit(e.target.value)}
                   className="form-input"
                   style={{ marginTop: '0.25rem' }}
                 />
+                <FieldError errors={fieldErrors} field="depositAmount" />
               </div>
 
               <div>
-                <label className="swiss-label">Due Date</label>
+                <label className="swiss-label" htmlFor="inv-due">Due Date</label>
                 <input
+                  id="inv-due"
                   type="date"
                   value={invDueDate}
                   onChange={(e) => setInvDueDate(e.target.value)}
@@ -654,8 +659,8 @@ export function QuickAddModal({
               <button type="button" onClick={onClose} className="btn-secondary">
                 Cancel
               </button>
-              <button type="submit" disabled={loading} className="btn-primary">
-                {loading ? 'Issuing...' : 'Issue Invoice'}
+              <button type="submit" disabled={pending} className="btn-primary">
+                {pending ? 'Issuing...' : 'Issue Invoice'}
               </button>
             </div>
           </form>

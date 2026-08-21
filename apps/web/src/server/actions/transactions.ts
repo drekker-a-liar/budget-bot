@@ -1,0 +1,107 @@
+'use server';
+
+import type { ExpenseTransaction } from '@budget-bot/core';
+import { getDb, transactionsRepo, UnknownProjectError } from '@budget-bot/db';
+import { currentOwnerId } from '@/lib/ownerSession';
+import {
+  AssignTransactionForm,
+  CreateTransactionForm,
+  TransactionIdForm,
+  UpdateTransactionCategoryForm,
+} from './inputs';
+import { revalidateApp } from './revalidate';
+import { failed, invalid, ok, unauthorized, type ActionResult } from './result';
+
+/**
+ * Writing expenses.
+ *
+ * `UnknownProjectError` is the database refusing to attach a row to a project
+ * that is not this owner's. From the caller's side that is indistinguishable
+ * from a project that does not exist, and either way it is their mistake, so
+ * it comes back as a failed result rather than as a thrown error.
+ */
+
+export async function createTransactionAction(
+  input: unknown
+): Promise<ActionResult<ExpenseTransaction>> {
+  const ownerId = await currentOwnerId();
+  if (!ownerId) return unauthorized();
+
+  const parsed = CreateTransactionForm.safeParse(input);
+  if (!parsed.success) return invalid(parsed.error);
+
+  try {
+    const transaction = await transactionsRepo.createTransaction(
+      getDb(),
+      ownerId,
+      parsed.data
+    );
+    revalidateApp();
+    return ok(transaction);
+  } catch (error) {
+    if (error instanceof UnknownProjectError) return failed(error.message);
+    throw error;
+  }
+}
+
+/** Files a charge against a job, or - with an empty id - back into the inbox. */
+export async function assignTransactionAction(
+  input: unknown
+): Promise<ActionResult<ExpenseTransaction>> {
+  const ownerId = await currentOwnerId();
+  if (!ownerId) return unauthorized();
+
+  const parsed = AssignTransactionForm.safeParse(input);
+  if (!parsed.success) return invalid(parsed.error);
+
+  const projectId = parsed.data.projectId || undefined;
+  try {
+    const transaction = await transactionsRepo.updateTransaction(
+      getDb(),
+      ownerId,
+      parsed.data.id,
+      { projectId, status: projectId ? 'matched' : 'unassigned' }
+    );
+    if (!transaction) return failed('No such charge.');
+    revalidateApp();
+    return ok(transaction);
+  } catch (error) {
+    if (error instanceof UnknownProjectError) return failed(error.message);
+    throw error;
+  }
+}
+
+export async function updateTransactionCategoryAction(
+  input: unknown
+): Promise<ActionResult<ExpenseTransaction>> {
+  const ownerId = await currentOwnerId();
+  if (!ownerId) return unauthorized();
+
+  const parsed = UpdateTransactionCategoryForm.safeParse(input);
+  if (!parsed.success) return invalid(parsed.error);
+
+  const transaction = await transactionsRepo.updateTransaction(
+    getDb(),
+    ownerId,
+    parsed.data.id,
+    { category: parsed.data.category }
+  );
+  if (!transaction) return failed('No such charge.');
+
+  revalidateApp();
+  return ok(transaction);
+}
+
+export async function deleteTransactionAction(input: unknown): Promise<ActionResult<null>> {
+  const ownerId = await currentOwnerId();
+  if (!ownerId) return unauthorized();
+
+  const parsed = TransactionIdForm.safeParse(input);
+  if (!parsed.success) return invalid(parsed.error);
+
+  const deleted = await transactionsRepo.deleteTransaction(getDb(), ownerId, parsed.data.id);
+  if (!deleted) return failed('No such charge.');
+
+  revalidateApp();
+  return ok(null);
+}
