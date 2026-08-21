@@ -6,12 +6,12 @@ export async function GET(
   req: Request,
   { params }: { params: { id: string } }
 ) {
-  const project = db.getProjectById(params.id);
+  const project = await db.getProjectById(params.id);
   if (!project) {
     return NextResponse.json({ error: 'Project not found' }, { status: 404 });
   }
 
-  const raw = db.getAll();
+  const raw = await db.getAll();
   const kpi = calculateProjectKPIs(
     project,
     raw.transactions,
@@ -39,7 +39,7 @@ export async function PUT(
 ) {
   try {
     const body = await req.json();
-    const updated = db.updateProject(params.id, body);
+    const updated = await db.updateProject(params.id, body);
     if (!updated) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
@@ -53,7 +53,7 @@ export async function DELETE(
   req: Request,
   { params }: { params: { id: string } }
 ) {
-  const deleted = db.deleteProject(params.id);
+  const deleted = await db.deleteProject(params.id);
   if (!deleted) {
     return NextResponse.json({ error: 'Project not found' }, { status: 404 });
   }

@@ -3,7 +3,7 @@ import { db } from '@/lib/db';
 import { InvalidMoneyFieldError, readCents } from '@/lib/readCents';
 
 export async function GET() {
-  const projects = db.getProjects();
+  const projects = await db.getProjects();
   return NextResponse.json({ projects });
 }
 
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    const project = db.createProject({
+    const project = await db.createProject({
       name,
       clientName,
       clientPhone: clientPhone || '',

@@ -5,7 +5,7 @@ import { InvalidMoneyFieldError, readCents } from '@/lib/readCents';
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const projectId = searchParams.get('projectId') || undefined;
-  const laborEntries = db.getLaborEntries(projectId);
+  const laborEntries = await db.getLaborEntries(projectId);
   return NextResponse.json({ laborEntries });
 }
 
@@ -18,7 +18,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing projectId or hours' }, { status: 400 });
     }
 
-    const entry = db.createLaborEntry({
+    const entry = await db.createLaborEntry({
       projectId,
       date: date || new Date().toISOString().slice(0, 10),
       hours: Number(hours),
@@ -46,7 +46,7 @@ export async function DELETE(req: Request) {
     if (!id) {
       return NextResponse.json({ error: 'Missing labor ID' }, { status: 400 });
     }
-    const deleted = db.deleteLaborEntry(id);
+    const deleted = await db.deleteLaborEntry(id);
     return NextResponse.json({ success: deleted });
   } catch (error) {
     return NextResponse.json({ error: 'Failed to delete labor entry' }, { status: 500 });

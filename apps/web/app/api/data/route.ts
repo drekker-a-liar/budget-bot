@@ -4,7 +4,7 @@ import { calculateProjectKPIs, calculateBusinessSummary } from '@budget-bot/core
 
 export async function GET() {
   try {
-    const raw = db.getAll();
+    const raw = await db.getAll();
     const projectKPIs = raw.projects.map((p) =>
       calculateProjectKPIs(p, raw.transactions, raw.laborEntries, raw.invoices)
     );
@@ -35,7 +35,7 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     if (body.action === 'reset') {
-      const data = db.resetToSeed();
+      const data = await db.resetToSeed();
       return NextResponse.json({ success: true, message: 'Reset to seed data', data });
     }
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 });

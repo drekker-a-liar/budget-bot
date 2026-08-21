@@ -4,7 +4,7 @@ import { categorizeVendor, multiplyCents } from '@budget-bot/core';
 import { InvalidMoneyFieldError, readCents } from '@/lib/readCents';
 
 export async function GET() {
-  const transactions = db.getTransactions();
+  const transactions = await db.getTransactions();
   return NextResponse.json({ transactions });
 }
 
@@ -41,7 +41,7 @@ export async function POST(req: Request) {
     const resolvedTaxDeductible =
       taxDeductible !== undefined ? taxDeductible : auto.taxDeductible;
 
-    const tx = db.createTransaction({
+    const tx = await db.createTransaction({
       description,
       vendor: resolvedVendor,
       amountCents,
@@ -78,7 +78,7 @@ export async function PATCH(req: Request) {
       updates.status = 'matched';
     }
 
-    const updated = db.updateTransaction(id, updates);
+    const updated = await db.updateTransaction(id, updates);
     if (!updated) {
       return NextResponse.json({ error: 'Transaction not found' }, { status: 404 });
     }
@@ -95,7 +95,7 @@ export async function DELETE(req: Request) {
     if (!id) {
       return NextResponse.json({ error: 'Transaction ID required' }, { status: 400 });
     }
-    const deleted = db.deleteTransaction(id);
+    const deleted = await db.deleteTransaction(id);
     return NextResponse.json({ success: deleted });
   } catch (error) {
     return NextResponse.json({ error: 'Failed to delete transaction' }, { status: 500 });

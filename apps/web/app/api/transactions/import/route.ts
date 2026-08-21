@@ -65,7 +65,7 @@ export async function POST(req: Request) {
           notes: 'Paint order for living room job',
         },
       ];
-      return importResult(db.bulkImportTransactions(simulated), []);
+      return importResult(await db.bulkImportTransactions(simulated), []);
     }
 
     // CSV Parse. One unreadable cell must not cost the user the rest of the
@@ -124,13 +124,13 @@ export async function POST(req: Request) {
         });
       }
 
-      const created = imported.length > 0 ? db.bulkImportTransactions(imported) : [];
+      const created = imported.length > 0 ? await db.bulkImportTransactions(imported) : [];
       return importResult(created, errors);
     }
 
     // Direct items array
     if (Array.isArray(items) && items.length > 0) {
-      return importResult(db.bulkImportTransactions(items), []);
+      return importResult(await db.bulkImportTransactions(items), []);
     }
 
     return NextResponse.json({ error: 'No valid transaction data provided' }, { status: 400 });

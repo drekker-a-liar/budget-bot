@@ -1,4 +1,4 @@
-import type { ExpenseTransaction, TransactionStatus } from '@budget-bot/core';
+import type { ExpenseTransaction } from '@budget-bot/core';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { Database } from '../client';
 import { transactions } from '../schema';
@@ -18,7 +18,6 @@ export type TransactionUpdate = Partial<NewTransaction>;
 
 export interface TransactionFilter {
   projectId?: string;
-  status?: TransactionStatus;
 }
 
 function toTransaction(row: TransactionRow): ExpenseTransaction {
@@ -94,8 +93,7 @@ export async function listTransactions(
         isNull(transactions.removedAt),
         filter.projectId === undefined
           ? undefined
-          : eq(transactions.projectId, filter.projectId),
-        filter.status === undefined ? undefined : eq(transactions.status, filter.status)
+          : eq(transactions.projectId, filter.projectId)
       )
     )
     .orderBy(desc(transactions.createdAt), desc(transactions.id));

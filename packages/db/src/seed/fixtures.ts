@@ -1,3 +1,12 @@
+/**
+ * Fictional demo data: a handyman's book of business for a couple of months.
+ * It lives in packages/db because it is what `pnpm db:seed` writes, and it is
+ * still what the legacy JSON store initialises itself with until that store
+ * goes away.
+ *
+ * The ids here (`proj-1`, `tx-101`) are fixture-local. Seeding into Postgres
+ * generates real uuids and rewrites the references.
+ */
 import {
   Project,
   ExpenseTransaction,
