@@ -143,22 +143,42 @@ const repos = vi.hoisted(() => ({
   ),
   markConnectionActive: vi.fn(async (_db: unknown, _owner: string, _id: string) => true),
   deleteConnection: vi.fn(async (_db: unknown, _owner: string, _id: string) => true),
+  // Delete-all (spec §6): enumerated for the best-effort `removeItem` loop,
+  // then swept away table by table. Empty by default so a test that does not
+  // care about connections is not also on the hook for scripting one.
+  listConnections: vi.fn(async (_db: unknown, _owner: string) => [] as Array<{ id: string }>),
+  deleteAllConnections: vi.fn(async (_db: unknown, _owner: string) => 0),
+  deleteAllTransactions: vi.fn(async (_db: unknown, _owner: string) => 0),
+  deleteAllLaborEntries: vi.fn(async (_db: unknown, _owner: string) => 0),
+  deleteAllInvoices: vi.fn(async (_db: unknown, _owner: string) => 0),
+  deleteAllImportBatches: vi.fn(async (_db: unknown, _owner: string) => 0),
+  deleteAllProjects: vi.fn(async (_db: unknown, _owner: string) => 0),
 }));
 
 vi.mock('@budget-bot/db', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@budget-bot/db')>()),
   getDb: () => ({}),
-  projectsRepo: { createProject: repos.createProject, updateProject: repos.updateProject },
+  projectsRepo: {
+    createProject: repos.createProject,
+    updateProject: repos.updateProject,
+    deleteAllProjects: repos.deleteAllProjects,
+  },
   transactionsRepo: {
     createTransaction: repos.createTransaction,
     updateTransaction: repos.updateTransaction,
     deleteTransaction: repos.deleteTransaction,
+    deleteAllTransactions: repos.deleteAllTransactions,
   },
   laborRepo: {
     createLaborEntry: repos.createLaborEntry,
     deleteLaborEntry: repos.deleteLaborEntry,
+    deleteAllLaborEntries: repos.deleteAllLaborEntries,
   },
-  invoicesRepo: { createInvoice: repos.createInvoice, updateInvoice: repos.updateInvoice },
+  invoicesRepo: {
+    createInvoice: repos.createInvoice,
+    updateInvoice: repos.updateInvoice,
+    deleteAllInvoices: repos.deleteAllInvoices,
+  },
   bankRepo: {
     createConnection: repos.createConnection,
     upsertAccounts: repos.upsertAccounts,
@@ -168,7 +188,10 @@ vi.mock('@budget-bot/db', async (importOriginal) => ({
     replaceConnectionToken: repos.replaceConnectionToken,
     markConnectionActive: repos.markConnectionActive,
     deleteConnection: repos.deleteConnection,
+    listConnections: repos.listConnections,
+    deleteAllConnections: repos.deleteAllConnections,
   },
+  importBatchesRepo: { deleteAllImportBatches: repos.deleteAllImportBatches },
 }));
 
 const { ConnectionAlreadyExistsError } = await import('@budget-bot/db');
@@ -196,6 +219,7 @@ const {
   markReconnectedAction,
   disconnectConnectionAction,
 } = await import('@/src/server/actions/bank');
+const { deleteAllDataAction } = await import('@/src/server/actions/account');
 
 /**
  * Every action there is, read off disk rather than typed out.
@@ -208,8 +232,8 @@ const {
  */
 const DERIVED_ACTIONS = await loadActions();
 
-/** Sixteen today. A number here means shrinkage gets noticed, not just growth. */
-const ACTION_COUNT = 16;
+/** Seventeen today. A number here means shrinkage gets noticed, not just growth. */
+const ACTION_COUNT = 17;
 
 const A_PROJECT = { name: 'Cedar Deck', clientName: 'R Henderson', quotedTotal: '4500' };
 
@@ -231,6 +255,7 @@ const EVERY_ACTION: Array<[string, (input: unknown) => Promise<unknown>, unknown
   ['createReauthLinkToken', createReauthLinkTokenAction, { connectionId: 'conn-1' }],
   ['markReconnected', markReconnectedAction, { connectionId: 'conn-1' }],
   ['disconnectConnection', disconnectConnectionAction, { connectionId: 'conn-1' }],
+  ['deleteAllData', deleteAllDataAction, {}],
 ];
 
 /**
