@@ -56,3 +56,43 @@ export function forgetLinkToken(): void {
     // Nothing was stored, so there is nothing to clear.
   }
 }
+
+/**
+ * The connection a Link session is re-authorizing, across a redirect.
+ *
+ * A parallel key rather than a field on the stashed token, so that
+ * `LINK_TOKEN_KEY`'s shape - and everything that already reads or writes it
+ * as a bare string, `ConnectBankButton` included - is untouched. Its mere
+ * presence *is* the mode: `/plaid/oauth-return` resumes a reconnect when
+ * this key is set alongside the token, and an ordinary connect flow when it
+ * is not (spec §5a). Reconnecting a bank that stays on this page - no OAuth
+ * institution involved - never touches `sessionStorage` at all; this exists
+ * only for the round trip an OAuth bank forces.
+ */
+export const REAUTH_CONNECTION_KEY = 'plaid_reauth_connection_id';
+
+export function rememberReauthConnection(connectionId: string): void {
+  try {
+    window.sessionStorage.setItem(REAUTH_CONNECTION_KEY, connectionId);
+  } catch {
+    // Storage is unavailable. Reconnecting still opens in this tab; only an
+    // OAuth bank's round trip is lost, and that is better than failing here.
+  }
+}
+
+export function storedReauthConnection(): string | null {
+  try {
+    return window.sessionStorage.getItem(REAUTH_CONNECTION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** After the connection has been reconnected, or after Link gave up on it. */
+export function forgetReauthConnection(): void {
+  try {
+    window.sessionStorage.removeItem(REAUTH_CONNECTION_KEY);
+  } catch {
+    // Nothing was stored, so there is nothing to clear.
+  }
+}

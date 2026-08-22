@@ -2,6 +2,7 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { LINK_TOKEN_KEY, REAUTH_CONNECTION_KEY } from '@/lib/plaidLink';
 import { mockNextNavigation, refused, router } from '@/test/helpers/islands';
 
 /**
@@ -55,6 +56,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   link.options = null;
   link.ready = true;
+  window.sessionStorage.clear();
 });
 
 afterEach(cleanup);
@@ -108,7 +110,21 @@ describe('a real bank, through Plaid Link update mode', () => {
     expect(link.options?.token).toBe('link-sandbox-reauth-1');
   });
 
-  it('marks the connection reconnected on success, with no public token to exchange', async () => {
+  it('stashes the token and this connection’s id before Link opens, for an OAuth bank’s round trip', async () => {
+    render(<ReconnectButton kind="plaid" connectionId="conn-7" />);
+
+    await clickReconnect();
+    await waitFor(() => expect(link.open).toHaveBeenCalled());
+
+    // `/plaid/oauth-return` reads both back: the token to resume Link, and
+    // the connection id to know this is a reconnect rather than a brand-new
+    // bank - so `onSuccess` there calls `markReconnectedAction`, not an
+    // exchange.
+    expect(window.sessionStorage.getItem(LINK_TOKEN_KEY)).toBe('link-sandbox-reauth-1');
+    expect(window.sessionStorage.getItem(REAUTH_CONNECTION_KEY)).toBe('conn-7');
+  });
+
+  it('marks the connection reconnected on success, with no public token to exchange, and clears the stash', async () => {
     render(<ReconnectButton kind="plaid" connectionId="conn-7" />);
     await clickReconnect();
     await waitFor(() => expect(link.open).toHaveBeenCalled());
@@ -120,6 +136,8 @@ describe('a real bank, through Plaid Link update mode', () => {
 
     expect(markReconnectedAction).toHaveBeenCalledWith({ connectionId: 'conn-7' });
     await waitFor(() => expect(router.refresh).toHaveBeenCalled());
+    expect(window.sessionStorage.getItem(LINK_TOKEN_KEY)).toBeNull();
+    expect(window.sessionStorage.getItem(REAUTH_CONNECTION_KEY)).toBeNull();
   });
 
   it('says why rather than opening Link with no token', async () => {
@@ -148,7 +166,7 @@ describe('a real bank, through Plaid Link update mode', () => {
     expect(router.refresh).not.toHaveBeenCalled();
   });
 
-  it('does nothing when the user closes Link without finishing', async () => {
+  it('does nothing when the user closes Link without finishing, but clears the stash', async () => {
     render(<ReconnectButton kind="plaid" connectionId="conn-7" />);
     await clickReconnect();
     await waitFor(() => expect(link.open).toHaveBeenCalled());
@@ -158,6 +176,8 @@ describe('a real bank, through Plaid Link update mode', () => {
     });
 
     expect(markReconnectedAction).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem(LINK_TOKEN_KEY)).toBeNull();
+    expect(window.sessionStorage.getItem(REAUTH_CONNECTION_KEY)).toBeNull();
   });
 });
 

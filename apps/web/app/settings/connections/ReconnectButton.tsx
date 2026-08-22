@@ -5,6 +5,12 @@ import { useRouter } from 'next/navigation';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { usePlaidLink } from 'react-plaid-link';
 import {
+  forgetLinkToken,
+  forgetReauthConnection,
+  rememberLinkToken,
+  rememberReauthConnection,
+} from '@/lib/plaidLink';
+import {
   createReauthLinkTokenAction,
   markReconnectedAction,
 } from '@/src/server/actions/bank';
@@ -99,8 +105,18 @@ function ReconnectThroughLink({ connectionId }: { connectionId: string }) {
   const { finish, busy, error, setBusy, setError } = useReconnect(connectionId);
   const [token, setToken] = useState<string | null>(null);
 
-  /** The flow is over, however it ended. */
-  const done = () => setToken(null);
+  /**
+   * The flow is over, however it ended: the stash is spent either way. Most
+   * of the time nothing was ever written here - only an OAuth institution
+   * takes the browser away, and everything else finishes without leaving
+   * this component - but clearing unconditionally costs nothing and needs no
+   * branch to remember when it applies.
+   */
+  const done = () => {
+    forgetLinkToken();
+    forgetReauthConnection();
+    setToken(null);
+  };
 
   const { open, ready } = usePlaidLink({
     token,
@@ -129,6 +145,13 @@ function ReconnectThroughLink({ connectionId }: { connectionId: string }) {
         setError(result.error);
         return;
       }
+      // Stashed before Link opens: an OAuth bank leaves this page entirely
+      // and comes back to `/plaid/oauth-return`, where this component's
+      // state is gone and only `sessionStorage` survives. The stashed
+      // connection id is what tells the return page this is a reconnect to
+      // finish, not a brand-new bank to exchange a public token for.
+      rememberLinkToken(result.data.linkToken);
+      rememberReauthConnection(connectionId);
       setToken(result.data.linkToken);
     } catch {
       setError(UNREACHABLE);

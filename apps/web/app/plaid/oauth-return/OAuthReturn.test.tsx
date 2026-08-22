@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { LINK_TOKEN_KEY } from '@/lib/plaidLink';
+import { LINK_TOKEN_KEY, REAUTH_CONNECTION_KEY } from '@/lib/plaidLink';
 import { mockNextNavigation, refused, router } from '@/test/helpers/islands';
 
 /**
@@ -45,9 +45,15 @@ vi.mock('@/src/server/actions/bank', () => ({
       firstSync: { added: 3, modified: 0, removed: 0, pages: 1, hasMore: false },
     },
   })),
+  markReconnectedAction: vi.fn(async () => ({
+    ok: true as const,
+    data: { added: 0, modified: 0, removed: 0, pages: 0, hasMore: false },
+  })),
 }));
 
-const { exchangePublicTokenAction } = await import('@/src/server/actions/bank');
+const { exchangePublicTokenAction, markReconnectedAction } = await import(
+  '@/src/server/actions/bank'
+);
 const { OAuthReturn } = await import('./OAuthReturn');
 
 beforeEach(() => {
@@ -101,6 +107,9 @@ describe('with the token the connections page stashed', () => {
     });
 
     expect(exchangePublicTokenAction).toHaveBeenCalledWith({ publicToken: 'public-sandbox-9' });
+    // No stashed connection id, so this is an ordinary connect - never a
+    // reconnect wearing the wrong flow.
+    expect(markReconnectedAction).not.toHaveBeenCalled();
     // Single-use, and this page is reachable by anyone who presses Back.
     expect(window.sessionStorage.getItem(LINK_TOKEN_KEY)).toBeNull();
     // Replaced, not pushed: Back should not return to a spent Link flow.
@@ -159,5 +168,99 @@ describe('with the token the connections page stashed', () => {
 
     expect(exchangePublicTokenAction).not.toHaveBeenCalled();
     expect(window.sessionStorage.getItem(LINK_TOKEN_KEY)).toBeNull();
+  });
+});
+
+/**
+ * Resuming Link's update mode, not a brand-new connection (spec §5a).
+ *
+ * The stashed connection id - written by `ReconnectButton` alongside the
+ * token - is what tells this page the two flows apart. Update mode ends with
+ * no public token worth exchanging, so `onSuccess` here has to call
+ * `markReconnectedAction` instead of `exchangePublicTokenAction`, or an OAuth
+ * bank's reconnect would silently try to link a second, redundant
+ * connection.
+ */
+describe('with a reconnect the connections page stashed', () => {
+  beforeEach(() => {
+    window.sessionStorage.setItem(LINK_TOKEN_KEY, 'link-sandbox-reauth-1');
+    window.sessionStorage.setItem(REAUTH_CONNECTION_KEY, 'conn-7');
+  });
+
+  it('resumes update mode rather than starting a new Link session', async () => {
+    render(<OAuthReturn />);
+
+    await waitFor(() => expect(link.open).toHaveBeenCalled());
+    expect(link.options?.token).toBe('link-sandbox-reauth-1');
+  });
+
+  it('marks the connection reconnected, clears both stashed keys, and goes back', async () => {
+    render(<OAuthReturn />);
+    await waitFor(() => expect(link.open).toHaveBeenCalled());
+
+    await act(async () => {
+      // Update mode hands the callback nothing worth exchanging.
+      link.options?.onSuccess(null, {});
+    });
+
+    expect(markReconnectedAction).toHaveBeenCalledWith({ connectionId: 'conn-7' });
+    expect(exchangePublicTokenAction).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem(LINK_TOKEN_KEY)).toBeNull();
+    expect(window.sessionStorage.getItem(REAUTH_CONNECTION_KEY)).toBeNull();
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/settings/connections'));
+  });
+
+  it('stays put and says what went wrong when the reconnect is refused', async () => {
+    vi.mocked(markReconnectedAction).mockResolvedValueOnce(refused('Connection not found'));
+    render(<OAuthReturn />);
+    await waitFor(() => expect(link.open).toHaveBeenCalled());
+
+    await act(async () => {
+      link.options?.onSuccess(null, {});
+    });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Connection not found');
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  it('says something went wrong when the action never comes back', async () => {
+    vi.mocked(markReconnectedAction).mockRejectedValueOnce(new Error('502'));
+    render(<OAuthReturn />);
+    await waitFor(() => expect(link.open).toHaveBeenCalled());
+
+    await act(async () => {
+      link.options?.onSuccess(null, {});
+    });
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  it('clears both stashed keys when the user closes Link instead of finishing', async () => {
+    render(<OAuthReturn />);
+    await waitFor(() => expect(link.open).toHaveBeenCalled());
+
+    await act(async () => {
+      link.options?.onExit?.(null, {});
+    });
+
+    expect(markReconnectedAction).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem(LINK_TOKEN_KEY)).toBeNull();
+    expect(window.sessionStorage.getItem(REAUTH_CONNECTION_KEY)).toBeNull();
+  });
+});
+
+describe('with a stashed connection id but no link token', () => {
+  it('falls back to "nothing to finish", the same as no stash at all', async () => {
+    // Should not happen in practice - `ReconnectButton` writes both keys
+    // together - but a corrupt or partially-cleared stash must not resume a
+    // Link session with no token to give it.
+    window.sessionStorage.setItem(REAUTH_CONNECTION_KEY, 'conn-7');
+
+    render(<OAuthReturn />);
+
+    expect(await screen.findByText(/nothing to finish here/i)).toBeInTheDocument();
+    expect(link.open).not.toHaveBeenCalled();
+    expect(markReconnectedAction).not.toHaveBeenCalled();
   });
 });
