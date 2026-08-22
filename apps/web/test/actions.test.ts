@@ -41,6 +41,7 @@ const bank = vi.hoisted(() => ({
     institutionId: 'ins_fake',
     institutionName: 'Fake Bank (E2E)',
   })),
+  removeItem: vi.fn(async (_accessToken: string) => undefined),
   getAccounts: vi.fn(async (_accessToken: string) => [
     { externalId: 'fake-credit', name: 'Fake Business Card', mask: '4471', type: 'credit' },
     { externalId: 'fake-checking', name: 'Fake Business Checking', mask: '0000', type: 'depository' },
@@ -141,6 +142,7 @@ const repos = vi.hoisted(() => ({
     })
   ),
   markConnectionActive: vi.fn(async (_db: unknown, _owner: string, _id: string) => true),
+  deleteConnection: vi.fn(async (_db: unknown, _owner: string, _id: string) => true),
 }));
 
 vi.mock('@budget-bot/db', async (importOriginal) => ({
@@ -165,6 +167,7 @@ vi.mock('@budget-bot/db', async (importOriginal) => ({
     recordSyncError: repos.recordSyncError,
     replaceConnectionToken: repos.replaceConnectionToken,
     markConnectionActive: repos.markConnectionActive,
+    deleteConnection: repos.deleteConnection,
   },
 }));
 
@@ -191,6 +194,7 @@ const {
   syncNowAction,
   createReauthLinkTokenAction,
   markReconnectedAction,
+  disconnectConnectionAction,
 } = await import('@/src/server/actions/bank');
 
 /**
@@ -204,8 +208,8 @@ const {
  */
 const DERIVED_ACTIONS = await loadActions();
 
-/** Fifteen today. A number here means shrinkage gets noticed, not just growth. */
-const ACTION_COUNT = 15;
+/** Sixteen today. A number here means shrinkage gets noticed, not just growth. */
+const ACTION_COUNT = 16;
 
 const A_PROJECT = { name: 'Cedar Deck', clientName: 'R Henderson', quotedTotal: '4500' };
 
@@ -226,6 +230,7 @@ const EVERY_ACTION: Array<[string, (input: unknown) => Promise<unknown>, unknown
   ['syncNow', syncNowAction, { connectionId: 'conn-1' }],
   ['createReauthLinkToken', createReauthLinkTokenAction, { connectionId: 'conn-1' }],
   ['markReconnected', markReconnectedAction, { connectionId: 'conn-1' }],
+  ['disconnectConnection', disconnectConnectionAction, { connectionId: 'conn-1' }],
 ];
 
 /**
@@ -272,6 +277,7 @@ beforeEach(() => {
     createLinkToken: bank.createLinkToken,
     exchangePublicToken: bank.exchangePublicToken,
     getAccounts: bank.getAccounts,
+    removeItem: bank.removeItem,
   };
   requestHeaders.current = { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'app.example' };
 });
@@ -1013,5 +1019,60 @@ describe('reconnecting once Link’s update mode succeeds', () => {
     expect(result).toMatchObject({ ok: false, error: 'Connection not found' });
     expect(bank.getAccounts).not.toHaveBeenCalled();
     expect(bank.runSync).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Disconnecting a bank (spec §6).
+ *
+ * `removeItem` is best-effort: the bank refusing to forget an item is not a
+ * reason to keep showing a connection the owner asked to remove, so the
+ * deletion runs either way and the provider's failure only shows up as
+ * `removed: false` on an otherwise successful result.
+ */
+describe('disconnecting a bank', () => {
+  it('checks ownership, tells the provider to forget the item, then deletes the connection', async () => {
+    const result = await disconnectConnectionAction({ connectionId: 'conn-1' });
+
+    expect(repos.getConnection).toHaveBeenCalledWith({}, 'user-1', 'conn-1');
+    expect(repos.withAccessToken).toHaveBeenCalledWith(
+      {},
+      'user-1',
+      'conn-1',
+      expect.anything(),
+      expect.any(Function)
+    );
+    expect(bank.removeItem).toHaveBeenCalledWith('access-fake');
+    expect(repos.deleteConnection).toHaveBeenCalledWith({}, 'user-1', 'conn-1');
+    // Deleted after the provider was asked, not before - a delete that ran
+    // first would leave nothing for `withAccessToken` to decrypt.
+    expect(bank.removeItem.mock.invocationCallOrder[0]).toBeLessThan(
+      repos.deleteConnection.mock.invocationCallOrder[0]
+    );
+    expect(result).toEqual({ ok: true, data: { removed: true } });
+  });
+
+  it('refuses a connection this owner does not have, without touching the provider', async () => {
+    repos.getConnection.mockResolvedValueOnce(null as never);
+
+    const result = await disconnectConnectionAction({ connectionId: 'conn-9' });
+
+    expect(result).toMatchObject({ ok: false, error: 'Connection not found' });
+    expect(bank.removeItem).not.toHaveBeenCalled();
+    expect(repos.deleteConnection).not.toHaveBeenCalled();
+  });
+
+  it('still deletes the connection when the provider refuses to remove the item', async () => {
+    bank.removeItem.mockRejectedValueOnce(
+      new PlaidRequestError('INVALID_ACCESS_TOKEN', 'the access token is no longer valid')
+    );
+
+    const result = await disconnectConnectionAction({ connectionId: 'conn-1' });
+
+    expect(repos.deleteConnection).toHaveBeenCalledWith({}, 'user-1', 'conn-1');
+    // Success, not a refusal: the owner asked for this bank to be gone, and
+    // it is. `removed: false` is the only trace the provider's own failure
+    // leaves - never a message from Plaid reaching this screen.
+    expect(result).toEqual({ ok: true, data: { removed: false } });
   });
 });

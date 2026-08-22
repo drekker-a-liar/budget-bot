@@ -463,3 +463,60 @@ export async function markReconnectedAction(
 
   return refreshAccountsThenSync(db, ownerId, parsed.data.connectionId, provider, keyring);
 }
+
+/** What `disconnectConnectionAction` hands back. */
+export interface DisconnectedBank {
+  /**
+   * Whether the provider agreed to forget the item. The connection is
+   * deleted either way (spec §6) - this only says whether Plaid's own record
+   * of it is gone too, which is worth knowing but never worth blocking on:
+   * an owner who asked for a bank to be disconnected should not be told "no"
+   * because Plaid's side of that request timed out.
+   */
+  removed: boolean;
+}
+
+/**
+ * Removing a linked bank (spec §6).
+ *
+ * `provider.removeItem` is best-effort - the one call in this action that is
+ * deliberately *not* inside the same all-or-nothing discipline every other
+ * provider call here follows. Everything the owner filed through this
+ * connection is staying: `bank_accounts` cascades away with the row below,
+ * but `deleteConnection` only ever touches `bank_connections`, and
+ * `transactions.bank_account_id` is `ON DELETE SET NULL` (spec §6) - so a
+ * Plaid outage during disconnect must not leave a connection the owner asked
+ * to remove still showing up as "Connected".
+ */
+export async function disconnectConnectionAction(
+  input: unknown
+): Promise<ActionResult<DisconnectedBank>> {
+  const ownerId = await currentOwnerId();
+  if (!ownerId) return unauthorized();
+
+  const parsed = SyncConnectionForm.safeParse(input);
+  if (!parsed.success) return invalid(parsed.error);
+
+  const provider = getBankProvider();
+  if (!provider) return failed(NOT_CONFIGURED);
+
+  const db = getDb();
+  const connection = await bankRepo.getConnection(db, ownerId, parsed.data.connectionId);
+  if (!connection) return failed('Connection not found');
+
+  const keyring = loadKeysFromEnv();
+
+  let removed = true;
+  try {
+    await bankRepo.withAccessToken(db, ownerId, connection.id, keyring, (accessToken) =>
+      provider.removeItem(accessToken)
+    );
+  } catch {
+    removed = false;
+  }
+
+  await bankRepo.deleteConnection(db, ownerId, connection.id);
+
+  revalidateApp();
+  return ok({ removed });
+}
