@@ -1,7 +1,14 @@
 'use server';
 
-import { ConnectionAlreadyExistsError, bankRepo, getDb, type BankAccount } from '@budget-bot/db';
-import { loadKeysFromEnv } from '@budget-bot/db/crypto';
+import type { BankProvider } from '@budget-bot/bank-connectors';
+import {
+  ConnectionAlreadyExistsError,
+  bankRepo,
+  getDb,
+  type BankAccount,
+  type Database,
+} from '@budget-bot/db';
+import { loadKeysFromEnv, type TokenKeyring } from '@budget-bot/db/crypto';
 import { headers } from 'next/headers';
 import { currentOwnerId } from '@/lib/ownerSession';
 import { env } from '@/src/env';
@@ -185,9 +192,9 @@ export async function exchangePublicTokenAction(
     return failed(readable(error, EXCHANGE_REFUSED));
   }
 
-  let connection;
+  let connectionId: string;
   try {
-    connection = await bankRepo.createConnection(
+    const connection = await bankRepo.createConnection(
       db,
       ownerId,
       {
@@ -199,19 +206,30 @@ export async function exchangePublicTokenAction(
       },
       keyring
     );
+    connectionId = connection.id;
   } catch (error) {
     // `createConnection` is one transaction, so a failure here has stored
     // nothing - which is what makes a refusal the right answer rather than a
     // success with a caveat. The case worth naming is the reachable one:
     // Link run a second time against a bank that is already connected. The
     // public token is spent by now, so "try again" would send the owner back
-    // through Link to the same dead end; the existing connection and its
-    // **Sync now** are what they actually want. Re-linking properly - one
-    // connection, a new token - is Phase 3.
+    // through Link to the same dead end. Phase 3 upserts onto the existing
+    // row instead of refusing (spec §5b) - same connection, a new token -
+    // unless that row belongs to somebody else, in which case the Phase 2
+    // message still stands: no cross-tenant token overwrite.
     if (error instanceof ConnectionAlreadyExistsError) {
-      return failed('This bank is already connected. Use Sync now on the existing connection.');
+      const replaced = await bankRepo.replaceConnectionToken(db, ownerId, {
+        itemId: item.itemId,
+        accessToken: item.accessToken,
+        keyring,
+      });
+      if (!replaced) {
+        return failed('This bank is already connected. Use Sync now on the existing connection.');
+      }
+      connectionId = replaced.id;
+    } else {
+      return failed(readable(error, EXCHANGE_REFUSED));
     }
-    return failed(readable(error, EXCHANGE_REFUSED));
   }
 
   // Past this line the token is stored, and every failure below is reported as
@@ -223,11 +241,11 @@ export async function exchangePublicTokenAction(
     stored = await bankRepo.upsertAccounts(
       db,
       ownerId,
-      connection.id,
+      connectionId,
       await provider.getAccounts(item.accessToken)
     );
 
-    firstSync = await runSync(db, ownerId, connection.id, {
+    firstSync = await runSync(db, ownerId, connectionId, {
       provider,
       keyring,
       maxPages: FIRST_SYNC_MAX_PAGES,
@@ -242,7 +260,7 @@ export async function exchangePublicTokenAction(
   }
 
   revalidateApp();
-  return ok({ connectionId: connection.id, accounts: stored.length, firstSync });
+  return ok({ connectionId, accounts: stored.length, firstSync });
 }
 
 /**
@@ -275,6 +293,72 @@ const SYNC_STOPPED = (code: string) =>
   `The sync stopped: ${code}. Nothing already imported was lost - try again in a minute.`;
 
 /**
+ * Refreshes a connection's accounts and pulls everything new behind them.
+ *
+ * Shared by **Sync now** and by `markReconnectedAction`, which runs this same
+ * sequence the instant a connection comes back to `'active'` - a reconnect
+ * behaves exactly like pressing Sync the moment it succeeds, rather than
+ * leaving the owner to press a second button to find out it worked.
+ *
+ * The accounts are refreshed first for two reasons, and the second is why it
+ * is unconditional rather than a repair anybody has to know to run: balances
+ * move, and a connection that was stored *without* accounts - `getAccounts`
+ * failed straight after Link - can never sync, because every transaction
+ * names an account it does not have and is dropped. This heals that
+ * connection the next time somebody presses the button.
+ */
+async function refreshAccountsThenSync(
+  db: Database,
+  ownerId: string,
+  connectionId: string,
+  provider: BankProvider,
+  keyring: TokenKeyring
+): Promise<ActionResult<RunSyncResult>> {
+  try {
+    const accounts = await bankRepo.withAccessToken(
+      db,
+      ownerId,
+      connectionId,
+      keyring,
+      (accessToken) => provider.getAccounts(accessToken)
+    );
+    await bankRepo.upsertAccounts(db, ownerId, connectionId, accounts);
+  } catch (error) {
+    // Recorded, because nothing below this point will do it: `runSync` writes
+    // the connection's failure state itself, and a refresh that failed outside
+    // it would otherwise leave a screen saying "Connected" under a message
+    // saying it is not.
+    await bankRepo.recordSyncError(db, ownerId, connectionId, syncFailureOf(error));
+    revalidateApp();
+    return failed(readable(error, SYNC_STOPPED));
+  }
+
+  let result: RunSyncResult;
+  try {
+    result = await runSync(db, ownerId, connectionId, { provider, keyring });
+  } catch (error) {
+    // `runSync` recorded the failure on the connection before it threw, so the
+    // screen has to be re-read for the owner to see it.
+    revalidateApp();
+    return failed(readable(error, SYNC_STOPPED));
+  }
+
+  revalidateApp();
+
+  // A rate limit is an unfinished sync, not a failed one: everything the run
+  // committed stands, and the connection records why it stopped. Reporting it
+  // as a success would put "synced" on a screen for a connection that is still
+  // behind, so it is a message with the provider's own wait in it.
+  if ('retryAfterSeconds' in result && result.retryAfterSeconds !== undefined) {
+    return failed(
+      `Your bank is asking for a pause. ${result.added} added so far; try again in ${result.retryAfterSeconds} seconds.`
+    );
+  }
+
+  return ok(result);
+}
+
+/**
  * Everything the bank has, now.
  *
  * Unbounded, unlike the sync after Link: somebody pressed a button and is
@@ -300,52 +384,82 @@ export async function syncNowAction(input: unknown): Promise<ActionResult<RunSyn
 
   const keyring = loadKeysFromEnv();
 
-  // The accounts, before anything is pulled against them. Two reasons, and the
-  // second is why it is unconditional rather than a repair anybody has to know
-  // to run: balances move, and a connection that was stored *without* accounts
-  // - `getAccounts` failed straight after Link - can never sync, because every
-  // transaction names an account it does not have and is dropped. This heals
-  // that connection the next time somebody presses the button.
+  return refreshAccountsThenSync(db, ownerId, connection.id, provider, keyring);
+}
+
+/**
+ * Re-authentication, path a: Link's update mode (spec §5a).
+ *
+ * `withAccessToken` decrypts the connection's *existing* token and hands it
+ * to `provider.createLinkToken`, which is what tells Plaid this Link session
+ * is re-authorizing an item rather than starting a new one. Ownership is
+ * checked through `getConnection` first, the same way `syncNowAction` does
+ * it, so a connection id that is not this owner's gets the same quiet
+ * "Connection not found" rather than a code from `withAccessToken`'s own
+ * refusal.
+ */
+export async function createReauthLinkTokenAction(
+  input: unknown
+): Promise<ActionResult<{ linkToken: string }>> {
+  const ownerId = await currentOwnerId();
+  if (!ownerId) return unauthorized();
+
+  const parsed = SyncConnectionForm.safeParse(input);
+  if (!parsed.success) return invalid(parsed.error);
+
+  const provider = getBankProvider();
+  if (!provider) return failed(NOT_CONFIGURED);
+
+  const db = getDb();
+  const connection = await bankRepo.getConnection(db, ownerId, parsed.data.connectionId);
+  if (!connection) return failed('Connection not found');
+
+  const redirectUri = await oauthReturnUri();
+  if (!redirectUri) {
+    return failed(
+      'This deployment does not know its own address, so Plaid cannot be told where to send you back. Set AUTH_URL.'
+    );
+  }
+
+  const keyring = loadKeysFromEnv();
+
   try {
-    const accounts = await bankRepo.withAccessToken(
+    const { linkToken } = await bankRepo.withAccessToken(
       db,
       ownerId,
       connection.id,
       keyring,
-      (accessToken) => provider.getAccounts(accessToken)
+      (accessToken) => provider.createLinkToken({ userId: ownerId, redirectUri, accessToken })
     );
-    await bankRepo.upsertAccounts(db, ownerId, connection.id, accounts);
+    return ok({ linkToken });
   } catch (error) {
-    // Recorded, because nothing below this point will do it: `runSync` writes
-    // the connection's failure state itself, and a refresh that failed outside
-    // it would otherwise leave a screen saying "Connected" under a message
-    // saying it is not.
-    await bankRepo.recordSyncError(db, ownerId, connection.id, syncFailureOf(error));
-    revalidateApp();
-    return failed(readable(error, SYNC_STOPPED));
+    return failed(readable(error, LINK_REFUSED));
   }
+}
 
-  let result: RunSyncResult;
-  try {
-    result = await runSync(db, ownerId, connection.id, { provider, keyring });
-  } catch (error) {
-    // `runSync` recorded the failure on the connection before it threw, so the
-    // screen has to be re-read for the owner to see it.
-    revalidateApp();
-    return failed(readable(error, SYNC_STOPPED));
-  }
+/**
+ * Re-authentication, path a, the second half: Link's update mode ends with no
+ * public token to exchange (spec §5a), so there is nothing here to store -
+ * just the connection coming back to `'active'` and the same refresh-then-sync
+ * every other healthy sync runs.
+ */
+export async function markReconnectedAction(
+  input: unknown
+): Promise<ActionResult<RunSyncResult>> {
+  const ownerId = await currentOwnerId();
+  if (!ownerId) return unauthorized();
 
-  revalidateApp();
+  const parsed = SyncConnectionForm.safeParse(input);
+  if (!parsed.success) return invalid(parsed.error);
 
-  // A rate limit is an unfinished sync, not a failed one: everything the run
-  // committed stands, and the connection records why it stopped. Reporting it
-  // as a success would put "synced" on a screen for a connection that is still
-  // behind, so it is a message with the provider's own wait in it.
-  if ('retryAfterSeconds' in result && result.retryAfterSeconds !== undefined) {
-    return failed(
-      `Your bank is asking for a pause. ${result.added} added so far; try again in ${result.retryAfterSeconds} seconds.`
-    );
-  }
+  const provider = getBankProvider();
+  if (!provider) return failed(NOT_CONFIGURED);
 
-  return ok(result);
+  const db = getDb();
+  const activated = await bankRepo.markConnectionActive(db, ownerId, parsed.data.connectionId);
+  if (!activated) return failed('Connection not found');
+
+  const keyring = loadKeysFromEnv();
+
+  return refreshAccountsThenSync(db, ownerId, parsed.data.connectionId, provider, keyring);
 }
