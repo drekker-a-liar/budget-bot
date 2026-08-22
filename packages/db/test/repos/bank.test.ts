@@ -472,6 +472,54 @@ describeDb('bankRepo.upsertAccounts', () => {
   });
 });
 
+/**
+ * Ordering (Task 8): `(name, id)` rather than insertion order, so the
+ * settings page draws the same list on every render instead of reshuffling
+ * whenever a balance refresh touches `updated_at`.
+ */
+describeDb('bankRepo.listAccounts', () => {
+  it('orders by name, alphabetically rather than by insertion', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const connection = await bankRepo.createConnection(db, ownerId, newConnection(), KEYRING);
+
+    // Inserted in reverse alphabetical order, so a passing test cannot be an
+    // accident of insertion or creation-time order.
+    await db.insert(bankAccounts).values([
+      { ownerId, connectionId: connection.id, externalAccountId: 'acct-c', name: 'Checking' },
+      { ownerId, connectionId: connection.id, externalAccountId: 'acct-b', name: 'Business Card' },
+      { ownerId, connectionId: connection.id, externalAccountId: 'acct-a', name: 'Autopay Savings' },
+    ]);
+
+    const accounts = await bankRepo.listAccounts(db, ownerId, connection.id);
+
+    expect(accounts.map((a) => a.name)).toEqual([
+      'Autopay Savings',
+      'Business Card',
+      'Checking',
+    ]);
+  });
+
+  it('breaks a tie on name by id, so two accounts with the same name still sort the same way every time', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const connection = await bankRepo.createConnection(db, ownerId, newConnection(), KEYRING);
+
+    const [first, second] = await db
+      .insert(bankAccounts)
+      .values([
+        { ownerId, connectionId: connection.id, externalAccountId: 'acct-x', name: 'Checking' },
+        { ownerId, connectionId: connection.id, externalAccountId: 'acct-y', name: 'Checking' },
+      ])
+      .returning({ id: bankAccounts.id });
+    const expectedIds = [first.id, second.id].sort();
+
+    const accounts = await bankRepo.listAccounts(db, ownerId, connection.id);
+
+    expect(accounts.map((a) => a.id)).toEqual(expectedIds);
+  });
+});
+
 describeDb('bankRepo.listConnections', () => {
   it('reports each connection with the accounts behind it', async () => {
     const db = getDb();

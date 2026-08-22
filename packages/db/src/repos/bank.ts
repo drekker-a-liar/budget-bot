@@ -539,6 +539,15 @@ export async function listConnectionsForExport(
   }));
 }
 
+/**
+ * The accounts behind one connection, in the order the settings page draws
+ * them.
+ *
+ * `(name, id)` rather than `created_at`: a balance refresh does not touch
+ * `created_at`, but the page re-fetches this list on every sync, and an order
+ * that was allowed to depend on anything else would reshuffle the table under
+ * a reader who is mid-glance at it.
+ */
 export async function listAccounts(
   db: Executor,
   ownerId: string,
@@ -554,7 +563,7 @@ export async function listAccounts(
         eq(bankAccounts.connectionId, connectionId)
       )
     )
-    .orderBy(asc(bankAccounts.createdAt), asc(bankAccounts.id));
+    .orderBy(asc(bankAccounts.name), asc(bankAccounts.id));
   return rows.map(toAccount);
 }
 
