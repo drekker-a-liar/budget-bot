@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import {
   Configuration,
   CountryCode,
@@ -14,12 +15,15 @@ import {
   type ItemPublicTokenExchangeResponse,
   type ItemRemoveRequest,
   type ItemRemoveResponse,
+  type JWKPublicKey,
   type LinkTokenCreateRequest,
   type LinkTokenCreateResponse,
   type TransactionsSyncRequest,
   type TransactionsSyncResponse,
+  type WebhookVerificationKeyGetRequest,
+  type WebhookVerificationKeyGetResponse,
 } from 'plaid';
-import { NotSupportedError } from '../errors';
+import { decodeProtectedHeader, importJWK, jwtVerify } from 'jose';
 import type {
   BankProvider,
   CreateLinkTokenArgs,
@@ -30,6 +34,7 @@ import type {
   WebhookEvent,
 } from '../types';
 import { toPlaidError } from './errors';
+import { WebhookVerificationError } from './errors';
 import { normalizeAccount, normalizeTransaction } from './normalize';
 
 /**
@@ -61,6 +66,31 @@ const DAYS_REQUESTED = 730;
 
 /** One page. 500 is Plaid's maximum for `/transactions/sync`. */
 const PAGE_SIZE = 500;
+
+/** How old a webhook's `iat` may be before it is refused as stale (spec §2). */
+const WEBHOOK_MAX_AGE_SECONDS = 300;
+
+/** The header Plaid signs a webhook envelope with. */
+const WEBHOOK_SIGNATURE_HEADER = 'plaid-verification';
+
+/**
+ * A header, found by name without regard to case.
+ *
+ * `Record<string, string>` carries no promise about casing - a route handler
+ * hands over whatever the framework gave it - so every lookup here goes
+ * through this rather than through a literal key.
+ */
+function headerValue(headers: Record<string, string>, name: string): string | undefined {
+  const lower = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === lower) return value;
+  }
+  return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 
 /**
  * What the SDK hands back, of which only `data` is ever read.
@@ -96,6 +126,9 @@ export interface PlaidClientLike {
     request: TransactionsSyncRequest
   ): Promise<PlaidResponse<TransactionsSyncResponse>>;
   itemRemove(request: ItemRemoveRequest): Promise<PlaidResponse<ItemRemoveResponse>>;
+  webhookVerificationKeyGet(
+    request: WebhookVerificationKeyGetRequest
+  ): Promise<PlaidResponse<WebhookVerificationKeyGetResponse>>;
 }
 
 export interface CreatePlaidClientOptions {
@@ -133,6 +166,14 @@ export class PlaidProvider implements BankProvider {
   readonly id = 'plaid' as const;
 
   readonly #client: PlaidClientLike;
+
+  /**
+   * Verification keys rotate rarely, so a `kid` seen once is good for the
+   * life of this instance - one process serves one deployment's worth of
+   * webhooks, and a key rotation is rare enough that "restart to pick up the
+   * new key" is an acceptable cost next to a fetch on every webhook.
+   */
+  readonly #webhookKeys = new Map<string, JWKPublicKey>();
 
   constructor({ client }: PlaidProviderDeps) {
     this.#client = client;
@@ -279,14 +320,113 @@ export class PlaidProvider implements BankProvider {
   }
 
   /**
-   * Phase 3. `async` so the refusal arrives as a rejected promise: a caller
-   * written against `BankProvider` awaits this, and a synchronous throw would
-   * escape its try/catch.
+   * The signature Plaid puts on every webhook (spec §2): an ES256 JWT in the
+   * `plaid-verification` header. `alg` is checked against the decoded - not
+   * yet verified - header before anything else happens, so a request naming
+   * `alg: none` or downgrading to HS256 dies without a key fetch or a
+   * signature check ever running (a forged token could otherwise choose the
+   * algorithm the rest of this method trusts). Past that: the key behind
+   * `kid` comes from cache or from Plaid, the signature has to check out
+   * against it, `iat` has to be within the last five minutes, and the
+   * `request_body_sha256` claim has to match the bytes that actually
+   * arrived, compared with `timingSafeEqual` so a mismatch cannot be
+   * distinguished by timing.
+   *
+   * Every failure comes out as `WebhookVerificationError`, whose message
+   * names the failure kind and nothing else - never the JWT, never the raw
+   * body, never a claim.
    */
   async verifyAndParseWebhook(
-    _rawBody: string,
-    _headers: Record<string, string>
+    rawBody: string,
+    headers: Record<string, string>
   ): Promise<WebhookEvent> {
-    throw new NotSupportedError('PlaidProvider', 'verifyAndParseWebhook');
+    const jwt = headerValue(headers, WEBHOOK_SIGNATURE_HEADER);
+    if (jwt === undefined) {
+      throw new WebhookVerificationError('missing verification header');
+    }
+
+    let alg: string | undefined;
+    let kid: string | undefined;
+    try {
+      ({ alg, kid } = decodeProtectedHeader(jwt));
+    } catch {
+      throw new WebhookVerificationError('malformed jwt header');
+    }
+
+    if (alg !== 'ES256') {
+      throw new WebhookVerificationError('unsupported signing algorithm');
+    }
+    if (kid === undefined) {
+      throw new WebhookVerificationError('missing key id');
+    }
+
+    const jwk = await this.#webhookKey(kid);
+
+    let iat: number | undefined;
+    let requestBodySha256: unknown;
+    try {
+      const key = await importJWK({ kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y }, 'ES256');
+      const { payload } = await jwtVerify(jwt, key, { algorithms: ['ES256'] });
+      iat = payload.iat;
+      requestBodySha256 = payload.request_body_sha256;
+    } catch {
+      throw new WebhookVerificationError('signature verification failed');
+    }
+
+    if (typeof iat !== 'number') {
+      throw new WebhookVerificationError('missing iat');
+    }
+    if (Date.now() / 1000 - iat > WEBHOOK_MAX_AGE_SECONDS) {
+      throw new WebhookVerificationError('stale iat');
+    }
+
+    if (typeof requestBodySha256 !== 'string') {
+      throw new WebhookVerificationError('missing body hash claim');
+    }
+
+    const bodyHash = createHash('sha256').update(rawBody).digest('hex');
+    const actual = Buffer.from(bodyHash, 'hex');
+    const claimed = Buffer.from(requestBodySha256, 'hex');
+    if (actual.length !== claimed.length || !timingSafeEqual(actual, claimed)) {
+      throw new WebhookVerificationError('body hash mismatch');
+    }
+
+    let payload: unknown;
+    try {
+      payload = JSON.parse(rawBody);
+    } catch {
+      throw new WebhookVerificationError('invalid json body');
+    }
+
+    const body = isRecord(payload) ? payload : {};
+    return {
+      type: typeof body.webhook_type === 'string' ? body.webhook_type : '',
+      code: typeof body.webhook_code === 'string' ? body.webhook_code : null,
+      itemId: typeof body.item_id === 'string' ? body.item_id : null,
+      bodyHash,
+      payload,
+    };
+  }
+
+  /**
+   * The key behind `kid`: from cache when this instance has seen it before,
+   * from Plaid otherwise. A cache miss fetches exactly once - success or
+   * failure - and only a success is cached, so an unrecognised or
+   * momentarily-unreachable `kid` costs one fetch per webhook rather than
+   * being remembered as a permanent failure.
+   */
+  async #webhookKey(kid: string): Promise<JWKPublicKey> {
+    const cached = this.#webhookKeys.get(kid);
+    if (cached) return cached;
+
+    let key: JWKPublicKey;
+    try {
+      ({ key } = await this.#call(() => this.#client.webhookVerificationKeyGet({ key_id: kid })));
+    } catch {
+      throw new WebhookVerificationError('unknown key id');
+    }
+
+    this.#webhookKeys.set(kid, key);
+    return key;
   }
 }

@@ -8,7 +8,6 @@ import type {
   TransactionsSyncResponse,
 } from 'plaid';
 import { describe, expect, it, vi, type Mock } from 'vitest';
-import { NotSupportedError } from '../../src/errors';
 import {
   PlaidItemError,
   PlaidMutationDuringPagination,
@@ -80,6 +79,12 @@ function fakeClient(): FakeClient {
     accountsGet: vi.fn(async () => ok<AccountsGetResponse>(accountsFixture)),
     transactionsSync: vi.fn(async () => ok<TransactionsSyncResponse>(syncPage1Fixture)),
     itemRemove: vi.fn(async () => ok<ItemRemoveResponse>({ request_id: 'req-remove-1' })),
+    // Real coverage - alg rejection, signature checks, iat, body hash, key
+    // caching - lives in provider.webhook.test.ts, against real ES256 JWTs;
+    // nothing here calls this.
+    webhookVerificationKeyGet: vi.fn(async () => {
+      throw new Error('not used by these tests');
+    }),
   };
 }
 
@@ -433,14 +438,6 @@ describe('removeItem', () => {
     await providerWith(client).removeItem('access-sandbox-abc');
 
     expect(client.itemRemove).toHaveBeenCalledWith({ access_token: 'access-sandbox-abc' });
-  });
-});
-
-describe('verifyAndParseWebhook', () => {
-  it('is not supported yet', async () => {
-    await expect(providerWith(fakeClient()).verifyAndParseWebhook('{}', {})).rejects.toBeInstanceOf(
-      NotSupportedError
-    );
   });
 });
 

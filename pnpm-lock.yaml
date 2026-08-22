@@ -109,6 +109,9 @@ importers:
       '@budget-bot/core':
         specifier: workspace:*
         version: link:../core
+      jose:
+        specifier: ^6.2.9
+        version: 6.2.9
       papaparse:
         specifier: ^5.5.3
         version: 5.6.0
