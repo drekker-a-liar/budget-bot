@@ -1,8 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { NextResponse } from 'next/server';
-import type { BankProvider } from '@budget-bot/bank-connectors';
-import { bankRepo, getDb, webhookEventsRepo, type Database } from '@budget-bot/db';
-import { loadKeysFromEnv, type TokenKeyring } from '@budget-bot/db/crypto';
+import { bankRepo, getDb, webhookEventsRepo } from '@budget-bot/db';
+import { loadKeysFromEnv } from '@budget-bot/db/crypto';
 import { getBankProvider } from '@/src/server/bank/provider';
 import { runSync, syncFailureOf } from '@/src/server/bank/sync';
 
@@ -44,27 +43,6 @@ function bearerMatches(header: string | null, secret: string): boolean {
   return timingSafeEqual(provided, expected);
 }
 
-/** One connection's refresh: the account list, then a full transactions sync. */
-async function syncConnection(
-  db: Database,
-  provider: BankProvider,
-  keyring: TokenKeyring,
-  connection: { id: string; ownerId: string }
-): Promise<void> {
-  const accounts = await bankRepo.withAccessToken(
-    db,
-    connection.ownerId,
-    connection.id,
-    keyring,
-    (accessToken) => provider.getAccounts(accessToken)
-  );
-  await bankRepo.upsertAccounts(db, connection.ownerId, connection.id, accounts);
-  // A `{skipped: true}` result - another sync already owns this connection -
-  // is not a failure: that other run is doing this one's work, so this
-  // connection still counts as synced.
-  await runSync(db, connection.ownerId, connection.id, { provider, keyring });
-}
-
 export async function GET(request: Request): Promise<NextResponse> {
   const secret = process.env.CRON_SECRET;
   if (!secret) {
@@ -86,23 +64,34 @@ export async function GET(request: Request): Promise<NextResponse> {
     const keyring = loadKeysFromEnv();
     connections = await bankRepo.listActiveConnectionsAllOwners(db);
 
+    // Same split `syncNowAction` keeps, and for the same reason: the account
+    // refresh has nothing downstream of it that will record a failure, so
+    // this catch has to; `runSync` already recorded its own failure on the
+    // connection before it threw, so the second catch below must not write
+    // over that a second time.
     for (const connection of connections) {
       try {
-        await syncConnection(db, provider, keyring, connection);
-        synced += 1;
-      } catch (error) {
-        // Most failures inside `runSync` have already recorded themselves
-        // this way (it calls the same funnel before rethrowing); a failure in
-        // `getAccounts` or `upsertAccounts` never reaches `runSync` at all,
-        // so this is the only place that failure is recorded. Recording an
-        // already-recorded one again is redundant, not wrong - it writes the
-        // same code and status a second time.
-        await bankRepo.recordSyncError(
+        const accounts = await bankRepo.withAccessToken(
           db,
           connection.ownerId,
           connection.id,
-          syncFailureOf(error)
+          keyring,
+          (accessToken) => provider.getAccounts(accessToken)
         );
+        await bankRepo.upsertAccounts(db, connection.ownerId, connection.id, accounts);
+      } catch (error) {
+        await bankRepo.recordSyncError(db, connection.ownerId, connection.id, syncFailureOf(error));
+        failed += 1;
+        continue;
+      }
+
+      try {
+        // A `{skipped: true}` result - another sync already owns this
+        // connection - is not a failure: that other run is doing this one's
+        // work, so this connection still counts as synced.
+        await runSync(db, connection.ownerId, connection.id, { provider, keyring });
+        synced += 1;
+      } catch {
         failed += 1;
       }
     }
