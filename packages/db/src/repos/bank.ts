@@ -379,6 +379,39 @@ export async function getConnection(
   return row ? toConnection(row) : null;
 }
 
+/** What a webhook route needs to know about a connection, and nothing more. */
+export interface BankConnectionByItem {
+  id: string;
+  ownerId: string;
+  status: string;
+}
+
+/**
+ * The connection a provider's item id names, across every owner.
+ *
+ * Cross-owner by design: a webhook arrives with an item id and nothing else -
+ * there is no session on that route, and the whole point of this lookup is to
+ * find out whose connection it is (spec §3). The projection is deliberately
+ * narrower than `CONNECTION_COLUMNS`: a payload's signature has only just been
+ * checked when this runs, and the one thing that must never be one step away
+ * from a webhook body is the ciphertext column.
+ */
+export async function findConnectionByItemId(
+  db: Executor,
+  itemId: string
+): Promise<BankConnectionByItem | null> {
+  const [row] = await db
+    .select({
+      id: bankConnections.id,
+      ownerId: bankConnections.ownerId,
+      status: bankConnections.status,
+    })
+    .from(bankConnections)
+    .where(eq(bankConnections.itemId, itemId))
+    .limit(1);
+  return row ?? null;
+}
+
 /** Every connection the owner has linked, each with the accounts behind it. */
 export async function listConnections(
   db: Executor,
