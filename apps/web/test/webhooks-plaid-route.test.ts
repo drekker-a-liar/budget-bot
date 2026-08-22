@@ -128,6 +128,35 @@ describeDb('POST /api/webhooks/plaid', () => {
     assertNoIdentifiers(second.body);
   });
 
+  it('processes two different bodies naming the same item, since replay is keyed by body hash, not item', async () => {
+    const first = await post({
+      webhook_type: 'TRANSACTIONS',
+      webhook_code: 'SYNC_UPDATES_AVAILABLE',
+      item_id: FAKE_ITEM_ID,
+      nonce: 'first',
+    });
+    const second = await post({
+      webhook_type: 'TRANSACTIONS',
+      webhook_code: 'SYNC_UPDATES_AVAILABLE',
+      item_id: FAKE_ITEM_ID,
+      nonce: 'second',
+    });
+
+    // Neither is a `duplicate` reply: the two bodies differ (by `nonce`),
+    // even though both name the same item, so both are new arrivals.
+    expect(first.status).toBe(200);
+    expect(first.body).toEqual({ ok: true });
+    expect(second.status).toBe(200);
+    expect(second.body).toEqual({ ok: true });
+
+    expect(runSyncMock.fn).toHaveBeenCalledTimes(2);
+
+    const rows = await db.select().from(schema.webhookEvents);
+    const matching = rows.filter((row) => row.itemId === FAKE_ITEM_ID);
+    expect(matching).toHaveLength(2);
+    expect(matching.every((row) => row.processedAt !== null)).toBe(true);
+  });
+
   it('marks an unrecognised item processed without dispatching anything', async () => {
     const { status, body } = await post({
       webhook_type: 'TRANSACTIONS',
@@ -164,8 +193,12 @@ describeDb('POST /api/webhooks/plaid', () => {
   });
 
   it('marks the connection reauth_required on an ITEM_LOGIN_REQUIRED error', async () => {
+    // Plaid's real shape: `webhook_type: 'ITEM'`, `webhook_code: 'ERROR'`, and
+    // the actual reason nested under `error.error_code` - not a bare
+    // `webhook_type: 'ERROR'`.
     const { status, body } = await post({
-      webhook_type: 'ERROR',
+      webhook_type: 'ITEM',
+      webhook_code: 'ERROR',
       item_id: FAKE_ITEM_ID,
       error: { error_type: 'ITEM_ERROR', error_code: 'ITEM_LOGIN_REQUIRED' },
     });
@@ -177,6 +210,32 @@ describeDb('POST /api/webhooks/plaid', () => {
     const reloaded = await bankRepo.getConnection(db, ownerId, connection.id);
     expect(reloaded?.status).toBe('reauth_required');
     expect(reloaded?.lastErrorCode).toBe('ITEM_LOGIN_REQUIRED');
+  });
+
+  it('leaves the connection active on an ITEM/ERROR that is not a reauth code', async () => {
+    // A negative probe alongside the positive one above: an `ITEM`/`ERROR`
+    // payload whose `error.error_code` is not `ITEM_LOGIN_REQUIRED` must not
+    // be read as a reauth signal at all.
+    const { status, body } = await post({
+      webhook_type: 'ITEM',
+      webhook_code: 'ERROR',
+      item_id: FAKE_ITEM_ID,
+      error: { error_type: 'ITEM_ERROR', error_code: 'INSTITUTION_DOWN' },
+    });
+
+    expect(status).toBe(200);
+    expect(body).toEqual({ ok: true });
+    assertNoIdentifiers(body);
+
+    const reloaded = await bankRepo.getConnection(db, ownerId, connection.id);
+    expect(reloaded?.status).toBe('active');
+    expect(reloaded?.lastErrorCode).toBeNull();
+
+    const rows = await db.select().from(schema.webhookEvents);
+    const row = rows.find((candidate) => candidate.itemId === FAKE_ITEM_ID);
+    if (!row) throw new Error('the webhook row is missing');
+    expect(row.processedAt).not.toBeNull();
+    expect(row.error).toBeNull();
   });
 
   it('marks the connection reauth_required on ITEM/PENDING_EXPIRATION', async () => {
