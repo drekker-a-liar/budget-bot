@@ -107,7 +107,17 @@ function describeSync(result: RunSyncResult): string {
     return 'A sync is already running on this connection. Nothing to do.';
   }
   const more = result.hasMore ? ' There is more to fetch — sync again.' : '';
-  return `Synced: ${result.added} added, ${result.modified} modified, ${result.removed} removed.${more}`;
+  // `unknownAccountCount` is transient (Task 8, spec §8): it never lands in
+  // storage, so this message is the only place a reader learns about it. The
+  // connection's own status chip is the durable trace - the code recorded
+  // there survives a page reload that this string does not.
+  const unknown =
+    result.unknownAccountCount > 0
+      ? ` ${result.unknownAccountCount} ${
+          result.unknownAccountCount === 1 ? 'row' : 'rows'
+        } referenced accounts this connection doesn't track.`
+      : '';
+  return `Synced: ${result.added} added, ${result.modified} modified, ${result.removed} removed.${more}${unknown}`;
 }
 
 export function ConnectionsView({

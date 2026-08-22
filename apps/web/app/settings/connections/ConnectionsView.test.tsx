@@ -22,12 +22,12 @@ vi.mock('@/src/server/actions/bank', () => ({
   exchangePublicTokenAction: vi.fn(),
   syncNowAction: vi.fn(async () => ({
     ok: true as const,
-    data: { added: 3, modified: 1, removed: 0, pages: 2, hasMore: false },
+    data: { added: 3, modified: 1, removed: 0, pages: 2, hasMore: false, unknownAccountCount: 0 },
   })),
   createReauthLinkTokenAction: vi.fn(),
   markReconnectedAction: vi.fn(async () => ({
     ok: true as const,
-    data: { added: 0, modified: 0, removed: 0, pages: 0, hasMore: false },
+    data: { added: 0, modified: 0, removed: 0, pages: 0, hasMore: false, unknownAccountCount: 0 },
   })),
   disconnectConnectionAction: vi.fn(async () => ({ ok: true as const, data: { removed: true } })),
 }));
@@ -278,6 +278,28 @@ describe('syncing on demand', () => {
       'Synced: 3 added, 1 modified, 0 removed'
     );
     expect(router.refresh).toHaveBeenCalled();
+  });
+
+  it('notes rows a sync dropped for an account this connection does not track', async () => {
+    vi.mocked(syncNowAction).mockResolvedValueOnce({
+      ok: true,
+      data: { added: 3, modified: 1, removed: 0, pages: 2, hasMore: false, unknownAccountCount: 2 },
+    });
+    renderView();
+
+    await userEvent.click(screen.getByRole('button', { name: /sync now/i }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      "2 rows referenced accounts this connection doesn't track"
+    );
+  });
+
+  it('says nothing extra when every row synced onto an account this connection has', async () => {
+    renderView();
+
+    await userEvent.click(screen.getByRole('button', { name: /sync now/i }));
+
+    expect(await screen.findByRole('status')).not.toHaveTextContent(/doesn't track/i);
   });
 
   it('says another sync already has the connection', async () => {
