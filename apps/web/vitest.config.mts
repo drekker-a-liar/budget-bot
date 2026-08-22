@@ -24,5 +24,13 @@ export default defineConfig({
     // Imported stylesheets resolve to an empty module rather than being
     // processed: nothing here asserts on styling.
     css: false,
+    // `test/helpers/db.ts` points every real-Postgres suite at one shared
+    // `_web` database (deliberately one, not one per file - see its own
+    // comment) and truncates between cases. Two of those files running in
+    // separate workers at once truncate and write to the same tables at the
+    // same time, which Postgres resolves as a deadlock rather than a race
+    // either file could catch. `packages/db` hits the identical problem for
+    // the identical reason and takes the identical fix.
+    fileParallelism: false,
   },
 });

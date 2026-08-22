@@ -107,6 +107,7 @@ describe('the route list this test walks', () => {
     expect(publicRoutes.map((route) => route.path)).toEqual([
       '/api/auth/sample',
       '/api/health',
+      '/api/webhooks/plaid',
     ]);
   });
 
@@ -118,6 +119,7 @@ describe('the route list this test walks', () => {
       '/api/auth/sample',
       '/api/health',
       '/api/import/csv',
+      '/api/webhooks/plaid',
     ]);
   });
 
