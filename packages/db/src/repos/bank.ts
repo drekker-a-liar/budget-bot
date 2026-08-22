@@ -707,3 +707,31 @@ export async function markConnectionActive(
     .returning({ id: bankConnections.id });
   return rows.length > 0;
 }
+
+/**
+ * Disconnecting a bank (spec §6).
+ *
+ * The owner-scoped `WHERE` is on the `DELETE` itself, the same shape
+ * `markConnectionActive` uses: a connection id that belongs to somebody else
+ * and one that does not exist are the same miss, `false`, with the row left
+ * completely alone either way.
+ *
+ * The rest of the work is two foreign keys, not this function: `bank_accounts
+ * .connection_id` is `ON DELETE CASCADE`, so the accounts behind this
+ * connection go with it, and `transactions.bank_account_id` is `ON DELETE SET
+ * NULL`, so a charge that was already filed keeps its category, its project
+ * and its place in the ledger - it only stops pointing at an account that no
+ * longer exists.
+ */
+export async function deleteConnection(
+  db: Executor,
+  ownerId: string,
+  connectionId: string
+): Promise<boolean> {
+  if (!isUuid(connectionId)) return false;
+  const rows = await db
+    .delete(bankConnections)
+    .where(and(eq(bankConnections.ownerId, ownerId), eq(bankConnections.id, connectionId)))
+    .returning({ id: bankConnections.id });
+  return rows.length > 0;
+}

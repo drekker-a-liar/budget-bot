@@ -4,7 +4,7 @@ import { expect, it } from 'vitest';
 import type { Database } from '../../src/client';
 import { loadKeysFromEnv } from '../../src/crypto';
 import { ConnectionAlreadyExistsError, bankRepo } from '../../src/repos';
-import { bankAccounts, bankConnections } from '../../src/schema';
+import { bankAccounts, bankConnections, transactions } from '../../src/schema';
 import { createOwner, describeDb, useTestDb } from '../helpers/db';
 
 const getDb = useTestDb();
@@ -787,5 +787,107 @@ describeDb('bankRepo.markConnectionActive', () => {
     const ownerId = await createOwner(db);
 
     expect(await bankRepo.markConnectionActive(db, ownerId, 'conn-1')).toBe(false);
+  });
+});
+
+/**
+ * Disconnect (spec §6).
+ *
+ * Two cascades meet at this one statement: `bank_accounts.connection_id` is
+ * `ON DELETE CASCADE`, so the accounts behind a disconnected bank disappear
+ * with it, and `transactions.bank_account_id` is `ON DELETE SET NULL`, so a
+ * charge that was already filed keeps its category, its project and its place
+ * in the ledger - it just stops pointing at a bank account that no longer
+ * exists. The owner-scoped `WHERE` lives on the `DELETE` itself rather than a
+ * lookup beforehand, the same shape `markConnectionActive` uses: a connection
+ * id that belongs to somebody else and one that does not exist read as the
+ * same `false`.
+ */
+describeDb('bankRepo.deleteConnection', () => {
+  it('removes the connection and cascades its accounts', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const connection = await bankRepo.createConnection(db, ownerId, newConnection(), KEYRING);
+    await bankRepo.upsertAccounts(db, ownerId, connection.id, [account()]);
+
+    expect(await bankRepo.deleteConnection(db, ownerId, connection.id)).toBe(true);
+
+    expect(await bankRepo.getConnection(db, ownerId, connection.id)).toBeNull();
+    expect(
+      await db.select().from(bankAccounts).where(eq(bankAccounts.connectionId, connection.id))
+    ).toEqual([]);
+  });
+
+  it('leaves a filed transaction in the ledger with its bank link cleared', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const connection = await bankRepo.createConnection(db, ownerId, newConnection(), KEYRING);
+    const [linkedAccount] = await bankRepo.upsertAccounts(db, ownerId, connection.id, [account()]);
+    const [filed] = await db
+      .insert(transactions)
+      .values({
+        ownerId,
+        date: '2026-08-14',
+        description: 'THE HOME DEPOT #0421',
+        vendor: 'The Home Depot',
+        amountCents: parseMoney('114.75'),
+        category: 'materials',
+        paymentMethod: 'card',
+        status: 'matched',
+        taxDeductible: true,
+        provider: 'plaid',
+        externalId: 'tx-external-1',
+        bankAccountId: linkedAccount.id,
+      })
+      .returning({ id: transactions.id });
+
+    await bankRepo.deleteConnection(db, ownerId, connection.id);
+
+    const [after] = await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, filed.id));
+    expect(after).toMatchObject({
+      id: filed.id,
+      vendor: 'The Home Depot',
+      status: 'matched',
+      bankAccountId: null,
+    });
+  });
+
+  it('refuses another owner’s connection, leaving the row untouched', async () => {
+    const db = getDb();
+    const alice = await createOwner(db);
+    const bob = await createOwner(db);
+    const connection = await bankRepo.createConnection(db, alice, newConnection(), KEYRING);
+
+    expect(await bankRepo.deleteConnection(db, bob, connection.id)).toBe(false);
+    expect(await bankRepo.getConnection(db, alice, connection.id)).not.toBeNull();
+  });
+
+  it('leaves a second connection of the same owner untouched', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const gone = await bankRepo.createConnection(db, ownerId, newConnection(), KEYRING);
+    const kept = await bankRepo.createConnection(db, ownerId, newConnection(), KEYRING);
+
+    expect(await bankRepo.deleteConnection(db, ownerId, gone.id)).toBe(true);
+
+    expect(await bankRepo.getConnection(db, ownerId, gone.id)).toBeNull();
+    expect(await bankRepo.getConnection(db, ownerId, kept.id)).not.toBeNull();
+  });
+
+  it('answers false for a connection id that does not exist', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+
+    expect(await bankRepo.deleteConnection(db, ownerId, crypto.randomUUID())).toBe(false);
+  });
+
+  it('refuses an id that is not a uuid rather than letting Postgres raise', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+
+    expect(await bankRepo.deleteConnection(db, ownerId, 'conn-1')).toBe(false);
   });
 });
