@@ -518,6 +518,27 @@ describeDb('bankRepo.listAccounts', () => {
 
     expect(accounts.map((a) => a.id)).toEqual(expectedIds);
   });
+
+  it('sorts a null name last, deterministically, rather than scattering it among the named ones', async () => {
+    // The plausible real case: a Plaid account can be listed before its name
+    // has synced, or a CSV row can map to a blank name. `name` is nullable
+    // (`packages/db/src/schema/bank.ts`), and Postgres's default ASC puts
+    // NULL after every non-null value - this pins that the query relies on
+    // rather than asserting nothing.
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const connection = await bankRepo.createConnection(db, ownerId, newConnection(), KEYRING);
+
+    await db.insert(bankAccounts).values([
+      { ownerId, connectionId: connection.id, externalAccountId: 'acct-c', name: 'Checking' },
+      { ownerId, connectionId: connection.id, externalAccountId: 'acct-u', name: null },
+      { ownerId, connectionId: connection.id, externalAccountId: 'acct-a', name: 'Autopay Savings' },
+    ]);
+
+    const accounts = await bankRepo.listAccounts(db, ownerId, connection.id);
+
+    expect(accounts.map((a) => a.name)).toEqual(['Autopay Savings', 'Checking', null]);
+  });
 });
 
 describeDb('bankRepo.listConnections', () => {
