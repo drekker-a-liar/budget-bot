@@ -103,3 +103,12 @@ export async function updateInvoice(
   );
   return row ? toInvoice(row) : null;
 }
+
+/** Every invoice the owner has, gone at once (spec §6, delete-all). */
+export async function deleteAllInvoices(db: Database, ownerId: string): Promise<number> {
+  const deleted = await db
+    .delete(invoices)
+    .where(eq(invoices.ownerId, ownerId))
+    .returning({ id: invoices.id });
+  return deleted.length;
+}

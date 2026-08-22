@@ -77,3 +77,12 @@ export async function deleteLaborEntry(
     .returning({ id: laborEntries.id });
   return deleted.length > 0;
 }
+
+/** Every labor entry the owner has, gone at once (spec §6, delete-all). */
+export async function deleteAllLaborEntries(db: Database, ownerId: string): Promise<number> {
+  const deleted = await db
+    .delete(laborEntries)
+    .where(eq(laborEntries.ownerId, ownerId))
+    .returning({ id: laborEntries.id });
+  return deleted.length;
+}

@@ -465,6 +465,72 @@ export async function listConnections(
   }));
 }
 
+/** One connection, projected to what an export may carry (spec §6). */
+export interface ExportConnection {
+  institutionName: string | null;
+  status: string;
+  createdAt: string;
+  lastSyncedAt: string | null;
+  accounts: Array<{
+    name: string | null;
+    mask: string | null;
+    type: string | null;
+    subtype: string | null;
+    isEnabled: boolean;
+  }>;
+}
+
+/**
+ * Every connection the owner has linked, projected down to what `/api/export`
+ * may hand back (spec §6): never the ciphertext, the cursor, the item id or
+ * the encryption key id - and no id at all, for the connection or for an
+ * account, because an export describes what is connected rather than handing
+ * out a handle back into this database. `CONNECTION_COLUMNS` is deliberately
+ * not reused here: it is already narrower than the table, but still carries
+ * `cursor` and `encryptionKeyId`, which is exactly the pair this projection
+ * exists to drop.
+ */
+export async function listConnectionsForExport(
+  db: Executor,
+  ownerId: string
+): Promise<ExportConnection[]> {
+  const rows = await db
+    .select({
+      id: bankConnections.id,
+      institutionName: bankConnections.institutionName,
+      status: bankConnections.status,
+      createdAt: bankConnections.createdAt,
+      lastSyncedAt: bankConnections.lastSyncedAt,
+    })
+    .from(bankConnections)
+    .where(eq(bankConnections.ownerId, ownerId))
+    .orderBy(asc(bankConnections.createdAt), asc(bankConnections.id));
+  if (rows.length === 0) return [];
+
+  const accounts = await db
+    .select({
+      connectionId: bankAccounts.connectionId,
+      name: bankAccounts.name,
+      mask: bankAccounts.mask,
+      type: bankAccounts.type,
+      subtype: bankAccounts.subtype,
+      isEnabled: bankAccounts.isEnabled,
+    })
+    .from(bankAccounts)
+    .where(eq(bankAccounts.ownerId, ownerId))
+    .orderBy(asc(bankAccounts.createdAt), asc(bankAccounts.id));
+
+  return rows.map((row) => ({
+    institutionName: row.institutionName,
+    status: row.status,
+    createdAt: toIso(row.createdAt),
+    lastSyncedAt: toIsoOrNull(row.lastSyncedAt),
+    accounts: accounts
+      .filter((account) => account.connectionId === row.id)
+      .map(({ name, mask, type, subtype, isEnabled }) => ({ name, mask, type, subtype, isEnabled })),
+  }));
+}
+
 export async function listAccounts(
   db: Executor,
   ownerId: string,
@@ -734,4 +800,18 @@ export async function deleteConnection(
     .where(and(eq(bankConnections.ownerId, ownerId), eq(bankConnections.id, connectionId)))
     .returning({ id: bankConnections.id });
   return rows.length > 0;
+}
+
+/**
+ * Every connection the owner has, gone at once (spec §6, delete-all). Same
+ * cascade `deleteConnection` relies on - `bank_accounts` goes with each row -
+ * in a single statement rather than one per connection, since what delete-all
+ * reports is a count of connections, not how many round trips it took.
+ */
+export async function deleteAllConnections(db: Executor, ownerId: string): Promise<number> {
+  const rows = await db
+    .delete(bankConnections)
+    .where(eq(bankConnections.ownerId, ownerId))
+    .returning({ id: bankConnections.id });
+  return rows.length;
 }

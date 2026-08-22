@@ -149,3 +149,12 @@ export async function deleteProject(
     .returning({ id: projects.id });
   return deleted.length > 0;
 }
+
+/** Every project the owner has, gone at once (spec §6, delete-all). */
+export async function deleteAllProjects(db: Database, ownerId: string): Promise<number> {
+  const deleted = await db
+    .delete(projects)
+    .where(eq(projects.ownerId, ownerId))
+    .returning({ id: projects.id });
+  return deleted.length;
+}

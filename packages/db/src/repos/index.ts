@@ -40,6 +40,7 @@ export type {
   BankConnection,
   BankConnectionByItem,
   CardProfileUpdate,
+  ExportConnection,
   NewBankConnection,
   ReplaceConnectionTokenInput,
   SyncFailure,

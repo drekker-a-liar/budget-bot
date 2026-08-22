@@ -279,6 +279,15 @@ export async function deleteTransaction(
   return deleted.length > 0;
 }
 
+/** Every transaction the owner has, gone at once (spec §6, delete-all). */
+export async function deleteAllTransactions(db: Executor, ownerId: string): Promise<number> {
+  const deleted = await db
+    .delete(transactions)
+    .where(eq(transactions.ownerId, ownerId))
+    .returning({ id: transactions.id });
+  return deleted.length;
+}
+
 /**
  * One transaction as a bank feed sends it. It is a `NewTransaction` plus the
  * identity and provenance columns, because the fields a feed cannot supply -

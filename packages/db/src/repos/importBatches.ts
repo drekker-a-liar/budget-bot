@@ -1,3 +1,4 @@
+import { desc, eq } from 'drizzle-orm';
 import type { Executor } from '../client';
 import { importBatches } from '../schema';
 
@@ -28,6 +29,21 @@ export interface ImportBatch extends NewImportBatch {
   createdAt: string;
 }
 
+type ImportBatchRow = typeof importBatches.$inferSelect;
+
+function toImportBatch(row: ImportBatchRow): ImportBatch {
+  return {
+    id: row.id,
+    ownerId: row.ownerId,
+    source: row.source,
+    filename: row.filename,
+    rowCount: row.rowCount,
+    insertedCount: row.insertedCount,
+    skippedCount: row.skippedCount,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
 export async function createImportBatch(
   db: Executor,
   ownerId: string,
@@ -45,14 +61,24 @@ export async function createImportBatch(
     })
     .returning();
 
-  return {
-    id: row.id,
-    ownerId: row.ownerId,
-    source: row.source,
-    filename: row.filename,
-    rowCount: row.rowCount,
-    insertedCount: row.insertedCount,
-    skippedCount: row.skippedCount,
-    createdAt: row.createdAt.toISOString(),
-  };
+  return toImportBatch(row);
+}
+
+/** Every import batch the owner has run, newest first - what an export reads (spec §6). */
+export async function listImportBatches(db: Executor, ownerId: string): Promise<ImportBatch[]> {
+  const rows = await db
+    .select()
+    .from(importBatches)
+    .where(eq(importBatches.ownerId, ownerId))
+    .orderBy(desc(importBatches.createdAt), desc(importBatches.id));
+  return rows.map(toImportBatch);
+}
+
+/** Every import batch the owner has, gone at once (spec §6, delete-all). */
+export async function deleteAllImportBatches(db: Executor, ownerId: string): Promise<number> {
+  const rows = await db
+    .delete(importBatches)
+    .where(eq(importBatches.ownerId, ownerId))
+    .returning({ id: importBatches.id });
+  return rows.length;
 }
