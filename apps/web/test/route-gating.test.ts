@@ -117,9 +117,12 @@ describe('the route list this test walks', () => {
   it('has no CRUD routes left: reads are components and writes are actions', () => {
     // /api/data, /api/projects, /api/transactions, /api/labor and /api/invoices
     // were how the client-rendered pages talked to the database. Their pages
-    // read on the server now, and nothing should put them back.
+    // read on the server now, and nothing should put them back. /api/export
+    // (spec §6) is the one exception to "reads are components": what it
+    // reads is not a page.
     expect(routes.map((route) => route.path)).toEqual([
       '/api/auth/sample',
+      '/api/export',
       '/api/health',
       '/api/import/csv',
       '/api/internal/sync',
