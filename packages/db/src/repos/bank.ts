@@ -618,3 +618,92 @@ export async function recordSyncError(
     })
     .where(and(eq(bankConnections.ownerId, ownerId), eq(bankConnections.id, id)));
 }
+
+/** What the re-link upsert needs to replace a stored token with a new one. */
+export interface ReplaceConnectionTokenInput {
+  /** The provider's identifier for the linked login (Plaid Item). */
+  itemId: string;
+  /** Plaintext. Encrypted inside this function and never stored as-is. */
+  accessToken: string;
+  keyring: TokenKeyring;
+}
+
+/**
+ * Re-authentication, path b: a second Link run against a bank that is already
+ * connected (spec §5).
+ *
+ * The caller reaches here from `ConnectionAlreadyExistsError`, which names an
+ * item id and nothing else - there is no connection id, because the point of
+ * that error is that the row already existed before this call started. So
+ * this looks the row up itself and re-encrypts against its own id, the same
+ * two-step `createConnection` uses (ADR 0002): the AAD is the *existing* row's
+ * id, not a fresh one, because this is the same connection wearing a new
+ * token.
+ *
+ * `null` means the item is somebody else's - the row is left completely
+ * alone, not even touched by a query, so that a cross-tenant re-link cannot
+ * overwrite a token it has no business replacing. The caller falls back to
+ * the Phase 2 message: "This bank is already connected."
+ *
+ * The cursor is deliberately absent from the `set`: it is the same Plaid Item,
+ * so `/transactions/sync`'s cursor is still valid, and clearing it would
+ * re-fetch the item's entire history for no reason.
+ */
+export async function replaceConnectionToken(
+  db: Executor,
+  ownerId: string,
+  input: ReplaceConnectionTokenInput
+): Promise<{ id: string } | null> {
+  const [row] = await db
+    .select({ id: bankConnections.id, ownerId: bankConnections.ownerId })
+    .from(bankConnections)
+    .where(and(eq(bankConnections.provider, 'plaid'), eq(bankConnections.itemId, input.itemId)))
+    .limit(1);
+  if (!row || row.ownerId !== ownerId) return null;
+
+  await db
+    .update(bankConnections)
+    .set({
+      accessTokenCiphertext: encryptToken(input.accessToken, {
+        keyId: input.keyring.current.keyId,
+        key: input.keyring.current.key,
+        aad: row.id,
+      }),
+      encryptionKeyId: input.keyring.current.keyId,
+      status: 'active',
+      lastErrorCode: null,
+      lastErrorMessage: null,
+      lastErrorAt: null,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(bankConnections.ownerId, ownerId), eq(bankConnections.id, row.id)));
+
+  return { id: row.id };
+}
+
+/**
+ * Re-authentication, path a: Link's update mode ends with no public token
+ * exchange, so there is nothing here to re-encrypt (spec §5) - just the same
+ * "healthy again" state `recordSyncResult` and `replaceConnectionToken` both
+ * leave behind. `false` for the id, so the action can say "not found" rather
+ * than silently doing nothing.
+ */
+export async function markConnectionActive(
+  db: Executor,
+  ownerId: string,
+  connectionId: string
+): Promise<boolean> {
+  if (!isUuid(connectionId)) return false;
+  const rows = await db
+    .update(bankConnections)
+    .set({
+      status: 'active',
+      lastErrorCode: null,
+      lastErrorMessage: null,
+      lastErrorAt: null,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(bankConnections.ownerId, ownerId), eq(bankConnections.id, connectionId)))
+    .returning({ id: bankConnections.id });
+  return rows.length > 0;
+}

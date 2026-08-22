@@ -41,6 +41,7 @@ export type {
   BankConnectionByItem,
   CardProfileUpdate,
   NewBankConnection,
+  ReplaceConnectionTokenInput,
   SyncFailure,
   SyncOutcome,
 } from './bank';

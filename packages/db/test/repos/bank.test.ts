@@ -599,3 +599,193 @@ describeDb('bankRepo.listActiveConnectionsAllOwners', () => {
     }
   });
 });
+
+/**
+ * Re-authentication (spec §5). Both functions end a connection at `'active'`
+ * with its errors cleared; what distinguishes them is which row they are
+ * allowed to touch. `replaceConnectionToken` is reached from the re-link
+ * upsert - a second Link run against a bank that is already connected, which
+ * arrives as `ConnectionAlreadyExistsError` and names only an item id, not a
+ * connection id - so it has to find the row itself and refuse to touch one
+ * that is not the caller's. `markConnectionActive` is reached from Link's
+ * update mode, which already has the connection id and only has to flip it.
+ */
+const NEW_ACCESS_TOKEN = 'access-sandbox-new-8f2a1c04-b6d9-4e77-9b12-0d3a5c6e7f81';
+
+describeDb('bankRepo.replaceConnectionToken', () => {
+  it('re-encrypts the new token under the existing row, decryptably', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const itemId = `item-${crypto.randomUUID()}`;
+    const original = await bankRepo.createConnection(
+      db,
+      ownerId,
+      newConnection({ itemId }),
+      KEYRING
+    );
+
+    const replaced = await bankRepo.replaceConnectionToken(db, ownerId, {
+      itemId,
+      accessToken: NEW_ACCESS_TOKEN,
+      keyring: KEYRING,
+    });
+
+    expect(replaced).toEqual({ id: original.id });
+    await expect(
+      bankRepo.withAccessToken(db, ownerId, original.id, KEYRING, async (t) => t)
+    ).resolves.toBe(NEW_ACCESS_TOKEN);
+
+    // Re-encrypted against the *existing* row id, same as `createConnection`
+    // (ADR 0002) - not a fresh row, and not decryptable under some other AAD.
+    const [raw] = await db
+      .select()
+      .from(bankConnections)
+      .where(eq(bankConnections.id, original.id));
+    expect(raw.accessTokenCiphertext).not.toContain('access-sandbox');
+  });
+
+  it('keeps the cursor: the same item, so the same pagination state', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const itemId = `item-${crypto.randomUUID()}`;
+    const original = await bankRepo.createConnection(
+      db,
+      ownerId,
+      newConnection({ itemId }),
+      KEYRING
+    );
+    await bankRepo.setCursor(db, ownerId, original.id, 'cursor-page-9');
+
+    await bankRepo.replaceConnectionToken(db, ownerId, {
+      itemId,
+      accessToken: NEW_ACCESS_TOKEN,
+      keyring: KEYRING,
+    });
+
+    expect((await bankRepo.getConnection(db, ownerId, original.id))?.cursor).toBe(
+      'cursor-page-9'
+    );
+  });
+
+  it('sets the connection active and clears whatever error it recorded', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const itemId = `item-${crypto.randomUUID()}`;
+    const original = await bankRepo.createConnection(
+      db,
+      ownerId,
+      newConnection({ itemId }),
+      KEYRING
+    );
+    await bankRepo.recordSyncError(db, ownerId, original.id, {
+      code: 'ITEM_LOGIN_REQUIRED',
+      status: 'reauth_required',
+    });
+
+    await bankRepo.replaceConnectionToken(db, ownerId, {
+      itemId,
+      accessToken: NEW_ACCESS_TOKEN,
+      keyring: KEYRING,
+    });
+
+    const after = await bankRepo.getConnection(db, ownerId, original.id);
+    expect(after).toMatchObject({
+      status: 'active',
+      lastErrorCode: null,
+      lastErrorAt: null,
+    });
+  });
+
+  it('refuses another owner’s row, untouched, byte for byte', async () => {
+    const db = getDb();
+    const alice = await createOwner(db);
+    const bob = await createOwner(db);
+    const itemId = `item-${crypto.randomUUID()}`;
+    const alices = await bankRepo.createConnection(
+      db,
+      alice,
+      newConnection({ itemId }),
+      KEYRING
+    );
+    const [before] = await db
+      .select()
+      .from(bankConnections)
+      .where(eq(bankConnections.id, alices.id));
+
+    const replaced = await bankRepo.replaceConnectionToken(db, bob, {
+      itemId,
+      accessToken: NEW_ACCESS_TOKEN,
+      keyring: KEYRING,
+    });
+
+    expect(replaced).toBeNull();
+    const [after] = await db
+      .select()
+      .from(bankConnections)
+      .where(eq(bankConnections.id, alices.id));
+    expect(after).toEqual(before);
+    // Alice's own token still opens with what she linked, not Bob's attempt.
+    await expect(
+      bankRepo.withAccessToken(db, alice, alices.id, KEYRING, async (t) => t)
+    ).resolves.toBe(ACCESS_TOKEN);
+  });
+
+  it('answers null for an item id nothing has linked, rather than throwing', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+
+    const replaced = await bankRepo.replaceConnectionToken(db, ownerId, {
+      itemId: 'item-nobody-has-linked',
+      accessToken: NEW_ACCESS_TOKEN,
+      keyring: KEYRING,
+    });
+
+    expect(replaced).toBeNull();
+  });
+});
+
+describeDb('bankRepo.markConnectionActive', () => {
+  it('activates the owner’s connection and clears its error', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const connection = await bankRepo.createConnection(db, ownerId, newConnection(), KEYRING);
+    await bankRepo.recordSyncError(db, ownerId, connection.id, {
+      code: 'ITEM_LOGIN_REQUIRED',
+      status: 'reauth_required',
+    });
+
+    const result = await bankRepo.markConnectionActive(db, ownerId, connection.id);
+
+    expect(result).toBe(true);
+    const after = await bankRepo.getConnection(db, ownerId, connection.id);
+    expect(after).toMatchObject({
+      status: 'active',
+      lastErrorCode: null,
+      lastErrorAt: null,
+    });
+  });
+
+  it('refuses to activate another owner’s connection', async () => {
+    const db = getDb();
+    const alice = await createOwner(db);
+    const bob = await createOwner(db);
+    const connection = await bankRepo.createConnection(db, alice, newConnection(), KEYRING);
+
+    expect(await bankRepo.markConnectionActive(db, bob, connection.id)).toBe(false);
+    expect((await bankRepo.getConnection(db, alice, connection.id))?.status).toBe('active');
+  });
+
+  it('answers false for a connection id that does not exist', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+
+    expect(await bankRepo.markConnectionActive(db, ownerId, crypto.randomUUID())).toBe(false);
+  });
+
+  it('refuses an id that is not a uuid rather than letting Postgres raise', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+
+    expect(await bankRepo.markConnectionActive(db, ownerId, 'conn-1')).toBe(false);
+  });
+});
