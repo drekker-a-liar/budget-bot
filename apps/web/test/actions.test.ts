@@ -604,6 +604,7 @@ describe('connecting a bank', () => {
     expect(bank.createLinkToken).toHaveBeenCalledWith({
       userId: 'user-1',
       redirectUri: 'https://app.example/plaid/oauth-return',
+      webhookUrl: 'https://app.example/api/webhooks/plaid',
     });
   });
 
@@ -615,6 +616,25 @@ describe('connecting a bank', () => {
     expect(bank.createLinkToken).toHaveBeenCalledWith(
       expect.objectContaining({ redirectUri: 'http://localhost:3000/plaid/oauth-return' })
     );
+  });
+
+  it('sends webhookUrl for an https origin, so Plaid has somewhere to post updates', async () => {
+    requestHeaders.current = { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'app.example' };
+
+    await createLinkTokenAction();
+
+    expect(bank.createLinkToken).toHaveBeenCalledWith(
+      expect.objectContaining({ webhookUrl: 'https://app.example/api/webhooks/plaid' })
+    );
+  });
+
+  it('sends no webhookUrl for a plain http origin - unreachable noise in Plaid’s dashboard', async () => {
+    requestHeaders.current = { host: 'localhost:3000' };
+
+    await createLinkTokenAction();
+
+    const [args] = bank.createLinkToken.mock.calls[0] as [{ webhookUrl?: string }];
+    expect(args.webhookUrl).toBeUndefined();
   });
 
   it('falls back to the deployment url when the request says nothing about itself', async () => {

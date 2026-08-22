@@ -44,6 +44,9 @@ const NOT_CONFIGURED = 'Plaid is not configured on this deployment';
 /** Where Plaid sends an OAuth bank's browser back to. Also `app/plaid/oauth-return`. */
 const OAUTH_RETURN_PATH = '/plaid/oauth-return';
 
+/** Where Plaid posts item updates. Also `app/api/webhooks/plaid/route.ts`. */
+const WEBHOOK_PATH = '/api/webhooks/plaid';
+
 /**
  * How many pages the sync that runs straight after Link may commit.
  *
@@ -118,9 +121,26 @@ function configuredOrigin(): string | null {
   }
 }
 
+async function currentOrigin(): Promise<string | null> {
+  return (await requestOrigin()) ?? configuredOrigin();
+}
+
 async function oauthReturnUri(): Promise<string | null> {
-  const origin = (await requestOrigin()) ?? configuredOrigin();
+  const origin = await currentOrigin();
   return origin === null ? null : `${origin}${OAUTH_RETURN_PATH}`;
+}
+
+/**
+ * Where Plaid should post item updates for this Link session, or `undefined`
+ * when there is nowhere reachable to send them.
+ *
+ * Only offered on an https origin: a local `next dev` run answers on
+ * `http://localhost:*`, and a webhook URL Plaid can never reach is not a
+ * feature - it is a permanently-failing row in Plaid's own dashboard for
+ * every developer who links a bank locally.
+ */
+function webhookUrlFor(origin: string): string | undefined {
+  return new URL(origin).protocol === 'https:' ? `${origin}${WEBHOOK_PATH}` : undefined;
 }
 
 /**
@@ -136,15 +156,19 @@ export async function createLinkTokenAction(): Promise<ActionResult<{ linkToken:
   const provider = getBankProvider();
   if (!provider) return failed(NOT_CONFIGURED);
 
-  const redirectUri = await oauthReturnUri();
-  if (!redirectUri) {
+  const origin = await currentOrigin();
+  if (!origin) {
     return failed(
       'This deployment does not know its own address, so Plaid cannot be told where to send you back. Set AUTH_URL.'
     );
   }
 
   try {
-    const { linkToken } = await provider.createLinkToken({ userId: ownerId, redirectUri });
+    const { linkToken } = await provider.createLinkToken({
+      userId: ownerId,
+      redirectUri: `${origin}${OAUTH_RETURN_PATH}`,
+      webhookUrl: webhookUrlFor(origin),
+    });
     return ok({ linkToken });
   } catch (error) {
     // The likeliest failure on a deployment's first run - a `redirect_uri` the
