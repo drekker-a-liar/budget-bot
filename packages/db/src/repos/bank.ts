@@ -412,6 +412,33 @@ export async function findConnectionByItemId(
   return row ?? null;
 }
 
+/** What the cron sync (spec §4) needs to reach a connection - nothing else. */
+export interface ActiveConnectionByOwner {
+  id: string;
+  ownerId: string;
+}
+
+/**
+ * Every connection with `status = 'active'`, across every owner.
+ *
+ * Cross-owner by design, the same way `findConnectionByItemId` is: the daily
+ * cron sync has no owner of its own to run as - it exists to catch up
+ * whatever the webhook path missed, for everyone (spec §4). The projection is
+ * narrower than `CONNECTION_COLUMNS` for the same reason it is there: the
+ * ciphertext column must never be one step away from a caller with no session
+ * to scope it. Token access for the connections this returns happens
+ * per-connection, through `withAccessToken`.
+ */
+export async function listActiveConnectionsAllOwners(
+  db: Executor
+): Promise<ActiveConnectionByOwner[]> {
+  return db
+    .select({ id: bankConnections.id, ownerId: bankConnections.ownerId })
+    .from(bankConnections)
+    .where(eq(bankConnections.status, 'active'))
+    .orderBy(asc(bankConnections.createdAt), asc(bankConnections.id));
+}
+
 /** Every connection the owner has linked, each with the accounts behind it. */
 export async function listConnections(
   db: Executor,

@@ -570,3 +570,32 @@ describeDb('bankRepo sync bookkeeping', () => {
     expect(after?.lastErrorAt).not.toBeNull();
   });
 });
+
+describeDb('bankRepo.listActiveConnectionsAllOwners', () => {
+  it('finds active connections across every owner, and never the ciphertext', async () => {
+    const db = getDb();
+    const alice = await createOwner(db);
+    const bob = await createOwner(db);
+    const alicesActive = await bankRepo.createConnection(db, alice, newConnection(), KEYRING);
+    const bobsActive = await bankRepo.createConnection(db, bob, newConnection(), KEYRING);
+    const bobsErrored = await bankRepo.createConnection(db, bob, newConnection(), KEYRING);
+    await bankRepo.recordSyncError(db, bob, bobsErrored.id, {
+      code: 'ITEM_LOGIN_REQUIRED',
+      status: 'error',
+    });
+
+    const rows = await bankRepo.listActiveConnectionsAllOwners(db);
+
+    expect(rows).toHaveLength(2);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        { id: alicesActive.id, ownerId: alice },
+        { id: bobsActive.id, ownerId: bob },
+      ])
+    );
+    expect(rows.some((row) => row.id === bobsErrored.id)).toBe(false);
+    for (const row of rows) {
+      expect(Object.keys(row).sort()).toEqual(['id', 'ownerId']);
+    }
+  });
+});

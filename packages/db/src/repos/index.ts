@@ -34,6 +34,7 @@ export type { ImportCsvBatch, ImportResult } from './imports';
 export type { NewLaborEntry } from './labor';
 export type { InvoiceUpdate, NewInvoice } from './invoices';
 export type {
+  ActiveConnectionByOwner,
   BankAccount,
   BankAccountInput,
   BankConnection,
