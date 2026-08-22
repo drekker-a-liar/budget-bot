@@ -64,6 +64,32 @@ export async function createImportBatch(
   return toImportBatch(row);
 }
 
+/**
+ * Corrects a batch's counts to what actually landed.
+ *
+ * `createImportBatch` is written before the rows, from a guess made off the
+ * parsed file alone - it cannot yet know which rows the cross-batch dedupe
+ * index (spec §7) will drop. `importCsvBatch` calls this in the same
+ * transaction once the insert has run, so the persisted batch never claims
+ * rows that were silently skipped as duplicates.
+ */
+export async function updateImportBatchCounts(
+  db: Executor,
+  id: string,
+  counts: { insertedCount: number; skippedCount: number }
+): Promise<ImportBatch> {
+  const [row] = await db
+    .update(importBatches)
+    .set({
+      insertedCount: counts.insertedCount,
+      skippedCount: counts.skippedCount,
+      updatedAt: new Date(),
+    })
+    .where(eq(importBatches.id, id))
+    .returning();
+  return toImportBatch(row);
+}
+
 /** Every import batch the owner has run, newest first - what an export reads (spec §6). */
 export async function listImportBatches(db: Executor, ownerId: string): Promise<ImportBatch[]> {
   const rows = await db
