@@ -24,9 +24,13 @@ import { currentOwnerId } from '@/lib/ownerSession';
  * narrower projection than the one the connections screen itself reads: no
  * ciphertext, no cursor, no item id, no encryption key id, and no id at all -
  * an export describes what is connected, not a handle back into this
- * database. `externalId` is stripped from every transaction for the same
- * reason: it is Plaid's id for that row, not this application's, and nothing
- * downstream of an export needs it back.
+ * database. `externalId` and `bankAccountId` are stripped from every
+ * transaction for the same reason: `externalId` is Plaid's id for that row,
+ * not this application's, and `bankAccountId` is a raw `bank_accounts.id`
+ * that nothing else in the file could ever correlate to - accounts carry no
+ * id in the export at all. Contrast `projectId`, which stays: it matches a
+ * `projects[].id` in the same document, so it is information the file
+ * actually holds together rather than a handle back into this database.
  *
  * Money stays a whole number of cents everywhere in this application (ADR
  * 0007); `units` says so once at the top rather than leaving a reader of the
@@ -56,9 +60,13 @@ export async function GET(): Promise<NextResponse> {
       exportedAt: exportedAt.toISOString(),
       units: 'cents',
       projects,
-      // `externalId` is Plaid's own id for the row, never this app's - kept
-      // out of the file the same way the connection's item id is.
-      transactions: transactions.map(({ externalId: _externalId, ...rest }) => rest),
+      // `externalId` is Plaid's own id for the row, never this app's, and
+      // `bankAccountId` is a database handle with nothing in the file to
+      // correlate it to - both kept out the same way the connection's item
+      // id is.
+      transactions: transactions.map(
+        ({ externalId: _externalId, bankAccountId: _bankAccountId, ...rest }) => rest
+      ),
       laborEntries,
       invoices,
       importBatches,

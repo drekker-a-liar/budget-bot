@@ -230,6 +230,10 @@ describeDb('GET /api/export', () => {
       'itemId',
       'encryptionKeyId',
       'externalId',
+      // A raw `bank_accounts.id` foreign key. Accounts carry no id in the
+      // export at all (spec §6), so this could never be correlated to
+      // anything else in the file - a database handle with no purpose here.
+      'bankAccountId',
     ]) {
       expect(keys.has(forbidden)).toBe(false);
     }

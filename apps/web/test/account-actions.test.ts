@@ -227,6 +227,42 @@ describeDb('deleteAllDataAction', () => {
     });
   });
 
+  it('still deletes everything, including a connection, on a deployment with no bank provider configured', async () => {
+    // The deliberate divergence from disconnectConnectionAction/syncNowAction,
+    // which both refuse outright with no provider (spec §6): an owner should
+    // still be able to delete everything on a deployment that has never had
+    // Plaid credentials, or has since had them removed. The connection row
+    // still gets deleted below - `removeItem` is simply never asked, because
+    // there is no provider to ask it of.
+    providerRef.current = null;
+    const alice = await createOwner(db);
+    await seedOneOfEverything(db, alice, 'Alice');
+
+    signInAs(alice);
+    const result = await deleteAllDataAction();
+
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        connections: 1,
+        transactions: 1,
+        laborEntries: 1,
+        invoices: 1,
+        importBatches: 1,
+        projects: 1,
+      },
+    });
+    expect(removeItem.fn).not.toHaveBeenCalled();
+    expect(await tableCounts(db, alice)).toEqual({
+      connections: 0,
+      transactions: 0,
+      laborEntries: 0,
+      invoices: 0,
+      importBatches: 0,
+      projects: 0,
+    });
+  });
+
   it('reports zeroes for an owner with nothing to delete, rather than failing', async () => {
     const alice = await createOwner(db);
     signInAs(alice);
