@@ -3,8 +3,9 @@ import tseslint from "typescript-eslint";
 
 /**
  * Shared flat-config base for @budget-bot packages that lint with plain
- * `eslint`. apps/web stays on Next 14's `next lint`, which still wants the
- * legacy eslintrc format, so it keeps its own .eslintrc.json.
+ * `eslint`. apps/web needs eslint-config-next's rule set instead (react,
+ * react-hooks, jsx-a11y, @next/next), which it gets via its own
+ * eslint.config.mjs and @eslint/eslintrc's FlatCompat rather than this base.
  */
 export default [
   {
