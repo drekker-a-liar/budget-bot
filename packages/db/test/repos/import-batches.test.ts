@@ -277,6 +277,48 @@ describeDb('import batches', () => {
     expect(rows.map((row) => row.provider).sort()).toEqual(['csv', 'plaid']);
   });
 
+  it('leaves bulkCreateImported itself inert for a non-csv provenance, even sharing an owner and external id', async () => {
+    // The coexistence test above proves the *index* is provider-scoped by
+    // going through upsertFromBank, a different write path. This exercises
+    // the claim the report disclosed as unpinned: bulkCreateImported's own
+    // ON CONFLICT arbiter is inert once provenance.provider isn't 'csv',
+    // because a row with a different provider is outside the partial
+    // index's predicate and can never be its conflict target.
+    const batch = await importBatchesRepo.createImportBatch(getDb(), ownerId, {
+      source: 'csv',
+      filename: 'first.csv',
+      rowCount: 1,
+      insertedCount: 1,
+      skippedCount: 0,
+    });
+    await transactionsRepo.bulkCreateImported(getDb(), ownerId, [csvRow()], {
+      source: 'csv',
+      provider: 'csv',
+      importBatchId: batch.id,
+    });
+
+    const otherBatch = await importBatchesRepo.createImportBatch(getDb(), ownerId, {
+      source: 'plaid',
+      filename: null,
+      rowCount: 1,
+      insertedCount: 1,
+      skippedCount: 0,
+    });
+    const landed = await transactionsRepo.bulkCreateImported(getDb(), ownerId, [csvRow()], {
+      source: 'plaid',
+      provider: 'plaid',
+      importBatchId: otherBatch.id,
+    });
+
+    expect(landed).toHaveLength(1);
+    const rows = await getDb()
+      .select()
+      .from(transactions)
+      .where(and(eq(transactions.ownerId, ownerId), eq(transactions.externalId, 'external-1')));
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.provider).sort()).toEqual(['csv', 'plaid']);
+  });
+
   it('imports the rows that are new and skips only the ones that repeat', async () => {
     const first = await importBatchesRepo.createImportBatch(getDb(), ownerId, {
       source: 'csv',

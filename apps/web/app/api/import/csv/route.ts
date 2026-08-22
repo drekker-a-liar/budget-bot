@@ -39,9 +39,13 @@ import { currentOwnerId } from '@/lib/ownerSession';
  * Phase 2, so every upload shares one synthetic id: enough to scope the
  * `externalId` hash, honest about the fact that nothing real is behind it.
  *
- * The consequence is that rows dedupe *within* a file but not across uploads -
- * `bank_account_id` is null, and Postgres counts null as distinct in the
- * partial unique index. Cross-batch dedupe arrives with real bank accounts.
+ * Cross-batch dedupe (spec §7) does *not* come from this id - `bank_account_id`
+ * stays null for every CSV row, and Postgres counts null as distinct in the
+ * sync upsert index, so two null-account rows never conflict there regardless
+ * of what `CSV_ACCOUNT` says. The fix is a second index,
+ * `transactions_owner_csv_external_key`, scoped by owner and
+ * `provider = 'csv'` instead - the spec's ruling explicitly supersedes the
+ * idea of inventing a synthetic bank account to carry this scope.
  */
 const CSV_ACCOUNT = 'csv-upload';
 
