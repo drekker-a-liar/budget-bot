@@ -72,9 +72,15 @@ export function useTransactionInboxActions(): TransactionInboxActions {
           return;
         }
         if (result.skipped > 0) {
+          // `skipped` can now exceed `errors.length` (spec §7): a row that
+          // parsed fine is still skipped when it repeats an earlier import,
+          // and that has no line or reason to report - only a parse failure
+          // does. `first` is undefined exactly in the all-duplicates case.
           const [first] = result.errors as Array<{ line: number; reason: string }>;
           setError(
-            `Imported ${result.inserted}, skipped ${result.skipped}. Line ${first.line}: ${first.reason}`
+            first
+              ? `Imported ${result.inserted}, skipped ${result.skipped}. Line ${first.line}: ${first.reason}`
+              : `Imported ${result.inserted}, skipped ${result.skipped} - already imported.`
           );
         }
         router.refresh();
