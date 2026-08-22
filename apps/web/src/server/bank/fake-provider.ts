@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type {
   BankProvider,
   CreateLinkTokenArgs,
@@ -8,9 +9,25 @@ import type {
   SyncResult,
   WebhookEvent,
 } from '@budget-bot/bank-connectors';
-import { NotSupportedError } from '@budget-bot/bank-connectors';
+import { WebhookVerificationError } from '@budget-bot/bank-connectors';
 import type { Cents } from '@budget-bot/core';
 import type { RawEnv } from '@/src/env';
+
+/** The header the fake signs a webhook envelope with (mirrors Plaid's own). */
+const FAKE_WEBHOOK_HEADER = 'fake-verification';
+
+/** A header, found by name without regard to case - Plaid's is the same. */
+function headerValue(headers: Record<string, string>, name: string): string | undefined {
+  const lower = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === lower) return value;
+  }
+  return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 
 /**
  * A bank that does what the script says.
@@ -186,12 +203,38 @@ export class FakeBankProvider implements BankProvider {
     this.#checkToken(accessToken);
   }
 
-  /** Phase 3, and not for a fake even then. */
+  /**
+   * The E2E door's stand-in for Plaid's signature (spec §2): no JWT, no key
+   * server, just a header that has to equal `sha256(rawBody)` hex. It exists
+   * so the e2e journey can drive the webhook -> sync path with no Plaid
+   * account behind it, while still exercising the same shape of check -
+   * reject unless the caller proves it has the exact bytes that were sent.
+   */
   async verifyAndParseWebhook(
-    _rawBody: string,
-    _headers: Record<string, string>
+    rawBody: string,
+    headers: Record<string, string>
   ): Promise<WebhookEvent> {
-    throw new NotSupportedError('FakeBankProvider', 'verifyAndParseWebhook');
+    const bodyHash = createHash('sha256').update(rawBody).digest('hex');
+    const provided = headerValue(headers, FAKE_WEBHOOK_HEADER);
+    if (provided !== bodyHash) {
+      throw new WebhookVerificationError('fake-verification header did not match the body');
+    }
+
+    let payload: unknown;
+    try {
+      payload = JSON.parse(rawBody);
+    } catch {
+      throw new WebhookVerificationError('invalid json body');
+    }
+
+    const body = isRecord(payload) ? payload : {};
+    return {
+      type: typeof body.webhook_type === 'string' ? body.webhook_type : '',
+      code: typeof body.webhook_code === 'string' ? body.webhook_code : null,
+      itemId: typeof body.item_id === 'string' ? body.item_id : null,
+      bodyHash,
+      payload,
+    };
   }
 }
 
