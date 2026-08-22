@@ -116,6 +116,21 @@ function headers(jwt: string, name = 'plaid-verification'): Record<string, strin
   return { [name]: jwt };
 }
 
+/**
+ * A validly-signed ES256 JWT with an arbitrary payload - for the two claim
+ * shapes `signWebhookJwt` cannot produce: a missing `request_body_sha256` and
+ * a non-string one. Both have to be rejected *after* the signature checks
+ * out, which is exactly what a hand-built payload proves: the claim, not the
+ * signature, is what's wrong.
+ */
+async function signWithPayload(
+  payload: Record<string, unknown>,
+  options: { kid?: string; iat?: number } = {}
+): Promise<string> {
+  const { kid = KID, iat = Math.floor(Date.now() / 1000) } = options;
+  return new SignJWT(payload).setProtectedHeader({ alg: 'ES256', kid }).setIssuedAt(iat).sign(privateKey);
+}
+
 describe('verifyAndParseWebhook', () => {
   it('verifies a real ES256 webhook and returns its parsed event', async () => {
     const rawBody = JSON.stringify({
@@ -211,6 +226,59 @@ describe('verifyAndParseWebhook', () => {
     await expect(
       new PlaidProvider({ client }).verifyAndParseWebhook(rawBody, headers(jwt))
     ).resolves.toBeDefined();
+  });
+
+  /**
+   * The staleness check alone only bounds the past: an `iat` dated far into
+   * the future is never ">" 300 seconds old, so it would pass forever - the
+   * exact scenario a freshness check exists to catch (spec §2's "within the
+   * last 5 minutes" means a *window*, not just a floor). A 30-second skew
+   * allowance keeps a legitimately slow clock from being refused.
+   */
+  it('rejects an iat 31 seconds in the future', async () => {
+    const rawBody = '{}';
+    const client = fakeClient();
+    const jwt = await signWebhookJwt({
+      rawBody,
+      iat: Math.floor(Date.now() / 1000) + 31,
+    });
+
+    await expect(
+      new PlaidProvider({ client }).verifyAndParseWebhook(rawBody, headers(jwt))
+    ).rejects.toBeInstanceOf(WebhookVerificationError);
+  });
+
+  it('accepts an iat 29 seconds in the future, as clock skew', async () => {
+    const rawBody = '{}';
+    const client = fakeClient();
+    const jwt = await signWebhookJwt({
+      rawBody,
+      iat: Math.floor(Date.now() / 1000) + 29,
+    });
+
+    await expect(
+      new PlaidProvider({ client }).verifyAndParseWebhook(rawBody, headers(jwt))
+    ).resolves.toBeDefined();
+  });
+
+  it('rejects a validly-signed JWT with no request_body_sha256 claim at all', async () => {
+    const rawBody = '{}';
+    const client = fakeClient();
+    const jwt = await signWithPayload({});
+
+    await expect(
+      new PlaidProvider({ client }).verifyAndParseWebhook(rawBody, headers(jwt))
+    ).rejects.toBeInstanceOf(WebhookVerificationError);
+  });
+
+  it('rejects a validly-signed JWT whose request_body_sha256 claim is not a string', async () => {
+    const rawBody = '{}';
+    const client = fakeClient();
+    const jwt = await signWithPayload({ request_body_sha256: 12345 });
+
+    await expect(
+      new PlaidProvider({ client }).verifyAndParseWebhook(rawBody, headers(jwt))
+    ).rejects.toBeInstanceOf(WebhookVerificationError);
   });
 
   it('rejects a body hash claim that does not match the bytes that arrived', async () => {

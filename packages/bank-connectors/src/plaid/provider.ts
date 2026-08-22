@@ -70,6 +70,17 @@ const PAGE_SIZE = 500;
 /** How old a webhook's `iat` may be before it is refused as stale (spec §2). */
 const WEBHOOK_MAX_AGE_SECONDS = 300;
 
+/**
+ * How far into the future a webhook's `iat` may be before it is refused.
+ *
+ * "Within the last 5 minutes" is a window, not just a floor: a staleness
+ * check that only bounds the past accepts an arbitrarily-future `iat`
+ * forever, which is exactly the case a freshness check exists to catch (a
+ * signing key that should still expire on a schedule). This allowance exists
+ * only so a legitimately slow clock is not refused.
+ */
+const WEBHOOK_MAX_CLOCK_SKEW_SECONDS = 30;
+
 /** The header Plaid signs a webhook envelope with. */
 const WEBHOOK_SIGNATURE_HEADER = 'plaid-verification';
 
@@ -376,8 +387,12 @@ export class PlaidProvider implements BankProvider {
     if (typeof iat !== 'number') {
       throw new WebhookVerificationError('missing iat');
     }
-    if (Date.now() / 1000 - iat > WEBHOOK_MAX_AGE_SECONDS) {
+    const ageSeconds = Date.now() / 1000 - iat;
+    if (ageSeconds > WEBHOOK_MAX_AGE_SECONDS) {
       throw new WebhookVerificationError('stale iat');
+    }
+    if (-ageSeconds > WEBHOOK_MAX_CLOCK_SKEW_SECONDS) {
+      throw new WebhookVerificationError('iat in the future');
     }
 
     if (typeof requestBodySha256 !== 'string') {
