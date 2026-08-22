@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
 import { E2E_EMAIL, runDbScript } from './environment';
 
@@ -54,6 +54,22 @@ const FAKE_BANK = {
  * for this run's connection to resolve.
  */
 const FAKE_ITEM_ID = 'item-fake';
+
+/**
+ * One value per invocation of this suite, folded into every webhook body it
+ * sends. `webhook_events.body_hash` carries a table-wide unique constraint,
+ * and `db:seed --reset` only clears the owner's own domain tables - it has no
+ * owner to scope a webhook ledger row to before the item is resolved, so a
+ * row this suite inserted on a previous run against the same database
+ * outlives the reset. A static body would make its second post of a run
+ * collide with the first run's row and read back `duplicate:true` where this
+ * run expects `true` - not a hazard the door needs to guard against, since a
+ * real Plaid webhook body is never byte-identical across two calendar days
+ * anyway. The nonce is never read by the route's own dispatch (`type`/`code`/
+ * `item_id`/`error.error_code` are the only fields it looks at); it exists
+ * purely to make this run's hash this run's own.
+ */
+const RUN_NONCE = randomUUID();
 
 /** One connection, as `/api/export` (spec §6) is willing to describe it. */
 interface ExportConnection {
@@ -289,6 +305,7 @@ test.describe.serial('signed in through the test-only door', () => {
       webhook_type: 'TRANSACTIONS',
       webhook_code: 'SYNC_UPDATES_AVAILABLE',
       item_id: FAKE_ITEM_ID,
+      nonce: RUN_NONCE,
     });
     const response = await postFakeWebhook(page, lastSyncWebhookBody);
 
@@ -337,6 +354,7 @@ test.describe.serial('signed in through the test-only door', () => {
       webhook_code: 'ERROR',
       item_id: FAKE_ITEM_ID,
       error: { error_code: 'ITEM_LOGIN_REQUIRED' },
+      nonce: RUN_NONCE,
     });
     const response = await postFakeWebhook(page, rawBody);
 
