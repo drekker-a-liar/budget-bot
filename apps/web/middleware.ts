@@ -52,5 +52,5 @@ export function middleware(request: NextRequest): NextResponse {
 export const config = {
   // Kept in step with lib/publicPaths.ts by test/middleware.test.ts: Next
   // parses this file at build time and cannot follow an import to get here.
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/auth|api/webhooks/plaid|api/health|privacy|login).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/auth|api/webhooks/plaid|api/internal/sync|api/health|privacy|login).*)'],
 };
