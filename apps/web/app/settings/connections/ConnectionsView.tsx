@@ -9,6 +9,7 @@ import { syncNowAction } from '@/src/server/actions/bank';
 import type { RunSyncResult } from '@/src/server/bank/sync';
 import type { ConnectionView } from '@/src/server/queries/connections';
 import { ConnectBankButton, UNREACHABLE } from './ConnectBankButton';
+import { ReconnectButton } from './ReconnectButton';
 
 /**
  * The interactive half of `/settings/connections`.
@@ -78,6 +79,26 @@ function statusOf(connection: ConnectionView): { label: string; className: strin
     };
   }
   return { label: 'Connected', className: 'badge-healthy' };
+}
+
+/** A connection Link's update mode, or a re-link, can bring back to healthy. */
+function needsReconnect(connection: ConnectionView): boolean {
+  return connection.status === 'reauth_required' || connection.status === 'error';
+}
+
+/**
+ * What a reader is told about a broken connection, derived from the code
+ * `recordSyncError` stored - never from a provider's own message, which is
+ * never stored at all (Task 2's ruling, spec §9).
+ */
+function reauthMessage(code: string | null): string {
+  if (code === 'ITEM_LOGIN_REQUIRED' || code === 'PENDING_EXPIRATION') {
+    return 'This bank needs you to sign in again.';
+  }
+  if (code === 'USER_PERMISSION_REVOKED') {
+    return 'Access was revoked at the bank.';
+  }
+  return 'This connection hit a problem syncing.';
 }
 
 function describeSync(result: RunSyncResult): string {
@@ -245,6 +266,29 @@ export function ConnectionsView({
                     >
                       {message.message}
                     </p>
+                  )}
+
+                  {needsReconnect(connection) && (
+                    <div
+                      style={{
+                        marginTop: '0.75rem',
+                        padding: '0.6rem 0.75rem',
+                        borderRadius: '6px',
+                        border: '1px solid var(--severity-critical)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '0.75rem',
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <span role="alert" style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                        {reauthMessage(connection.lastErrorCode)}
+                      </span>
+                      {configured && kind && (
+                        <ReconnectButton kind={kind} connectionId={connection.id} />
+                      )}
+                    </div>
                   )}
 
                   <table className="swiss-table" style={{ marginTop: '0.9rem' }}>
