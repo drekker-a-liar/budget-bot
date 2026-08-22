@@ -9,6 +9,7 @@ import { syncNowAction } from '@/src/server/actions/bank';
 import type { RunSyncResult } from '@/src/server/bank/sync';
 import type { ConnectionView } from '@/src/server/queries/connections';
 import { ConnectBankButton, UNREACHABLE } from './ConnectBankButton';
+import { DisconnectButton } from './DisconnectButton';
 import { ReconnectButton } from './ReconnectButton';
 
 /**
@@ -244,15 +245,18 @@ export function ConnectionsView({
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => sync(connection.id)}
-                      disabled={pending}
-                      className="btn-secondary"
-                      style={{ padding: '0.4rem 0.75rem', fontSize: '0.78rem' }}
-                    >
-                      <RefreshCw size={13} />
-                      <span>{syncing === connection.id ? 'Syncing…' : 'Sync now'}</span>
-                    </button>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <button
+                        onClick={() => sync(connection.id)}
+                        disabled={pending}
+                        className="btn-secondary"
+                        style={{ padding: '0.4rem 0.75rem', fontSize: '0.78rem' }}
+                      >
+                        <RefreshCw size={13} />
+                        <span>{syncing === connection.id ? 'Syncing…' : 'Sync now'}</span>
+                      </button>
+                      <DisconnectButton connectionId={connection.id} />
+                    </div>
                   </div>
 
                   {message && (

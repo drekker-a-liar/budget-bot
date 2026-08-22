@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mockNextNavigation, refused, router } from '@/test/helpers/islands';
@@ -29,9 +29,12 @@ vi.mock('@/src/server/actions/bank', () => ({
     ok: true as const,
     data: { added: 0, modified: 0, removed: 0, pages: 0, hasMore: false },
   })),
+  disconnectConnectionAction: vi.fn(async () => ({ ok: true as const, data: { removed: true } })),
 }));
 
-const { syncNowAction, markReconnectedAction } = await import('@/src/server/actions/bank');
+const { syncNowAction, markReconnectedAction, disconnectConnectionAction } = await import(
+  '@/src/server/actions/bank'
+);
 const { ConnectionsView } = await import('./ConnectionsView');
 
 /**
@@ -314,6 +317,43 @@ describe('syncing on demand', () => {
     // And it says nothing about what: the component does not know, and the
     // thrown message is not a sentence anybody wrote for a screen.
     expect(screen.getByRole('alert')).not.toHaveTextContent('the deployment went away');
+  });
+});
+
+/**
+ * Disconnecting a bank (spec §6). `DisconnectButton` has its own thorough
+ * suite for the confirm gate itself; what belongs here is only the wiring -
+ * one control per connection, aimed at the right id.
+ */
+describe('disconnecting a bank', () => {
+  it('offers a way to disconnect every connection, not only the unhealthy ones', () => {
+    renderView({ connections: [aConnection({ status: 'active' })] });
+
+    expect(screen.getByRole('button', { name: /disconnect/i })).toBeInTheDocument();
+  });
+
+  it('disconnects the connection whose control was used, on a screen with more than one', async () => {
+    renderView({ connections: [aConnection(), aConnection({ id: 'conn-2', accounts: [] })] });
+
+    await userEvent.click(screen.getAllByRole('button', { name: /disconnect/i })[1]);
+    await userEvent.type(screen.getByLabelText(/type.*disconnect/i), 'disconnect');
+    // The first connection's own trigger, still unopened, is also a button
+    // named exactly "Disconnect" — the confirmed one is the last, since the
+    // second connection's card renders after the first's.
+    const confirmButtons = screen.getAllByRole('button', { name: /^disconnect$/i });
+    await userEvent.click(confirmButtons[confirmButtons.length - 1]);
+
+    expect(disconnectConnectionAction).toHaveBeenCalledWith({ connectionId: 'conn-2' });
+  });
+
+  it('re-reads the page once the connection is gone', async () => {
+    renderView();
+
+    await userEvent.click(screen.getByRole('button', { name: /disconnect/i }));
+    await userEvent.type(screen.getByLabelText(/type.*disconnect/i), 'disconnect');
+    await userEvent.click(screen.getByRole('button', { name: /^disconnect$/i }));
+
+    await waitFor(() => expect(router.refresh).toHaveBeenCalled());
   });
 });
 
