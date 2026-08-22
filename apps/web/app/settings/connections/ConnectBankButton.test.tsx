@@ -2,7 +2,7 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { LINK_TOKEN_KEY } from '@/lib/plaidLink';
+import { LINK_TOKEN_KEY, REAUTH_CONNECTION_KEY } from '@/lib/plaidLink';
 import { mockNextNavigation, refused, router } from '@/test/helpers/islands';
 
 /**
@@ -113,6 +113,22 @@ describe('a real bank, through Plaid Link', () => {
     // Stashed because an OAuth bank takes the browser away and sends it back
     // to a fresh page load, where this component's state no longer exists.
     expect(window.sessionStorage.getItem(LINK_TOKEN_KEY)).toBe('link-sandbox-1');
+  });
+
+  it('clears a stale reconnect stash rather than letting it hijack a fresh connect', async () => {
+    // An abandoned reconnect - the user navigated away before Link's onExit
+    // ever fired - can leave `REAUTH_CONNECTION_KEY` behind. Left in place,
+    // an OAuth bank taken through *this* brand-new connect would come back to
+    // `/plaid/oauth-return` and be read as resuming that old reconnect:
+    // `markReconnectedAction` on somebody else's connection instead of
+    // exchanging the public token this flow actually produced.
+    window.sessionStorage.setItem(REAUTH_CONNECTION_KEY, 'conn-abandoned');
+    render(<ConnectBankButton kind="plaid" />);
+
+    await clickConnect();
+    await waitFor(() => expect(link.open).toHaveBeenCalled());
+
+    expect(window.sessionStorage.getItem(REAUTH_CONNECTION_KEY)).toBeNull();
   });
 
   it('exchanges the public token Link hands back, and clears the stash', async () => {

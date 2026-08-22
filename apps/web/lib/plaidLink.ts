@@ -31,9 +31,24 @@ export const LINK_TOKEN_KEY = 'plaid_link_token';
  */
 export const SCRIPTED_PUBLIC_TOKEN = 'public-fake';
 
+/**
+ * Stashes a fresh Link token, and disowns any reconnect this tab was in the
+ * middle of.
+ *
+ * `REAUTH_CONNECTION_KEY` only means anything alongside a token that opened
+ * *for* a reconnect (`ReconnectButton` sets both together, in that order) -
+ * so a token stashed here, for an ordinary connect, must not leave a stale
+ * one behind. Left in place, an OAuth bank taken through this brand-new
+ * connect would come back to `/plaid/oauth-return` and be misread as
+ * resuming that old reconnect instead of exchanging the public token this
+ * flow actually produces. Called before `rememberReauthConnection` in
+ * `ReconnectButton`'s own flow, so it clears nothing that call is about to
+ * set right back.
+ */
 export function rememberLinkToken(token: string): void {
   try {
     window.sessionStorage.setItem(LINK_TOKEN_KEY, token);
+    window.sessionStorage.removeItem(REAUTH_CONNECTION_KEY);
   } catch {
     // Storage is unavailable. Link still opens in this tab; only an OAuth
     // bank's round trip is lost, and that is better than failing here.
