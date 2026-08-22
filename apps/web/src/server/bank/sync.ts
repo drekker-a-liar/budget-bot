@@ -356,8 +356,14 @@ export async function runSync(
   const maxPages = deps.maxPages ?? Number.POSITIVE_INFINITY;
   const maxRestarts = deps.maxRestarts ?? DEFAULT_MAX_RESTARTS;
 
-  const totals: SyncOutcome = { added: 0, modified: 0, removed: 0, pages: 0, hasMore: false };
-  let unknownAccount = 0;
+  const totals: SyncOutcome = {
+    added: 0,
+    modified: 0,
+    removed: 0,
+    pages: 0,
+    hasMore: false,
+    unknownAccountCount: 0,
+  };
   let restarts = 0;
 
   while (totals.pages < maxPages) {
@@ -401,7 +407,7 @@ export async function runSync(
     totals.removed += page.removed;
     totals.pages += 1;
     totals.hasMore = page.hasMore;
-    unknownAccount += page.unknownAccount;
+    totals.unknownAccountCount += page.unknownAccount;
 
     if (!page.hasMore) break;
     if (page.nextCursor === null) {
@@ -419,7 +425,7 @@ export async function runSync(
   // `last_synced_at` should say so, but a page that named an account this
   // connection does not have dropped transactions on the floor, and the
   // connection is the only place that can tell anyone.
-  if (unknownAccount > 0) {
+  if (totals.unknownAccountCount > 0) {
     await bankRepo.recordSyncError(db, ownerId, connectionId, {
       code: UNKNOWN_ACCOUNT,
       status: 'error',

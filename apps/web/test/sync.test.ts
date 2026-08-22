@@ -304,6 +304,7 @@ describeDb('runSync', () => {
       removed: 0,
       pages: 1,
       hasMore: true,
+      unknownAccountCount: 0,
       retryAfterSeconds: 42,
     });
     expect(await cursorOf()).toBe('cursor-1');
@@ -535,7 +536,14 @@ describeDb('runSync', () => {
 
     const out = await sync({ pages: threePages() }).run();
 
-    expect(out).toEqual({ added: 3, modified: 0, removed: 0, pages: 1, hasMore: true });
+    expect(out).toEqual({
+      added: 3,
+      modified: 0,
+      removed: 0,
+      pages: 1,
+      hasMore: true,
+      unknownAccountCount: 0,
+    });
     expect(await cursorOf()).toBe('cursor-1');
     expect(await transactionsRepo.listTransactions(db, ownerId)).toHaveLength(3);
   });
@@ -567,8 +575,10 @@ describeDb('runSync', () => {
 
     // The page still lands - one dropped row is not a reason to lose the other
     // - but the connection carries the code, because a transaction that never
-    // arrived is one the owner would otherwise never know to look for.
-    expect(out).toMatchObject({ added: 1, pages: 1 });
+    // arrived is one the owner would otherwise never know to look for. The
+    // count itself is transient: it rides back on the result for the caller
+    // to show, but is not what `recordSyncResult` persists.
+    expect(out).toMatchObject({ added: 1, pages: 1, unknownAccountCount: 1 });
     const after = await reload();
     expect(after.lastErrorCode).toBe(UNKNOWN_ACCOUNT);
     expect(after.lastSyncedAt).not.toBeNull();

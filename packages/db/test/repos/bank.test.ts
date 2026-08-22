@@ -541,6 +541,7 @@ describeDb('bankRepo sync bookkeeping', () => {
       removed: 1,
       pages: 2,
       hasMore: false,
+      unknownAccountCount: 0,
     });
 
     const after = await bankRepo.getConnection(db, ownerId, connection.id);

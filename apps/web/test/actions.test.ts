@@ -58,6 +58,7 @@ const bank = vi.hoisted(() => ({
       removed: 0,
       pages: 1,
       hasMore: false,
+      unknownAccountCount: 0,
     })
   ),
 }));
@@ -663,7 +664,14 @@ describe('exchanging the public token', () => {
       data: {
         connectionId: 'conn-1',
         accounts: 2,
-        firstSync: { added: 2, modified: 0, removed: 0, pages: 1, hasMore: false },
+        firstSync: {
+          added: 2,
+          modified: 0,
+          removed: 0,
+          pages: 1,
+          hasMore: false,
+          unknownAccountCount: 0,
+        },
       },
     });
     expect(repos.createConnection).toHaveBeenCalledWith(
@@ -799,7 +807,7 @@ describe('syncing on demand', () => {
 
     expect(result).toEqual({
       ok: true,
-      data: { added: 2, modified: 0, removed: 0, pages: 1, hasMore: false },
+      data: { added: 2, modified: 0, removed: 0, pages: 1, hasMore: false, unknownAccountCount: 0 },
     });
   });
 
@@ -813,6 +821,7 @@ describe('syncing on demand', () => {
       removed: 0,
       pages: 2,
       hasMore: true,
+      unknownAccountCount: 0,
       retryAfterSeconds: 45,
     });
 

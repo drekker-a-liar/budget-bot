@@ -204,6 +204,14 @@ export interface SyncOutcome {
   removed: number;
   pages: number;
   hasMore: boolean;
+  /**
+   * Rows a page named an account for that this connection does not have.
+   * Transient like the rest of this type - `recordSyncResult` does not store
+   * it - because the durable trace of it is the `UNKNOWN_ACCOUNT` code
+   * `runSync` records on the connection, not a count that would go stale the
+   * moment the next sync ran.
+   */
+  unknownAccountCount: number;
 }
 
 export interface SyncFailure {
