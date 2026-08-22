@@ -104,6 +104,18 @@ export const transactions = pgTable(
     uniqueIndex('transactions_provider_account_external_key')
       .on(table.provider, table.bankAccountId, table.externalId)
       .where(sql`"external_id" IS NOT NULL`),
+    /**
+     * Cross-batch CSV dedupe (spec §7). A CSV row's `bank_account_id` is
+     * always null - a file is not a linked account - and the index above
+     * never conflicts when it is: SQL counts null as distinct from null, so
+     * re-importing the same statement duplicated every row instead of
+     * skipping them. This index is owner-scoped rather than keyed off a
+     * synthetic account, per the ruling that a dummy connection row invented
+     * only to satisfy a NOT NULL is worse than a second, narrower index.
+     */
+    uniqueIndex('transactions_owner_csv_external_key')
+      .on(table.ownerId, table.externalId)
+      .where(sql`"provider" = 'csv' AND "external_id" IS NOT NULL`),
     index('transactions_owner_date_idx').on(table.ownerId, table.date),
     index('transactions_owner_project_idx').on(table.ownerId, table.projectId),
     /** The inbox reads only unassigned rows, so only those are worth indexing. */
