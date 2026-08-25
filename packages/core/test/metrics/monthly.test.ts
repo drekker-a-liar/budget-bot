@@ -272,4 +272,20 @@ describe('calculateMonthlyMargins', () => {
     expect(result[0].cogs.materials).toBe(7_500);
     expect(result[0].counts.transactions).toBe(1);
   });
+
+  it('excludes a transaction dated the day after range.end', () => {
+    const result = calculateMonthlyMargins({
+      invoices: [],
+      transactions: [
+        expense(75, '2026-01-15', { category: 'materials' }),
+        expense(50, '2026-01-16', { category: 'materials' }),
+      ],
+      laborEntries: [],
+      range: { start: '2026-01-01', end: '2026-01-15' },
+      timeZone: 'UTC',
+    });
+
+    expect(result[0].cogs.materials).toBe(7_500);
+    expect(result[0].counts.transactions).toBe(1);
+  });
 });
