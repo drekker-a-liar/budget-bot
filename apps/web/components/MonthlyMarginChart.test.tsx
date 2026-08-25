@@ -230,4 +230,33 @@ describe('MonthlyMarginChart', () => {
       expect(path?.getAttribute('d')).toBeTruthy();
     });
   });
+
+  describe('current month to date', () => {
+    it('hatches only the last month - the one standing in for MTD', () => {
+      const { container } = render(<MonthlyMarginChart months={MONTHS} />);
+
+      const hatched = container.querySelectorAll('.mtd-hatch');
+      expect(hatched).toHaveLength(1);
+      expect(hatched[0].getAttribute('data-month')).toBe('2026-08');
+    });
+
+    it('labels only the last month "MTD"', () => {
+      render(<MonthlyMarginChart months={MONTHS} />);
+
+      expect(screen.getAllByText('MTD')).toHaveLength(1);
+    });
+  });
+
+  describe('reference lines', () => {
+    it('draws dashed lines at 45% and 25% on the percentage axis', () => {
+      const { container } = render(<MonthlyMarginChart months={MONTHS} />);
+
+      const lines = container.querySelectorAll('.margin-reference-line');
+      const values = Array.from(lines).map((line) => line.getAttribute('data-value'));
+      expect(values.sort()).toEqual(['25', '45']);
+      lines.forEach((line) => {
+        expect(line.getAttribute('stroke-dasharray')).toBeTruthy();
+      });
+    });
+  });
 });

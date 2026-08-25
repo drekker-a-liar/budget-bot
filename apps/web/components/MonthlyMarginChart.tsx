@@ -3,7 +3,7 @@
 import React from 'react';
 import { scaleBand, scaleLinear } from 'd3-scale';
 import { curveMonotoneX, line as d3Line } from 'd3-shape';
-import { formatCents, type MonthlyMargin, type SeverityLevel } from '@budget-bot/core';
+import { formatCents, THRESHOLDS, type MonthlyMargin, type SeverityLevel } from '@budget-bot/core';
 
 /**
  * Trailing-12-month gross margin, cash basis, as a hand-rolled SVG (spec §4:
@@ -49,6 +49,9 @@ function severityFill(severity: SeverityLevel | 'none'): string {
 }
 
 export function MonthlyMarginChart({ months, caption = DEFAULT_CAPTION }: MonthlyMarginChartProps) {
+  // Scoped per instance so two charts on one page never share a pattern id.
+  const hatchId = `mtd-hatch-${React.useId()}`;
+
   // Nothing to draw a shape from is not the same as a zero chart: a bar at
   // 0% height reads as "we checked and there is nothing", a blank card reads
   // as "we forgot to check". Say which one this is.
@@ -97,11 +100,42 @@ export function MonthlyMarginChart({ months, caption = DEFAULT_CAPTION }: Monthl
 
     chart = (
       <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" width="100%">
+        <defs>
+          {/* The current month reads as still-in-progress, not just another
+              bar: a diagonal hatch over its severity fill, on top of the
+              solid colour rather than instead of it. */}
+          <pattern id={hatchId} width={6} height={6} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1={0} y1={0} x2={0} y2={6} stroke="var(--bg-panel)" strokeWidth={3} />
+          </pattern>
+        </defs>
+
         <g transform={`translate(${PLOT_MARGIN.left}, ${PLOT_MARGIN.top})`}>
-          {months.map((month) => {
+          <line
+            className="margin-reference-line"
+            data-value="45"
+            x1={0}
+            x2={PLOT_WIDTH}
+            y1={pctScale(THRESHOLDS.GROSS_MARGIN.HEALTHY)}
+            y2={pctScale(THRESHOLDS.GROSS_MARGIN.HEALTHY)}
+            stroke="var(--border-subtle)"
+            strokeDasharray="4 4"
+          />
+          <line
+            className="margin-reference-line"
+            data-value="25"
+            x1={0}
+            x2={PLOT_WIDTH}
+            y1={pctScale(THRESHOLDS.GROSS_MARGIN.CAUTION)}
+            y2={pctScale(THRESHOLDS.GROSS_MARGIN.CAUTION)}
+            stroke="var(--border-subtle)"
+            strokeDasharray="4 4"
+          />
+
+          {months.map((month, index) => {
             const bandX = xScale(month.month) ?? 0;
             const bandwidth = xScale.bandwidth();
             const label = monthLabel(month.month);
+            const isMtd = index === months.length - 1;
 
             const revenueTop = Math.min(moneyScale(month.revenueCents), baselineY);
             const revenueHeight = Math.abs(moneyScale(month.revenueCents) - baselineY);
@@ -133,6 +167,36 @@ export function MonthlyMarginChart({ months, caption = DEFAULT_CAPTION }: Monthl
                 >
                   <title>{`${label} margin: ${formatCents(month.marginCents)} (${pctLabel(month.marginPct)})`}</title>
                 </rect>
+                {isMtd && (
+                  <rect
+                    className="mtd-hatch"
+                    data-month={month.month}
+                    x={marginBarX}
+                    y={marginTop}
+                    width={marginBarWidth}
+                    height={marginHeight}
+                    fill={`url(#${hatchId})`}
+                  />
+                )}
+
+                <text
+                  x={bandX + bandwidth / 2}
+                  y={PLOT_HEIGHT + 18}
+                  textAnchor="middle"
+                  style={{ fontSize: '10px', fill: 'var(--text-secondary)' }}
+                >
+                  {label}
+                </text>
+                {isMtd && (
+                  <text
+                    x={bandX + bandwidth / 2}
+                    y={PLOT_HEIGHT + 32}
+                    textAnchor="middle"
+                    style={{ fontSize: '9px', fontWeight: 700, fill: 'var(--text-secondary)' }}
+                  >
+                    MTD
+                  </text>
+                )}
               </g>
             );
           })}
