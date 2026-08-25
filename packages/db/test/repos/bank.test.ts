@@ -645,6 +645,36 @@ describeDb('bankRepo sync bookkeeping', () => {
     expect(after?.lastSyncedAt).not.toBeNull();
   });
 
+  it('leaves ‘reauth_required’ standing through a successful sync, only updating the cursor timestamp (SF-2)', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const connection = await bankRepo.createConnection(db, ownerId, newConnection(), KEYRING);
+    await bankRepo.recordSyncError(db, ownerId, connection.id, {
+      code: 'PENDING_EXPIRATION',
+      status: 'reauth_required',
+    });
+
+    await bankRepo.recordSyncResult(db, ownerId, connection.id, {
+      added: 4,
+      modified: 0,
+      removed: 0,
+      pages: 1,
+      hasMore: false,
+      unknownAccountCount: 0,
+    });
+
+    const after = await bankRepo.getConnection(db, ownerId, connection.id);
+    expect(after).toMatchObject({
+      status: 'reauth_required',
+      lastErrorCode: 'PENDING_EXPIRATION',
+    });
+    expect(after?.lastErrorAt).not.toBeNull();
+    // The one thing a sync while reauth_required is standing is still allowed
+    // to move: lastSyncedAt, so a Sync now that quietly succeeds is not lied
+    // about on the settings page even while the reconnect banner stays up.
+    expect(after?.lastSyncedAt).not.toBeNull();
+  });
+
   it('records the error code and the status a failed sync leaves behind', async () => {
     const db = getDb();
     const ownerId = await createOwner(db);

@@ -658,7 +658,22 @@ export async function setCursor(
 }
 
 /**
- * Marks a sync as finished, clearing whatever the last one left behind.
+ * Marks a sync as finished, clearing whatever the last one left behind - with
+ * one exception: a connection standing at `'reauth_required'` stays there.
+ *
+ * That status means a webhook has already told us the token is on its way
+ * out (`PENDING_EXPIRATION`, `USER_PERMISSION_REVOKED`) or is already dead
+ * (`ITEM_LOGIN_REQUIRED`) - and the token still works well enough to run
+ * `/transactions/sync` right up until the moment it does not. Every other
+ * transaction webhook that arrives in the meantime would otherwise call this
+ * function and erase the warning hours after it was raised, which defeats
+ * the whole point of raising it early (spec §3's dispatch map). `'error'` is
+ * not given the same treatment: it names a transient sync failure, not a
+ * dead token, and a successful sync clearing it back to `'active'` is
+ * exactly the self-heal `listSyncableConnectionsAllOwners` relies on (SF-1).
+ * The two real reconnect paths, `markConnectionActive` and
+ * `replaceConnectionToken`, are the only writes that ever move a connection
+ * *out* of `'reauth_required'`.
  *
  * The counts are not stored: there is no column for them and inventing one for
  * a number nothing reads would be worse than passing it. They are in the
@@ -672,14 +687,15 @@ export async function recordSyncResult(
   _outcome: SyncOutcome
 ): Promise<void> {
   if (!isUuid(id)) return;
+  const reauthRequired = sql`${bankConnections.status} = 'reauth_required'`;
   await db
     .update(bankConnections)
     .set({
-      status: 'active',
+      status: sql`case when ${reauthRequired} then ${bankConnections.status} else 'active' end`,
       lastSyncedAt: new Date(),
-      lastErrorCode: null,
-      lastErrorMessage: null,
-      lastErrorAt: null,
+      lastErrorCode: sql`case when ${reauthRequired} then ${bankConnections.lastErrorCode} else null end`,
+      lastErrorMessage: sql`case when ${reauthRequired} then ${bankConnections.lastErrorMessage} else null end`,
+      lastErrorAt: sql`case when ${reauthRequired} then ${bankConnections.lastErrorAt} else null end`,
       updatedAt: new Date(),
     })
     .where(and(eq(bankConnections.ownerId, ownerId), eq(bankConnections.id, id)));

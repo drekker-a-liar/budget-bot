@@ -251,6 +251,34 @@ describeDb('POST /api/webhooks/plaid', () => {
     expect(reloaded?.lastErrorCode).toBe('PENDING_EXPIRATION');
   });
 
+  it('does not let the next successful sync erase a standing PENDING_EXPIRATION warning (SF-2)', async () => {
+    await post({
+      webhook_type: 'ITEM',
+      webhook_code: 'PENDING_EXPIRATION',
+      item_id: FAKE_ITEM_ID,
+    });
+
+    // The token still works - that is the whole point of an early warning -
+    // so the very next transaction webhook runs a real sync to completion,
+    // the same as any other TRANSACTIONS/SYNC_UPDATES_AVAILABLE dispatch.
+    const { status, body } = await post({
+      webhook_type: 'TRANSACTIONS',
+      webhook_code: 'SYNC_UPDATES_AVAILABLE',
+      item_id: FAKE_ITEM_ID,
+    });
+
+    expect(status).toBe(200);
+    expect(body).toEqual({ ok: true });
+    expect(runSyncMock.fn).toHaveBeenCalledTimes(1);
+
+    const reloaded = await bankRepo.getConnection(db, ownerId, connection.id);
+    expect(reloaded?.status).toBe('reauth_required');
+    expect(reloaded?.lastErrorCode).toBe('PENDING_EXPIRATION');
+    // The sync itself still ran and committed real progress - only the
+    // status/error columns are sticky, not the connection's usefulness.
+    expect(reloaded?.cursor).not.toBeNull();
+  });
+
   it('records a crash after verification on the ledger row and still answers 200', async () => {
     runSyncMock.fn.mockImplementationOnce(async () => {
       throw new Error('boom - a crash unrelated to the provider');

@@ -234,6 +234,20 @@ describeDb('runSync', () => {
     expect(after.lastSyncedAt).not.toBeNull();
   });
 
+  it('leaves ‘reauth_required’ standing through a successful sync (SF-2)', async () => {
+    await bankRepo.recordSyncError(db, ownerId, connection.id, {
+      code: 'PENDING_EXPIRATION',
+      status: 'reauth_required',
+    });
+
+    await sync({ pages: threePages() }).run();
+    const after = await reload();
+
+    expect(after.status).toBe('reauth_required');
+    expect(after.lastErrorCode).toBe('PENDING_EXPIRATION');
+    expect(after.lastSyncedAt).not.toBeNull();
+  });
+
   it('leaves the previous cursor when a page fails', async () => {
     const pages = threePages();
     const { run } = sync({
