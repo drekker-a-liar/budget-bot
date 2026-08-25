@@ -4,6 +4,7 @@ import {
   type ExpenseTransaction,
   type Invoice,
   type LaborEntry,
+  type MonthlyMargin,
   type Project,
   type ProjectFinancialKPIs,
 } from '@budget-bot/core';
@@ -146,6 +147,25 @@ export function aSummary(
     weeklyCashOutflowCents: parseMoney(1188.75),
     weeklyNetCashFlowCents: parseMoney(611.25),
     cashFlowSeverity: 'healthy',
+    ...overrides,
+  };
+}
+
+export function aMonthlyMargin(overrides: Partial<MonthlyMargin> = {}): MonthlyMargin {
+  return {
+    month: '2026-08',
+    revenueCents: parseMoney(4500),
+    cogs: {
+      materials: parseMoney(1000),
+      labor: parseMoney(850),
+      subcontractor: parseMoney(0),
+      otherDirect: parseMoney(150),
+      total: parseMoney(2000),
+    },
+    marginCents: parseMoney(2500),
+    marginPct: 55.6,
+    severity: 'healthy',
+    counts: { invoices: 3, transactions: 5, laborEntries: 2 },
     ...overrides,
   };
 }
