@@ -301,6 +301,123 @@ describe('MonthlyMarginChart', () => {
 
       expect(screen.getByText('—')).toBeInTheDocument();
     });
+
+    it('computes blended margin as the ratio of the trailing totals, not an average of monthly percentages', () => {
+      render(
+        <MonthlyMarginChart
+          months={[
+            aMonthlyMargin({
+              month: '2026-06',
+              revenueCents: parseMoney(1000),
+              marginCents: parseMoney(500),
+              marginPct: 50,
+              severity: 'healthy',
+            }),
+            aMonthlyMargin({
+              month: '2026-07',
+              revenueCents: parseMoney(9000),
+              marginCents: parseMoney(900),
+              marginPct: 10,
+              severity: 'critical',
+            }),
+            aMonthlyMargin({
+              month: '2026-08',
+              revenueCents: parseMoney(2000),
+              marginCents: parseMoney(1000),
+              marginPct: 50,
+              severity: 'healthy',
+            }),
+          ]}
+        />
+      );
+
+      // Full months: $1,000/$500 (50%) and $9,000/$900 (10%). The ratio of
+      // totals is $1,400 / $10,000 = 14% - the correct blended figure.
+      // Averaging the two months' own percentages instead - (50 + 10) / 2 -
+      // gives 30%, a different number this unequal-revenue fixture can tell
+      // apart from the right one (equal-revenue months can't: both formulas
+      // land on the same value by coincidence).
+      expect(screen.getByText('14%')).toBeInTheDocument();
+      expect(screen.queryByText('30%')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('loss months', () => {
+    it('draws a negative margin below the baseline, not as a negative-height rect', () => {
+      const { container } = render(
+        <MonthlyMarginChart
+          months={[
+            aMonthlyMargin({
+              month: '2026-06',
+              revenueCents: parseMoney(4000),
+              marginCents: parseMoney(-1500),
+              marginPct: -37.5,
+              severity: 'critical',
+            }),
+            aMonthlyMargin({
+              month: '2026-07',
+              revenueCents: parseMoney(5000),
+              marginCents: parseMoney(2500),
+              marginPct: 50,
+              severity: 'healthy',
+            }),
+          ]}
+        />
+      );
+
+      // The shared money scale's baseline is wherever $0 maps to; a positive
+      // month's revenue bar always runs from that baseline up to its own
+      // top, so its bottom edge (y + height) is the baseline in pixels -
+      // read it off the loss month's own revenue bar rather than
+      // recomputing the scale here.
+      const lossRevenueBar = barTitled(`${monthLabel('2026-06')} revenue`);
+      const baselineY =
+        Number(lossRevenueBar.getAttribute('y')) + Number(lossRevenueBar.getAttribute('height'));
+
+      const lossMarginBar = barTitled(`${monthLabel('2026-06')} margin`);
+      const marginY = Number(lossMarginBar.getAttribute('y'));
+      const marginHeight = Number(lossMarginBar.getAttribute('height'));
+
+      // SVG has no negative-height rects: a loss bar's top sits at the
+      // baseline and its (always positive) height extends downward from it.
+      expect(marginHeight).toBeGreaterThan(0);
+      expect(marginY).toBeCloseTo(baselineY, 5);
+
+      // -37.5% is below +50% on the percent axis (larger y is lower on an
+      // SVG y-axis), not clipped at 0% or dropped from the line entirely.
+      const lossPoint = container.querySelector('.margin-point[data-month="2026-06"]');
+      const healthyPoint = container.querySelector('.margin-point[data-month="2026-07"]');
+      expect(lossPoint).toBeInTheDocument();
+      expect(Number(lossPoint?.getAttribute('cy'))).toBeGreaterThan(
+        Number(healthyPoint?.getAttribute('cy'))
+      );
+      expect(container.querySelector('path.margin-line')?.getAttribute('d')).toBeTruthy();
+    });
+  });
+
+  describe('single month (MTD only, no full month behind it yet)', () => {
+    it('renders without a completed month and reports the KPI header as zero', () => {
+      render(
+        <MonthlyMarginChart
+          months={[
+            aMonthlyMargin({
+              month: '2026-08',
+              revenueCents: parseMoney(3000),
+              marginCents: parseMoney(1200),
+              marginPct: 40,
+              severity: 'caution',
+            }),
+          ]}
+        />
+      );
+
+      // `fullMonths` (`months.slice(0, -1)`) is empty when the only entry is
+      // the current month to date - nothing to sum, so the header shows $0
+      // revenue, $0 margin, and a null (0/0) blended percentage as an em
+      // dash rather than a fabricated number.
+      expect(screen.getAllByText('$0')).toHaveLength(2);
+      expect(screen.getByText('—')).toBeInTheDocument();
+    });
   });
 
   describe('accessibility', () => {
