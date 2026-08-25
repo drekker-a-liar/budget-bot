@@ -112,6 +112,49 @@ describeDb('webhookEventsRepo', () => {
     expect(row.error).toBe('SYNC_FAILED');
   });
 
+  it('deletes only the named owner’s resolved rows, and says how many (N-1)', async () => {
+    const db = getDb();
+    const alice = await createOwner(db);
+    const bob = await createOwner(db);
+
+    const alices = await webhookEventsRepo.recordWebhookEvent(db, {
+      provider: 'plaid',
+      bodyHash: 'sha256:alice-1',
+      itemId: 'item-alice',
+      webhookType: 'TRANSACTIONS',
+      webhookCode: 'SYNC_UPDATES_AVAILABLE',
+    });
+    if (!('id' in alices)) throw new Error('unreachable');
+    await webhookEventsRepo.resolveWebhookOwner(db, alices.id, alice);
+
+    const bobs = await webhookEventsRepo.recordWebhookEvent(db, {
+      provider: 'plaid',
+      bodyHash: 'sha256:bob-1',
+      itemId: 'item-bob',
+      webhookType: 'TRANSACTIONS',
+      webhookCode: 'SYNC_UPDATES_AVAILABLE',
+    });
+    if (!('id' in bobs)) throw new Error('unreachable');
+    await webhookEventsRepo.resolveWebhookOwner(db, bobs.id, bob);
+
+    // Never resolved to anyone - a redelivery for an item this deployment
+    // never recognised - and so has no owner to be deleted for.
+    const unresolved = await webhookEventsRepo.recordWebhookEvent(db, {
+      provider: 'plaid',
+      bodyHash: 'sha256:unresolved-1',
+      itemId: 'item-nobody-recognises',
+      webhookType: 'TRANSACTIONS',
+      webhookCode: 'SYNC_UPDATES_AVAILABLE',
+    });
+    if (!('id' in unresolved)) throw new Error('unreachable');
+
+    const deleted = await webhookEventsRepo.deleteOwnerWebhookEvents(db, alice);
+
+    expect(deleted).toBe(1);
+    const remaining = await db.select().from(webhookEvents);
+    expect(remaining.map((row) => row.id).sort()).toEqual([bobs.id, unresolved.id].sort());
+  });
+
   it('purges only rows older than the cutoff, and says how many', async () => {
     const db = getDb();
     const old = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);

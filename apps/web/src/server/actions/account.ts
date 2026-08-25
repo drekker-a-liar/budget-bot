@@ -8,6 +8,7 @@ import {
   laborRepo,
   projectsRepo,
   transactionsRepo,
+  webhookEventsRepo,
 } from '@budget-bot/db';
 import { loadKeysFromEnv } from '@budget-bot/db/crypto';
 import { currentOwnerId } from '@/lib/ownerSession';
@@ -25,9 +26,12 @@ import { ok, unauthorized, type ActionResult } from './result';
  * `disconnectConnectionAction` uses (a Plaid outage must not be the reason an
  * owner cannot delete their own account), and only then do the deletes run -
  * bank connections first, so their accounts cascade away before anything
- * downstream of them is touched, then every other domain table. Auth.js's own
- * `users` and `sessions` rows are untouched: the account survives; its data
- * does not.
+ * downstream of them is touched, then every other domain table. The owner's
+ * `webhook_events` rows go too (spec §6: "delete the owner's rows in every
+ * domain table") - rows with no owner (a redelivery for an item this
+ * deployment never recognised) or another owner's rows are untouched, the
+ * same scoping `deleteOwnerWebhookEvents` documents. Auth.js's own `users`
+ * and `sessions` rows are untouched: the account survives; its data does not.
  */
 
 export interface DeletedCounts {
@@ -37,6 +41,7 @@ export interface DeletedCounts {
   invoices: number;
   importBatches: number;
   projects: number;
+  webhookEvents: number;
 }
 
 export async function deleteAllDataAction(): Promise<ActionResult<DeletedCounts>> {
@@ -69,6 +74,7 @@ export async function deleteAllDataAction(): Promise<ActionResult<DeletedCounts>
     invoices: await invoicesRepo.deleteAllInvoices(db, ownerId),
     importBatches: await importBatchesRepo.deleteAllImportBatches(db, ownerId),
     projects: await projectsRepo.deleteAllProjects(db, ownerId),
+    webhookEvents: await webhookEventsRepo.deleteOwnerWebhookEvents(db, ownerId),
   };
 
   revalidateApp();

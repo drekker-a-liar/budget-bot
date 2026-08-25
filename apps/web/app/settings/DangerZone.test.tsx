@@ -129,7 +129,15 @@ describe('while the call is pending', () => {
     expect(await screen.findByRole('button', { name: /deleting/i })).toBeDisabled();
     resolve({
       ok: true,
-      data: { connections: 0, transactions: 0, laborEntries: 0, invoices: 0, importBatches: 0, projects: 0 },
+      data: {
+        connections: 0,
+        transactions: 0,
+        laborEntries: 0,
+        invoices: 0,
+        importBatches: 0,
+        projects: 0,
+        webhookEvents: 0,
+      },
     });
   });
 });

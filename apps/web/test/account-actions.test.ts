@@ -6,6 +6,7 @@ import {
   laborRepo,
   projectsRepo,
   transactionsRepo,
+  webhookEventsRepo,
   type Database,
 } from '@budget-bot/db';
 import { loadKeysFromEnv } from '@budget-bot/db/crypto';
@@ -124,6 +125,37 @@ async function seedOneOfEverything(db: Database, ownerId: string, tag: string) {
       isoCurrencyCode: 'USD',
     },
   ]);
+
+  await seedWebhookEvent(db, ownerId, tag);
+}
+
+/**
+ * Records a webhook ledger row already resolved to `ownerId`, the state
+ * `resolveWebhookOwner` leaves a row in once its item id has matched a
+ * connection - the only state `deleteOwnerWebhookEvents` (N-1) is scoped to
+ * touch.
+ */
+async function seedWebhookEvent(db: Database, ownerId: string, tag: string): Promise<void> {
+  const recorded = await webhookEventsRepo.recordWebhookEvent(db, {
+    provider: 'plaid',
+    bodyHash: `sha256:${tag}`,
+    itemId: `item-${tag}`,
+    webhookType: 'TRANSACTIONS',
+    webhookCode: 'SYNC_UPDATES_AVAILABLE',
+  });
+  if (!('id' in recorded)) throw new Error('unreachable: body hash collision in a test fixture');
+  await webhookEventsRepo.resolveWebhookOwner(db, recorded.id, ownerId);
+}
+
+/**
+ * Raw SQL rather than a repo function: there is no owner-scoped list
+ * function for `webhook_events` (nothing in the product reads them back),
+ * only the delete this test exercises.
+ */
+async function webhookEventCount(db: Database, ownerId: string): Promise<number> {
+  const rows =
+    await db.$client`select count(*)::int as count from webhook_events where owner_id = ${ownerId}`;
+  return rows[0].count as number;
 }
 
 async function tableCounts(db: Database, ownerId: string) {
@@ -134,6 +166,7 @@ async function tableCounts(db: Database, ownerId: string) {
     invoices: (await invoicesRepo.listInvoices(db, ownerId)).length,
     importBatches: (await importBatchesRepo.listImportBatches(db, ownerId)).length,
     projects: (await projectsRepo.listProjects(db, ownerId)).length,
+    webhookEvents: await webhookEventCount(db, ownerId),
   };
 }
 
@@ -180,6 +213,7 @@ describeDb('deleteAllDataAction', () => {
         invoices: 1,
         importBatches: 1,
         projects: 1,
+        webhookEvents: 1,
       },
     });
     expect(removeItem.fn).toHaveBeenCalledTimes(1);
@@ -191,6 +225,7 @@ describeDb('deleteAllDataAction', () => {
       invoices: 0,
       importBatches: 0,
       projects: 0,
+      webhookEvents: 0,
     });
     expect(await tableCounts(db, bob)).toEqual({
       connections: 1,
@@ -199,6 +234,7 @@ describeDb('deleteAllDataAction', () => {
       invoices: 1,
       importBatches: 1,
       projects: 1,
+      webhookEvents: 1,
     });
 
     // The account survives; its data does not (spec §6). Raw SQL rather than
@@ -206,6 +242,38 @@ describeDb('deleteAllDataAction', () => {
     // (see `test/helpers/db.ts`).
     const [aliceUser] = await db.$client`select id from users where id = ${alice}`;
     expect(aliceUser).toBeDefined();
+  });
+
+  it('purges only the caller’s webhook ledger rows, leaving another owner’s and an unresolved one intact (N-1)', async () => {
+    const alice = await createOwner(db);
+    const bob = await createOwner(db);
+    await seedWebhookEvent(db, alice, 'Alice');
+    await seedWebhookEvent(db, bob, 'BobOnlyVendorTag');
+    // A redelivery for an item this deployment never recognised: recorded,
+    // but `resolveWebhookOwner` never ran, so it has no owner to be deleted
+    // for - it is left for `purgeWebhookEvents`' retention window instead.
+    const unresolved = await webhookEventsRepo.recordWebhookEvent(db, {
+      provider: 'plaid',
+      bodyHash: 'sha256:unresolved-item-nobody-recognises',
+      itemId: 'item-nobody-recognises',
+      webhookType: 'TRANSACTIONS',
+      webhookCode: 'SYNC_UPDATES_AVAILABLE',
+    });
+    if (!('id' in unresolved)) throw new Error('unreachable: body hash collision');
+
+    signInAs(alice);
+    const result = await deleteAllDataAction();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.data.webhookEvents).toBe(1);
+
+    expect(await webhookEventCount(db, alice)).toBe(0);
+    expect(await webhookEventCount(db, bob)).toBe(1);
+    const [stillThere] = await db.$client`
+      select id from webhook_events where id = ${unresolved.id}
+    `;
+    expect(stillThere).toBeDefined();
   });
 
   it('still deletes everything when the bank refuses to remove the item', async () => {
@@ -224,6 +292,7 @@ describeDb('deleteAllDataAction', () => {
       invoices: 0,
       importBatches: 0,
       projects: 0,
+      webhookEvents: 0,
     });
   });
 
@@ -250,6 +319,7 @@ describeDb('deleteAllDataAction', () => {
         invoices: 1,
         importBatches: 1,
         projects: 1,
+        webhookEvents: 1,
       },
     });
     expect(removeItem.fn).not.toHaveBeenCalled();
@@ -260,6 +330,7 @@ describeDb('deleteAllDataAction', () => {
       invoices: 0,
       importBatches: 0,
       projects: 0,
+      webhookEvents: 0,
     });
   });
 
@@ -278,6 +349,7 @@ describeDb('deleteAllDataAction', () => {
         invoices: 0,
         importBatches: 0,
         projects: 0,
+        webhookEvents: 0,
       },
     });
     expect(removeItem.fn).not.toHaveBeenCalled();

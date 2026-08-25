@@ -154,6 +154,7 @@ const repos = vi.hoisted(() => ({
   deleteAllInvoices: vi.fn(async (_db: unknown, _owner: string) => 0),
   deleteAllImportBatches: vi.fn(async (_db: unknown, _owner: string) => 0),
   deleteAllProjects: vi.fn(async (_db: unknown, _owner: string) => 0),
+  deleteOwnerWebhookEvents: vi.fn(async (_db: unknown, _owner: string) => 0),
 }));
 
 vi.mock('@budget-bot/db', async (importOriginal) => ({
@@ -193,6 +194,7 @@ vi.mock('@budget-bot/db', async (importOriginal) => ({
     deleteAllConnections: repos.deleteAllConnections,
   },
   importBatchesRepo: { deleteAllImportBatches: repos.deleteAllImportBatches },
+  webhookEventsRepo: { deleteOwnerWebhookEvents: repos.deleteOwnerWebhookEvents },
 }));
 
 const { ConnectionAlreadyExistsError } = await import('@budget-bot/db');

@@ -104,3 +104,22 @@ export async function purgeWebhookEvents(db: Executor, olderThanDays: number): P
     .returning({ id: webhookEvents.id });
   return rows.length;
 }
+
+/**
+ * Deletes one owner's ledger rows, for delete-all (spec §6).
+ *
+ * Owner-scoped, unlike everything else in this file: by the time
+ * `deleteAllDataAction` runs, every row that will ever resolve to this owner
+ * already has (`resolveWebhookOwner` fills it in synchronously, inside the
+ * webhook route, before the row is ever left half-processed). A row that
+ * never resolved to any owner - a redelivery for an item this deployment
+ * never recognised - has no owner to delete it for, and is left for
+ * `purgeWebhookEvents`' retention window instead.
+ */
+export async function deleteOwnerWebhookEvents(db: Executor, ownerId: string): Promise<number> {
+  const rows = await db
+    .delete(webhookEvents)
+    .where(eq(webhookEvents.ownerId, ownerId))
+    .returning({ id: webhookEvents.id });
+  return rows.length;
+}
