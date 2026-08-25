@@ -1,7 +1,7 @@
 import type { BankProvider, NormalizedAccount, SyncResult } from '@budget-bot/bank-connectors';
 import { bankRepo, schema, webhookEventsRepo, type Database } from '@budget-bot/db';
 import { loadKeysFromEnv } from '@budget-bot/db/crypto';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createOwner, describeDb, testDatabaseUrl, useTestDb } from './helpers/db';
 
 /**

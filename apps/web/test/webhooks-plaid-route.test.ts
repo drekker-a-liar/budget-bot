@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { bankRepo, schema, type BankConnection, type Database } from '@budget-bot/db';
 import { loadKeysFromEnv } from '@budget-bot/db/crypto';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import {
   FAKE_ACCESS_TOKEN,
   FAKE_INSTITUTION_NAME,
