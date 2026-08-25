@@ -202,4 +202,32 @@ describe('MonthlyMarginChart', () => {
       ).toBe(`${monthLabel('2026-07')} margin: $0.00 (—)`);
     });
   });
+
+  describe('margin-% line', () => {
+    it('plots one point per month that has a margin percentage', () => {
+      const { container } = render(<MonthlyMarginChart months={MONTHS} />);
+
+      // Four of the five months have a marginPct; 2026-07's is null (zero
+      // revenue), and null.defined() in the d3-shape line generator means
+      // that month draws no point and breaks the line rather than
+      // interpolating through a percentage that was never computed.
+      expect(container.querySelectorAll('.margin-point')).toHaveLength(4);
+    });
+
+    it('draws no point for the null-percentage month specifically', () => {
+      const { container } = render(<MonthlyMarginChart months={MONTHS} />);
+
+      const points = Array.from(container.querySelectorAll('.margin-point'));
+      expect(points).toHaveLength(4);
+      expect(points.some((point) => point.getAttribute('data-month') === '2026-07')).toBe(false);
+    });
+
+    it('draws a single connected path for the line', () => {
+      const { container } = render(<MonthlyMarginChart months={MONTHS} />);
+
+      const path = container.querySelector('path.margin-line');
+      expect(path).toBeInTheDocument();
+      expect(path?.getAttribute('d')).toBeTruthy();
+    });
+  });
 });

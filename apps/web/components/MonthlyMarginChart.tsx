@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { scaleBand, scaleLinear } from 'd3-scale';
+import { curveMonotoneX, line as d3Line } from 'd3-shape';
 import { formatCents, type MonthlyMargin, type SeverityLevel } from '@budget-bot/core';
 
 /**
@@ -72,6 +73,28 @@ export function MonthlyMarginChart({ months, caption = DEFAULT_CAPTION }: Monthl
       .range([PLOT_HEIGHT, 0]);
     const baselineY = moneyScale(0);
 
+    // Right axis: percent, not dollars. 0-100 always fits (so the 45%/25%
+    // reference lines are always on-scale) and widens only for a month that
+    // ran a genuine loss or an outsized margin.
+    const pctValues = months
+      .map((month) => month.marginPct)
+      .filter((pct): pct is number => pct !== null);
+    const pctScale = scaleLinear()
+      .domain([Math.min(0, ...pctValues), Math.max(100, ...pctValues)])
+      .range([PLOT_HEIGHT, 0]);
+
+    const centerX = (month: string) => (xScale(month) ?? 0) + xScale.bandwidth() / 2;
+
+    // `defined()` is what keeps a month with no margin percentage (zero
+    // revenue, spec §2) from being interpolated through as if it had one:
+    // the line breaks there instead of drawing a point nobody computed.
+    const linePath =
+      d3Line<MonthlyMargin>()
+        .defined((month) => month.marginPct !== null)
+        .x((month) => centerX(month.month))
+        .y((month) => pctScale(month.marginPct as number))
+        .curve(curveMonotoneX)(months) ?? '';
+
     chart = (
       <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" width="100%">
         <g transform={`translate(${PLOT_MARGIN.left}, ${PLOT_MARGIN.top})`}>
@@ -113,6 +136,21 @@ export function MonthlyMarginChart({ months, caption = DEFAULT_CAPTION }: Monthl
               </g>
             );
           })}
+
+          <path className="margin-line" d={linePath} fill="none" stroke="var(--accent-cyan)" strokeWidth={2} />
+          {months
+            .filter((month) => month.marginPct !== null)
+            .map((month) => (
+              <circle
+                key={month.month}
+                className="margin-point"
+                data-month={month.month}
+                cx={centerX(month.month)}
+                cy={pctScale(month.marginPct as number)}
+                r={3}
+                style={{ fill: 'var(--accent-cyan)' }}
+              />
+            ))}
         </g>
       </svg>
     );
