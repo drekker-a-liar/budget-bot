@@ -3,7 +3,14 @@
 import React from 'react';
 import { scaleBand, scaleLinear } from 'd3-scale';
 import { curveMonotoneX, line as d3Line } from 'd3-shape';
-import { formatCents, THRESHOLDS, type MonthlyMargin, type SeverityLevel } from '@budget-bot/core';
+import {
+  addCents,
+  formatCents,
+  percent,
+  THRESHOLDS,
+  type MonthlyMargin,
+  type SeverityLevel,
+} from '@budget-bot/core';
 
 /**
  * Trailing-12-month gross margin, cash basis, as a hand-rolled SVG (spec §4:
@@ -57,6 +64,18 @@ export function MonthlyMarginChart({ months, caption = DEFAULT_CAPTION }: Monthl
   // as "we forgot to check". Say which one this is.
   const isEmpty = months.every((month) => month.revenueCents === 0 && month.cogs.total === 0);
 
+  // The trailing-12 KPI totals are the 12 full months only - the query
+  // always appends the current month to date last (spec §3), so it is
+  // always the one entry this excludes.
+  const fullMonths = months.slice(0, -1);
+  const kpiRevenueCents = addCents(...fullMonths.map((month) => month.revenueCents));
+  const kpiMarginCents = addCents(...fullMonths.map((month) => month.marginCents));
+  const kpiBlendedPct = percent(kpiMarginCents, kpiRevenueCents);
+  const latestFullMonth = fullMonths[fullMonths.length - 1];
+  const ariaLabel = latestFullMonth
+    ? `Monthly gross margin chart. Latest full month ${monthLabel(latestFullMonth.month)}: revenue ${formatCents(latestFullMonth.revenueCents)}, margin ${formatCents(latestFullMonth.marginCents)} (${pctLabel(latestFullMonth.marginPct)}).`
+    : 'Monthly gross margin chart. No full month of data yet.';
+
   let chart: React.ReactNode = null;
 
   if (!isEmpty) {
@@ -99,7 +118,7 @@ export function MonthlyMarginChart({ months, caption = DEFAULT_CAPTION }: Monthl
         .curve(curveMonotoneX)(months) ?? '';
 
     chart = (
-      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" width="100%">
+      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label={ariaLabel} width="100%">
         <defs>
           {/* The current month reads as still-in-progress, not just another
               bar: a diagonal hatch over its severity fill, on top of the
@@ -228,6 +247,34 @@ export function MonthlyMarginChart({ months, caption = DEFAULT_CAPTION }: Monthl
             Monthly Gross Margin
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{caption}</div>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+          gap: '1rem',
+          marginTop: '1rem',
+        }}
+      >
+        <div>
+          <span className="swiss-label">Trailing 12 months Revenue</span>
+          <div className="tnum swiss-header" style={{ fontSize: '1.4rem', marginTop: '0.15rem' }}>
+            {formatCents(kpiRevenueCents, { showCents: false })}
+          </div>
+        </div>
+        <div>
+          <span className="swiss-label">Trailing 12 months Margin</span>
+          <div className="tnum swiss-header" style={{ fontSize: '1.4rem', marginTop: '0.15rem' }}>
+            {formatCents(kpiMarginCents, { showCents: false })}
+          </div>
+        </div>
+        <div>
+          <span className="swiss-label">Trailing 12 months</span>
+          <div className="tnum swiss-header" style={{ fontSize: '1.4rem', marginTop: '0.15rem' }}>
+            {kpiBlendedPct === null ? EM_DASH : `${kpiBlendedPct}%`}
+          </div>
         </div>
       </div>
 

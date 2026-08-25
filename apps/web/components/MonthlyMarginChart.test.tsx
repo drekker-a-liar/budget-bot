@@ -259,4 +259,56 @@ describe('MonthlyMarginChart', () => {
       });
     });
   });
+
+  describe('KPI header', () => {
+    it('sums only the trailing full months, excluding the current month to date', () => {
+      render(<MonthlyMarginChart months={MONTHS} />);
+
+      // Full months (2026-04 through -07): $4,000 + $4,000 + $4,000 + $0
+      // revenue, $2,000 + $1,200 + $400 + $0 margin. Including 2026-08's
+      // $9,000/$4,500 MTD figures would change both totals and the blended
+      // percentage - this is the fixture that would catch that mistake.
+      expect(screen.getByText('Trailing 12 months')).toBeInTheDocument();
+      expect(screen.getByText('$12,000')).toBeInTheDocument();
+      expect(screen.getByText('$3,600')).toBeInTheDocument();
+      expect(screen.getByText('30%')).toBeInTheDocument();
+      expect(screen.queryByText('$21,000')).not.toBeInTheDocument();
+      expect(screen.queryByText('$8,100')).not.toBeInTheDocument();
+    });
+
+    it('shows an em dash for blended margin when the full months had no revenue', () => {
+      render(
+        <MonthlyMarginChart
+          months={[
+            aMonthlyMargin({
+              month: '2026-07',
+              revenueCents: parseMoney(0),
+              cogs: ZERO_COGS,
+              marginCents: parseMoney(0),
+              marginPct: null,
+              severity: 'none',
+            }),
+            aMonthlyMargin({
+              month: '2026-08',
+              revenueCents: parseMoney(5000),
+              marginCents: parseMoney(2500),
+              marginPct: 50,
+              severity: 'healthy',
+            }),
+          ]}
+        />
+      );
+
+      expect(screen.getByText('—')).toBeInTheDocument();
+    });
+  });
+
+  describe('accessibility', () => {
+    it('summarizes the latest full month in the chart’s accessible name', () => {
+      const { container } = render(<MonthlyMarginChart months={MONTHS} />);
+
+      const svg = container.querySelector('svg[role="img"]');
+      expect(svg?.getAttribute('aria-label')).toContain(monthLabel('2026-07'));
+    });
+  });
 });
