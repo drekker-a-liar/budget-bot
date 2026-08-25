@@ -409,4 +409,36 @@ test.describe.serial('signed in through the test-only door', () => {
     const exported = await fetchExport(page);
     expect(exported.units).toBe('cents');
   });
+
+  test('the Margin nav entry renders the trailing-12 KPI header against seeded data', async () => {
+    await page.goto('/');
+    await page.getByRole('link', { name: 'Margin', exact: true }).click();
+
+    await expect(page).toHaveURL('/margin');
+    await expect(page.getByRole('heading', { name: 'Margin' })).toBeVisible();
+
+    /** The KPI value sitting right after a `swiss-label` span naming it exactly. */
+    const kpiValue = (label: string) =>
+      page
+        .locator('span.swiss-label', { hasText: new RegExp(`^${label}$`) })
+        .locator('xpath=following-sibling::div[1]');
+
+    // Three of the seed's four invoices are paid, and all three land within
+    // the seed's own month, so the trailing *full* 12 months carry no revenue - the
+    // paid invoices all land in the trailing window's final, current-month-
+    // to-date entry, which the KPI header deliberately excludes (spec §4,
+    // `MonthlyMarginChart.tsx`'s `fullMonths`). The seeded transactions and
+    // labor entries still cost those empty months something, so the margin
+    // KPI reads a loss against zero revenue - a null percentage, not a
+    // fabricated one.
+    await expect(kpiValue('Trailing 12 months Revenue')).toHaveText('$0');
+    await expect(kpiValue('Trailing 12 months Margin')).toHaveText('-$2,466');
+    await expect(kpiValue('Trailing 12 months')).toHaveText('—');
+
+    // The current month to date is not empty - it has the seed's paid
+    // revenue - so the chart draws rather than falling back to the empty
+    // state (`MonthlyMarginChart`'s `isEmpty`).
+    await expect(page.getByRole('img', { name: /Monthly gross margin chart/ })).toBeVisible();
+    await expect(page.locator('.mtd-hatch')).toBeVisible();
+  });
 });
