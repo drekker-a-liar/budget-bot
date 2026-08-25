@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { parseMoney } from '@budget-bot/core';
 import { aMonthlyMargin } from '@/test/helpers/props';
 import { mockNextNavigation } from '@/test/helpers/islands';
 
@@ -22,7 +23,13 @@ describe('MarginView', () => {
   it('renders the page heading and the chart drawn from the months the query computed', () => {
     render(
       <MarginView
-        months={[aMonthlyMargin({ month: '2026-08', revenueCents: 450000, marginCents: 250000 })]}
+        months={[
+          aMonthlyMargin({
+            month: '2026-08',
+            revenueCents: parseMoney(4500),
+            marginCents: parseMoney(2500),
+          }),
+        ]}
         timeZone="America/Los_Angeles"
       />
     );
