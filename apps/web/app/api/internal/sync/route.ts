@@ -62,7 +62,7 @@ export async function GET(request: Request): Promise<NextResponse> {
 
   if (provider) {
     const keyring = loadKeysFromEnv();
-    connections = await bankRepo.listActiveConnectionsAllOwners(db);
+    connections = await bankRepo.listSyncableConnectionsAllOwners(db);
 
     // Same split `syncNowAction` keeps, and for the same reason: the account
     // refresh has nothing downstream of it that will record a failure, so

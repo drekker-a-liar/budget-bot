@@ -214,6 +214,30 @@ describeDb('GET /api/internal/sync', () => {
     expect(reloadedFailing?.lastErrorCode).not.toBeNull();
   });
 
+  it('sweeps a connection standing at ‘error’ and self-heals it on a successful sync (SF-1)', async () => {
+    const bob = await createOwner(db);
+    const errored = await bankRepo.createConnection(
+      db,
+      bob,
+      { itemId: 'item-bob', accessToken: 'access-bob' },
+      keyring
+    );
+    await bankRepo.recordSyncError(db, bob, errored.id, {
+      code: 'SYNC_FAILED',
+      status: 'error',
+    });
+
+    const { status, body } = await get(`Bearer ${CRON_SECRET}`);
+
+    expect(status).toBe(200);
+    expect(body).toEqual({ ok: true, connections: 1, synced: 1, failed: 0, purgedEvents: 0 });
+
+    const reloaded = await bankRepo.getConnection(db, bob, errored.id);
+    expect(reloaded?.status).toBe('active');
+    expect(reloaded?.lastErrorCode).toBeNull();
+    expect(reloaded?.lastSyncedAt).not.toBeNull();
+  });
+
   it('does not sync a connection that is reauth_required', async () => {
     const bob = await createOwner(db);
     const needsReauth = await bankRepo.createConnection(

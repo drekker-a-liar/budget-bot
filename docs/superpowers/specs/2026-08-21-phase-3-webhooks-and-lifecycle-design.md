@@ -94,6 +94,22 @@ Already on the middleware public allowlist (Phase 1). A `route.ts` POST handler:
   Vercel automatically sends `Authorization: Bearer $CRON_SECRET` when the env
   var is set. Webhooks are primary; this is the daily net (Phase 1 §7).
 
+*Amended after final review (2026-08-25): the sweep above read `status =
+'active'` only, which follows this section's letter but misses §3's intent —
+the cron is "the retry mechanism for whatever [the webhook] could not
+finish," and a failed sync is exactly what sets `status = 'error'`
+(`recordSyncError` via `INSTITUTION_DOWN`, `RATE_LIMIT_EXCEEDED`,
+`SYNC_FAILED`, `SYNC_WRITE_SHORTFALL`, or `UNKNOWN_ACCOUNT` on an otherwise
+successful run). An errored connection that the webhook path cannot reach
+again — no webhook registered on that item, or one transient failure during
+the nightly run — was stuck in `'error'` forever. The sweep now reads
+`status IN ('active', 'error')`, renamed `listSyncableConnectionsAllOwners` to
+say so; `'error'` clears back to `'active'` the same way a webhook-driven
+retry already self-heals it, through `recordSyncResult`. `'reauth_required'`
+stays excluded on purpose: that status means the stored token itself no
+longer works, and no amount of retrying fixes it — only the owner,
+reconnecting through Link's update mode (§5), can.*
+
 ## 5. Re-authentication
 
 Two paths back to healthy, both ending in status `'active'`:

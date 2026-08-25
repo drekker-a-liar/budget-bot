@@ -220,10 +220,10 @@ describeDb('runSync', () => {
     expect(await transactionsRepo.listTransactions(db, ownerId)).toHaveLength(7);
   });
 
-  it('marks the connection synced and clears whatever the last run left', async () => {
+  it('marks the connection synced and clears whatever a transient failure left (SF-1)', async () => {
     await bankRepo.recordSyncError(db, ownerId, connection.id, {
-      code: 'ITEM_LOGIN_REQUIRED',
-      status: 'reauth_required',
+      code: 'SYNC_FAILED',
+      status: 'error',
     });
 
     await sync({ pages: threePages() }).run();

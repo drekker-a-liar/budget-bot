@@ -1,5 +1,5 @@
 import type { CardProfile } from '@budget-bot/core';
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { Database, Executor } from '../client';
 import { decryptToken, encryptToken, type TokenKeyring } from '../crypto';
 import { bankAccounts, bankConnections } from '../schema';
@@ -427,23 +427,31 @@ export interface ActiveConnectionByOwner {
 }
 
 /**
- * Every connection with `status = 'active'`, across every owner.
+ * Every connection the cron may retry, across every owner: `'active'` and
+ * `'error'`, but never `'reauth_required'`.
  *
  * Cross-owner by design, the same way `findConnectionByItemId` is: the daily
  * cron sync has no owner of its own to run as - it exists to catch up
- * whatever the webhook path missed, for everyone (spec §4). The projection is
- * narrower than `CONNECTION_COLUMNS` for the same reason it is there: the
- * ciphertext column must never be one step away from a caller with no session
- * to scope it. Token access for the connections this returns happens
- * per-connection, through `withAccessToken`.
+ * whatever the webhook path missed, for everyone (spec §4). `'error'` belongs
+ * in that catch-up: it is exactly the state a failed sync - webhook-driven or
+ * cron-driven - leaves behind, and a successful retry through
+ * `recordSyncResult` clears it back to `'active'`, so the cron is also how an
+ * errored connection heals itself without the owner noticing. `'reauth_required'`
+ * is deliberately excluded: that state means the stored token itself no
+ * longer works, which no amount of retrying fixes - only the owner, through
+ * Link's update mode, can clear it. The projection is narrower than
+ * `CONNECTION_COLUMNS` for the same reason it is there: the ciphertext column
+ * must never be one step away from a caller with no session to scope it.
+ * Token access for the connections this returns happens per-connection,
+ * through `withAccessToken`.
  */
-export async function listActiveConnectionsAllOwners(
+export async function listSyncableConnectionsAllOwners(
   db: Executor
 ): Promise<ActiveConnectionByOwner[]> {
   return db
     .select({ id: bankConnections.id, ownerId: bankConnections.ownerId })
     .from(bankConnections)
-    .where(eq(bankConnections.status, 'active'))
+    .where(inArray(bankConnections.status, ['active', 'error']))
     .orderBy(asc(bankConnections.createdAt), asc(bankConnections.id));
 }
 

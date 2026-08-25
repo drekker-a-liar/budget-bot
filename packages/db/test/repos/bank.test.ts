@@ -595,20 +595,43 @@ describeDb('bankRepo sync bookkeeping', () => {
     );
   });
 
-  it('records a completed sync and clears the last error', async () => {
+  it('records a completed sync and clears a healthy connection’s last error', async () => {
     const db = getDb();
     const ownerId = await createOwner(db);
     const connection = await bankRepo.createConnection(db, ownerId, newConnection(), KEYRING);
-    await bankRepo.recordSyncError(db, ownerId, connection.id, {
-      code: 'ITEM_LOGIN_REQUIRED',
-      status: 'reauth_required',
-    });
 
     await bankRepo.recordSyncResult(db, ownerId, connection.id, {
       added: 12,
       modified: 3,
       removed: 1,
       pages: 2,
+      hasMore: false,
+      unknownAccountCount: 0,
+    });
+
+    const after = await bankRepo.getConnection(db, ownerId, connection.id);
+    expect(after).toMatchObject({
+      status: 'active',
+      lastErrorCode: null,
+      lastErrorAt: null,
+    });
+    expect(after?.lastSyncedAt).not.toBeNull();
+  });
+
+  it('self-heals a connection standing at ‘error’ back to ‘active’ (SF-1)', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const connection = await bankRepo.createConnection(db, ownerId, newConnection(), KEYRING);
+    await bankRepo.recordSyncError(db, ownerId, connection.id, {
+      code: 'SYNC_FAILED',
+      status: 'error',
+    });
+
+    await bankRepo.recordSyncResult(db, ownerId, connection.id, {
+      added: 1,
+      modified: 0,
+      removed: 0,
+      pages: 1,
       hasMore: false,
       unknownAccountCount: 0,
     });
@@ -641,8 +664,8 @@ describeDb('bankRepo sync bookkeeping', () => {
   });
 });
 
-describeDb('bankRepo.listActiveConnectionsAllOwners', () => {
-  it('finds active connections across every owner, and never the ciphertext', async () => {
+describeDb('bankRepo.listSyncableConnectionsAllOwners', () => {
+  it('finds active and errored connections across every owner, and never the ciphertext (SF-1)', async () => {
     const db = getDb();
     const alice = await createOwner(db);
     const bob = await createOwner(db);
@@ -650,23 +673,38 @@ describeDb('bankRepo.listActiveConnectionsAllOwners', () => {
     const bobsActive = await bankRepo.createConnection(db, bob, newConnection(), KEYRING);
     const bobsErrored = await bankRepo.createConnection(db, bob, newConnection(), KEYRING);
     await bankRepo.recordSyncError(db, bob, bobsErrored.id, {
-      code: 'ITEM_LOGIN_REQUIRED',
+      code: 'SYNC_FAILED',
       status: 'error',
     });
 
-    const rows = await bankRepo.listActiveConnectionsAllOwners(db);
+    const rows = await bankRepo.listSyncableConnectionsAllOwners(db);
 
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(3);
     expect(rows).toEqual(
       expect.arrayContaining([
         { id: alicesActive.id, ownerId: alice },
         { id: bobsActive.id, ownerId: bob },
+        { id: bobsErrored.id, ownerId: bob },
       ])
     );
-    expect(rows.some((row) => row.id === bobsErrored.id)).toBe(false);
     for (const row of rows) {
       expect(Object.keys(row).sort()).toEqual(['id', 'ownerId']);
     }
+  });
+
+  it('excludes a connection standing at ‘reauth_required’ (SF-1)', async () => {
+    const db = getDb();
+    const bob = await createOwner(db);
+    const alwaysActive = await bankRepo.createConnection(db, bob, newConnection(), KEYRING);
+    const needsReauth = await bankRepo.createConnection(db, bob, newConnection(), KEYRING);
+    await bankRepo.recordSyncError(db, bob, needsReauth.id, {
+      code: 'ITEM_LOGIN_REQUIRED',
+      status: 'reauth_required',
+    });
+
+    const rows = await bankRepo.listSyncableConnectionsAllOwners(db);
+
+    expect(rows).toEqual([{ id: alwaysActive.id, ownerId: bob }]);
   });
 });
 
