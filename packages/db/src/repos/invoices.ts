@@ -1,5 +1,5 @@
-import type { Invoice } from '@budget-bot/core';
-import { and, desc, eq } from 'drizzle-orm';
+import type { Invoice, MonthlyMarginRange } from '@budget-bot/core';
+import { and, desc, eq, gte, isNotNull, lte } from 'drizzle-orm';
 import type { Database } from '../client';
 import { invoices } from '../schema';
 import { rejectingForeignProject } from './errors';
@@ -57,6 +57,33 @@ export async function listInvoices(
       projectId === undefined
         ? eq(invoices.ownerId, ownerId)
         : and(eq(invoices.ownerId, ownerId), eq(invoices.projectId, projectId))
+    )
+    .orderBy(desc(invoices.createdAt), desc(invoices.id));
+  return rows.map(toInvoice);
+}
+
+/**
+ * Paid invoices whose `paidDate` falls in `range` (inclusive) - revenue's
+ * exact predicate in `calculateMonthlyMargins` (spec §2), pushed down to
+ * `invoices_owner_paid_date_idx` rather than fetched in full and filtered in
+ * the app, the way the margin query needs it (spec §3).
+ */
+export async function listPaidInvoicesInRange(
+  db: Database,
+  ownerId: string,
+  range: MonthlyMarginRange
+): Promise<Invoice[]> {
+  const rows = await db
+    .select()
+    .from(invoices)
+    .where(
+      and(
+        eq(invoices.ownerId, ownerId),
+        eq(invoices.status, 'paid'),
+        isNotNull(invoices.paidDate),
+        gte(invoices.paidDate, range.start),
+        lte(invoices.paidDate, range.end)
+      )
     )
     .orderBy(desc(invoices.createdAt), desc(invoices.id));
   return rows.map(toInvoice);

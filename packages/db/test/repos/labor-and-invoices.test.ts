@@ -74,6 +74,55 @@ describeDb('laborRepo', () => {
   });
 });
 
+/** The candidate rows the margin query layer (spec §3) hands to `calculateMonthlyMargins`. */
+describeDb('laborRepo.listLaborEntriesInRange', () => {
+  it('excludes an entry dated outside the range', async () => {
+    const db = getDb();
+    const [ownerId, projectId] = await ownerWithProject(db);
+    await laborRepo.createLaborEntry(db, ownerId, newLaborEntry(projectId, { date: '2025-07-01' }));
+
+    expect(
+      await laborRepo.listLaborEntriesInRange(db, ownerId, {
+        start: '2026-08-01',
+        end: '2026-08-31',
+      })
+    ).toEqual([]);
+  });
+
+  it('includes an entry dated on each inclusive boundary of the range', async () => {
+    const db = getDb();
+    const [ownerId, projectId] = await ownerWithProject(db);
+    const first = await laborRepo.createLaborEntry(
+      db,
+      ownerId,
+      newLaborEntry(projectId, { date: '2026-08-01' })
+    );
+    const last = await laborRepo.createLaborEntry(
+      db,
+      ownerId,
+      newLaborEntry(projectId, { date: '2026-08-31' })
+    );
+
+    const rows = await laborRepo.listLaborEntriesInRange(db, ownerId, {
+      start: '2026-08-01',
+      end: '2026-08-31',
+    });
+
+    expect(rows.map((row) => row.id).sort()).toEqual([first.id, last.id].sort());
+  });
+
+  it('never returns another owner’s hours', async () => {
+    const db = getDb();
+    const [alice, projectId] = await ownerWithProject(db);
+    const bob = await createOwner(db);
+    await laborRepo.createLaborEntry(db, alice, newLaborEntry(projectId, { date: '2026-08-16' }));
+
+    expect(
+      await laborRepo.listLaborEntriesInRange(db, bob, { start: '2026-08-01', end: '2026-08-31' })
+    ).toEqual([]);
+  });
+});
+
 describeDb('invoicesRepo', () => {
   it('round-trips amounts and an absent paid date', async () => {
     const db = getDb();
@@ -111,5 +160,78 @@ describeDb('invoicesRepo', () => {
     expect(await invoicesRepo.listInvoices(db, bob, projectId)).toEqual([]);
     expect(await invoicesRepo.updateInvoice(db, bob, hers.id, { status: 'paid' })).toBeNull();
     expect((await invoicesRepo.listInvoices(db, alice))[0].status).toBe('sent');
+  });
+});
+
+/** The candidate rows the margin query layer (spec §3) hands to `calculateMonthlyMargins`. */
+describeDb('invoicesRepo.listPaidInvoicesInRange', () => {
+  it('excludes an unpaid invoice even when it was issued in range', async () => {
+    const db = getDb();
+    const [ownerId, projectId] = await ownerWithProject(db);
+    await invoicesRepo.createInvoice(db, ownerId, newInvoice(projectId, { status: 'sent' }));
+
+    expect(
+      await invoicesRepo.listPaidInvoicesInRange(db, ownerId, {
+        start: '2026-08-01',
+        end: '2026-08-31',
+      })
+    ).toEqual([]);
+  });
+
+  it('excludes a paid invoice whose paid date falls outside the range', async () => {
+    const db = getDb();
+    const [ownerId, projectId] = await ownerWithProject(db);
+    await invoicesRepo.createInvoice(
+      db,
+      ownerId,
+      newInvoice(projectId, { status: 'paid', paidDate: '2025-07-01' })
+    );
+
+    expect(
+      await invoicesRepo.listPaidInvoicesInRange(db, ownerId, {
+        start: '2026-08-01',
+        end: '2026-08-31',
+      })
+    ).toEqual([]);
+  });
+
+  it('includes a paid invoice on each inclusive boundary of the range', async () => {
+    const db = getDb();
+    const [ownerId, projectId] = await ownerWithProject(db);
+    const first = await invoicesRepo.createInvoice(
+      db,
+      ownerId,
+      newInvoice(projectId, { invoiceNumber: 'INV-1', status: 'paid', paidDate: '2026-08-01' })
+    );
+    const last = await invoicesRepo.createInvoice(
+      db,
+      ownerId,
+      newInvoice(projectId, { invoiceNumber: 'INV-2', status: 'paid', paidDate: '2026-08-31' })
+    );
+
+    const rows = await invoicesRepo.listPaidInvoicesInRange(db, ownerId, {
+      start: '2026-08-01',
+      end: '2026-08-31',
+    });
+
+    expect(rows.map((row) => row.id).sort()).toEqual([first.id, last.id].sort());
+  });
+
+  it('never returns another owner’s paid invoices', async () => {
+    const db = getDb();
+    const [alice, projectId] = await ownerWithProject(db);
+    const bob = await createOwner(db);
+    await invoicesRepo.createInvoice(
+      db,
+      alice,
+      newInvoice(projectId, { status: 'paid', paidDate: '2026-08-16' })
+    );
+
+    expect(
+      await invoicesRepo.listPaidInvoicesInRange(db, bob, {
+        start: '2026-08-01',
+        end: '2026-08-31',
+      })
+    ).toEqual([]);
   });
 });
