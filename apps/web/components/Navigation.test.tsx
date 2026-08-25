@@ -56,18 +56,27 @@ describe('Navigation', () => {
     ['/projects', 'Projects & Margins'],
     ['/transactions', 'Card Inbox'],
     ['/cashflow', 'Cash Flow & Runway'],
+    ['/margin', 'Margin'],
     ['/settings/connections', 'Connections'],
   ])('marks %s as the page being read', (path, label) => {
     pathname.current = path;
     render(<Navigation />);
 
-    const active = screen.getByRole('link', { name: new RegExp(label, 'i') });
+    // Anchored: "Margin" is also a substring of "Projects & Margins", and an
+    // unanchored match would find both links instead of the one this page is.
+    const active = screen.getByRole('link', { name: new RegExp(`^${label}$`, 'i') });
     expect(active).toHaveStyle({ fontWeight: '700' });
 
     const other = screen.getByRole('link', {
       name: label === 'Overview' ? /projects & margins/i : /overview/i,
     });
     expect(other).not.toHaveStyle({ fontWeight: '700' });
+  });
+
+  it('offers the trailing-12-month margin page', () => {
+    render(<Navigation />);
+
+    expect(screen.getByRole('link', { name: /^margin$/i })).toHaveAttribute('href', '/margin');
   });
 
   it('shows the connected card and its balance when there is one', () => {
