@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { Database } from '../client';
 import { users } from '../schema';
 
@@ -21,4 +21,17 @@ export async function findOwnerIdByEmail(
     .where(sql`lower(${users.email}) = ${email.toLowerCase()}`)
     .limit(1);
   return row?.id;
+}
+
+/**
+ * The IANA zone `calculateMonthlyMargins` (spec §2) buckets the owner's
+ * months and days in - `'UTC'` when they have never set one (spec §5).
+ */
+export async function getTimeZone(db: Database, ownerId: string): Promise<string> {
+  const [row] = await db
+    .select({ settings: users.settings })
+    .from(users)
+    .where(eq(users.id, ownerId))
+    .limit(1);
+  return row?.settings.timeZone ?? 'UTC';
 }
