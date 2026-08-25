@@ -3,6 +3,7 @@ export {
   PlaidMutationDuringPagination,
   PlaidRateLimited,
   PlaidRequestError,
+  WebhookVerificationError,
 } from './errors';
 export { normalizeAccount, normalizeTransaction } from './normalize';
 export {

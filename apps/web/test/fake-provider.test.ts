@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto';
 import type { SyncResult } from '@budget-bot/bank-connectors';
-import { NotSupportedError } from '@budget-bot/bank-connectors';
+import { WebhookVerificationError } from '@budget-bot/bank-connectors';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   FAKE_ACCESS_TOKEN,
@@ -222,10 +223,89 @@ describe('the rest of the BankProvider surface', () => {
     await expect(provider().removeItem(FAKE_ACCESS_TOKEN)).resolves.toBeUndefined();
   });
 
-  it('has no webhooks, and says so rather than inventing an event', async () => {
+});
+
+/**
+ * The E2E-only door's stand-in for Plaid's signature (spec §2). It is not
+ * cryptographic - there is no real key on either side of it - but the shape
+ * of the check is the same one `PlaidProvider` makes: a header has to match a
+ * hash of the exact bytes that arrived, or the webhook is refused.
+ */
+describe('verifyAndParseWebhook', () => {
+  function provider() {
+    return new FakeBankProvider(defaultFakeScript());
+  }
+
+  function bodyHashHex(rawBody: string): string {
+    return createHash('sha256').update(rawBody).digest('hex');
+  }
+
+  it('accepts a body whose fake-verification header matches its hash', async () => {
+    const rawBody = JSON.stringify({
+      webhook_type: 'TRANSACTIONS',
+      webhook_code: 'SYNC_UPDATES_AVAILABLE',
+      item_id: 'item-fake',
+    });
+
+    const event = await provider().verifyAndParseWebhook(rawBody, {
+      'fake-verification': bodyHashHex(rawBody),
+    });
+
+    expect(event).toEqual({
+      type: 'TRANSACTIONS',
+      code: 'SYNC_UPDATES_AVAILABLE',
+      itemId: 'item-fake',
+      bodyHash: bodyHashHex(rawBody),
+      payload: {
+        webhook_type: 'TRANSACTIONS',
+        webhook_code: 'SYNC_UPDATES_AVAILABLE',
+        item_id: 'item-fake',
+      },
+    });
+  });
+
+  it('reads the header case-insensitively', async () => {
+    const rawBody = JSON.stringify({ webhook_type: 'ITEM' });
+
+    const event = await provider().verifyAndParseWebhook(rawBody, {
+      'Fake-Verification': bodyHashHex(rawBody),
+    });
+
+    expect(event.type).toBe('ITEM');
+  });
+
+  it('defaults code and itemId to null when the body omits them', async () => {
+    const rawBody = JSON.stringify({ webhook_type: 'ITEM' });
+
+    const event = await provider().verifyAndParseWebhook(rawBody, {
+      'fake-verification': bodyHashHex(rawBody),
+    });
+
+    expect(event.code).toBeNull();
+    expect(event.itemId).toBeNull();
+  });
+
+  it('rejects a header that does not match the body', async () => {
+    const rawBody = JSON.stringify({ webhook_type: 'TRANSACTIONS' });
+
+    await expect(
+      provider().verifyAndParseWebhook(rawBody, { 'fake-verification': 'not-the-hash' })
+    ).rejects.toBeInstanceOf(WebhookVerificationError);
+  });
+
+  it('rejects a missing header', async () => {
     await expect(provider().verifyAndParseWebhook('{}', {})).rejects.toBeInstanceOf(
-      NotSupportedError
+      WebhookVerificationError
     );
+  });
+
+  it('rejects a header valid for a different body than the one that arrived', async () => {
+    const signedFor = JSON.stringify({ webhook_type: 'TRANSACTIONS' });
+    const actual = JSON.stringify({ webhook_type: 'ITEM' });
+
+    await expect(
+      provider().verifyAndParseWebhook(actual, { 'fake-verification': bodyHashHex(signedFor) })
+    ).rejects.toBeInstanceOf(WebhookVerificationError);
   });
 });
 

@@ -3,9 +3,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { forgetLinkToken, storedLinkToken } from '@/lib/plaidLink';
+import {
+  forgetLinkToken,
+  forgetReauthConnection,
+  storedLinkToken,
+  storedReauthConnection,
+} from '@/lib/plaidLink';
 import { usePlaidLink } from 'react-plaid-link';
-import { exchangePublicTokenAction } from '@/src/server/actions/bank';
+import { exchangePublicTokenAction, markReconnectedAction } from '@/src/server/actions/bank';
 
 /**
  * Coming back from an OAuth bank.
@@ -23,15 +28,26 @@ import { exchangePublicTokenAction } from '@/src/server/actions/bank';
  * cheerfully starts a Link session for whoever asks is a page that starts one
  * for a link in an email.
  *
+ * The flow being resumed is either a brand-new connection or Link's update
+ * mode reconnecting an existing one (spec §5a), and the stashed connection id
+ * is what tells the two apart: present, this is a reconnect and update mode's
+ * `onSuccess` has no public token worth exchanging, so `markReconnectedAction`
+ * runs instead of `exchangePublicTokenAction`.
+ *
  * Everything is read in an effect rather than during render because both
  * `sessionStorage` and `window.location` exist only in the browser, and this
  * component is prerendered on the server first.
  */
 
+/** Something went wrong that this page cannot describe. */
+const UNREACHABLE = 'Something went wrong connecting to the server. Try again.';
+
 /** What the browser brought back with it, once the browser has been asked. */
 interface ResumedFlow {
   token: string;
   receivedRedirectUri: string;
+  /** Set only when this is a reconnect resuming, never a brand-new bank. */
+  connectionId: string | null;
 }
 
 export function OAuthReturn() {
@@ -42,11 +58,17 @@ export function OAuthReturn() {
 
   useEffect(() => {
     const token = storedLinkToken();
-    if (token) setResumed({ token, receivedRedirectUri: window.location.href });
+    if (token) {
+      setResumed({
+        token,
+        receivedRedirectUri: window.location.href,
+        connectionId: storedReauthConnection(),
+      });
+    }
     setAsked(true);
   }, []);
 
-  const finish = useCallback(
+  const finishExchange = useCallback(
     async (publicToken: string) => {
       try {
         const result = await exchangePublicTokenAction({ publicToken });
@@ -59,15 +81,32 @@ export function OAuthReturn() {
         // A refusal is a value with a message on it; this is the call itself
         // never coming back. Unhandled, it leaves the page saying "Finishing
         // the connection…" with nothing to say it never will.
-        setError('Something went wrong connecting to the server. Try again.');
+        setError(UNREACHABLE);
       }
     },
     [router]
   );
 
-  /** The flow is over, however it ended: the stashed token is spent. */
+  const finishReauth = useCallback(
+    async (connectionId: string) => {
+      try {
+        const result = await markReconnectedAction({ connectionId });
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        router.replace('/settings/connections');
+      } catch {
+        setError(UNREACHABLE);
+      }
+    },
+    [router]
+  );
+
+  /** The flow is over, however it ended: the stash is spent either way. */
   const done = () => {
     forgetLinkToken();
+    forgetReauthConnection();
     setResumed(null);
   };
 
@@ -75,10 +114,17 @@ export function OAuthReturn() {
     token: resumed?.token ?? null,
     receivedRedirectUri: resumed?.receivedRedirectUri,
     onSuccess: (publicToken) => {
+      // Read before `done()` clears it: `resumed` is gone the instant this
+      // returns.
+      const connectionId = resumed?.connectionId ?? null;
       // Spent either way: the flow has left Link, and this page must not be
       // able to resume it a second time.
       done();
-      if (publicToken) void finish(publicToken);
+      if (connectionId) {
+        void finishReauth(connectionId);
+      } else if (publicToken) {
+        void finishExchange(publicToken);
+      }
     },
     // Closed without finishing - the user backed out at the bank. The token is
     // single-use, so there is nothing here left to resume.

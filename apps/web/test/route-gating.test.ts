@@ -100,24 +100,33 @@ describe('the route list this test walks', () => {
     expect(publicRoutes.length + gatedRoutes.length).toBe(routes.length);
   });
 
-  it('treats exactly two routes as reachable without a session', () => {
-    // Auth.js's own endpoints are how a session is made, and the health check
-    // exists to be asked by something that has none. Anything else appearing
-    // here is a new hole, and this is where it gets noticed.
+  it('treats exactly these routes as reachable without a session', () => {
+    // Auth.js's own endpoints are how a session is made, the health check
+    // exists to be asked by something that has none, the webhook has no
+    // session to check at all, and the cron safety net authenticates by
+    // bearer token instead (spec §4). Anything else appearing here is a new
+    // hole, and this is where it gets noticed.
     expect(publicRoutes.map((route) => route.path)).toEqual([
       '/api/auth/sample',
       '/api/health',
+      '/api/internal/sync',
+      '/api/webhooks/plaid',
     ]);
   });
 
   it('has no CRUD routes left: reads are components and writes are actions', () => {
     // /api/data, /api/projects, /api/transactions, /api/labor and /api/invoices
     // were how the client-rendered pages talked to the database. Their pages
-    // read on the server now, and nothing should put them back.
+    // read on the server now, and nothing should put them back. /api/export
+    // (spec §6) is the one exception to "reads are components": what it
+    // reads is not a page.
     expect(routes.map((route) => route.path)).toEqual([
       '/api/auth/sample',
+      '/api/export',
       '/api/health',
       '/api/import/csv',
+      '/api/internal/sync',
+      '/api/webhooks/plaid',
     ]);
   });
 

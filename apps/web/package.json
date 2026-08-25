@@ -9,7 +9,7 @@
     "check:security": "tsx scripts/check-security.ts",
     "start": "next start -p 3000",
     "plaid:smoke": "tsx scripts/plaid-smoke.ts",
-    "lint": "next lint --dir app --dir components --dir e2e --dir lib --dir src --dir scripts --file middleware.ts --file auth.ts --file auth.config.ts --file instrumentation.ts --file playwright.config.ts",
+    "lint": "eslint app components e2e lib src scripts middleware.ts auth.ts auth.config.ts instrumentation.ts playwright.config.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
@@ -30,6 +30,7 @@
   },
   "devDependencies": {
     "@budget-bot/config": "workspace:*",
+    "@eslint/eslintrc": "^3.3.6",
     "@playwright/test": "^1.62.1",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
@@ -37,7 +38,7 @@
     "@types/node": "^24.13.3",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
-    "eslint": "^8.57.1",
+    "eslint": "^9.39.5",
     "eslint-config-next": "15.5.23",
     "jsdom": "^30.0.1",
     "tsx": "^4.23.12",

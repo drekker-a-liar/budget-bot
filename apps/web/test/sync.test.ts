@@ -220,10 +220,10 @@ describeDb('runSync', () => {
     expect(await transactionsRepo.listTransactions(db, ownerId)).toHaveLength(7);
   });
 
-  it('marks the connection synced and clears whatever the last run left', async () => {
+  it('marks the connection synced and clears whatever a transient failure left (SF-1)', async () => {
     await bankRepo.recordSyncError(db, ownerId, connection.id, {
-      code: 'ITEM_LOGIN_REQUIRED',
-      status: 'reauth_required',
+      code: 'SYNC_FAILED',
+      status: 'error',
     });
 
     await sync({ pages: threePages() }).run();
@@ -231,6 +231,20 @@ describeDb('runSync', () => {
 
     expect(after.status).toBe('active');
     expect(after.lastErrorCode).toBeNull();
+    expect(after.lastSyncedAt).not.toBeNull();
+  });
+
+  it('leaves ‘reauth_required’ standing through a successful sync (SF-2)', async () => {
+    await bankRepo.recordSyncError(db, ownerId, connection.id, {
+      code: 'PENDING_EXPIRATION',
+      status: 'reauth_required',
+    });
+
+    await sync({ pages: threePages() }).run();
+    const after = await reload();
+
+    expect(after.status).toBe('reauth_required');
+    expect(after.lastErrorCode).toBe('PENDING_EXPIRATION');
     expect(after.lastSyncedAt).not.toBeNull();
   });
 
@@ -304,6 +318,7 @@ describeDb('runSync', () => {
       removed: 0,
       pages: 1,
       hasMore: true,
+      unknownAccountCount: 0,
       retryAfterSeconds: 42,
     });
     expect(await cursorOf()).toBe('cursor-1');
@@ -535,7 +550,14 @@ describeDb('runSync', () => {
 
     const out = await sync({ pages: threePages() }).run();
 
-    expect(out).toEqual({ added: 3, modified: 0, removed: 0, pages: 1, hasMore: true });
+    expect(out).toEqual({
+      added: 3,
+      modified: 0,
+      removed: 0,
+      pages: 1,
+      hasMore: true,
+      unknownAccountCount: 0,
+    });
     expect(await cursorOf()).toBe('cursor-1');
     expect(await transactionsRepo.listTransactions(db, ownerId)).toHaveLength(3);
   });
@@ -567,8 +589,10 @@ describeDb('runSync', () => {
 
     // The page still lands - one dropped row is not a reason to lose the other
     // - but the connection carries the code, because a transaction that never
-    // arrived is one the owner would otherwise never know to look for.
-    expect(out).toMatchObject({ added: 1, pages: 1 });
+    // arrived is one the owner would otherwise never know to look for. The
+    // count itself is transient: it rides back on the result for the caller
+    // to show, but is not what `recordSyncResult` persists.
+    expect(out).toMatchObject({ added: 1, pages: 1, unknownAccountCount: 1 });
     const after = await reload();
     expect(after.lastErrorCode).toBe(UNKNOWN_ACCOUNT);
     expect(after.lastSyncedAt).not.toBeNull();

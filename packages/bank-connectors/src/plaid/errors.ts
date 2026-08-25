@@ -82,6 +82,23 @@ export class PlaidRequestError extends Error {
   }
 }
 
+/**
+ * Thrown by `verifyAndParseWebhook`, and by nothing else.
+ *
+ * The message names a failure kind - "signature verification failed", "stale
+ * iat" - and never anything from the request it is describing: not the JWT,
+ * not the raw body, not a claim. There is no token in this path the way there
+ * is in `toPlaidError`'s, so the discipline is simpler to keep: the message is
+ * always a literal written at the call site, never text copied out of what
+ * was being verified.
+ */
+export class WebhookVerificationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'WebhookVerificationError';
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }

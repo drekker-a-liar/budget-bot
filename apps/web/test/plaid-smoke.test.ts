@@ -161,6 +161,10 @@ function fakeClient(pages: FakePage[]): SandboxClient & { cursors: Array<string 
     },
     linkTokenCreate: async () => ({ data: {} }) as never,
     itemRemove: async () => ({ data: {} }) as never,
+    // The smoke script never verifies a webhook; nothing here calls this.
+    webhookVerificationKeyGet: async () => {
+      throw new Error('not used by the smoke script');
+    },
   } as SandboxClient & { cursors: Array<string | undefined> };
 }
 

@@ -1,3 +1,4 @@
+import { desc, eq } from 'drizzle-orm';
 import type { Executor } from '../client';
 import { importBatches } from '../schema';
 
@@ -28,6 +29,21 @@ export interface ImportBatch extends NewImportBatch {
   createdAt: string;
 }
 
+type ImportBatchRow = typeof importBatches.$inferSelect;
+
+function toImportBatch(row: ImportBatchRow): ImportBatch {
+  return {
+    id: row.id,
+    ownerId: row.ownerId,
+    source: row.source,
+    filename: row.filename,
+    rowCount: row.rowCount,
+    insertedCount: row.insertedCount,
+    skippedCount: row.skippedCount,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
 export async function createImportBatch(
   db: Executor,
   ownerId: string,
@@ -45,14 +61,50 @@ export async function createImportBatch(
     })
     .returning();
 
-  return {
-    id: row.id,
-    ownerId: row.ownerId,
-    source: row.source,
-    filename: row.filename,
-    rowCount: row.rowCount,
-    insertedCount: row.insertedCount,
-    skippedCount: row.skippedCount,
-    createdAt: row.createdAt.toISOString(),
-  };
+  return toImportBatch(row);
+}
+
+/**
+ * Corrects a batch's counts to what actually landed.
+ *
+ * `createImportBatch` is written before the rows, from a guess made off the
+ * parsed file alone - it cannot yet know which rows the cross-batch dedupe
+ * index (spec §7) will drop. `importCsvBatch` calls this in the same
+ * transaction once the insert has run, so the persisted batch never claims
+ * rows that were silently skipped as duplicates.
+ */
+export async function updateImportBatchCounts(
+  db: Executor,
+  id: string,
+  counts: { insertedCount: number; skippedCount: number }
+): Promise<ImportBatch> {
+  const [row] = await db
+    .update(importBatches)
+    .set({
+      insertedCount: counts.insertedCount,
+      skippedCount: counts.skippedCount,
+      updatedAt: new Date(),
+    })
+    .where(eq(importBatches.id, id))
+    .returning();
+  return toImportBatch(row);
+}
+
+/** Every import batch the owner has run, newest first - what an export reads (spec §6). */
+export async function listImportBatches(db: Executor, ownerId: string): Promise<ImportBatch[]> {
+  const rows = await db
+    .select()
+    .from(importBatches)
+    .where(eq(importBatches.ownerId, ownerId))
+    .orderBy(desc(importBatches.createdAt), desc(importBatches.id));
+  return rows.map(toImportBatch);
+}
+
+/** Every import batch the owner has, gone at once (spec §6, delete-all). */
+export async function deleteAllImportBatches(db: Executor, ownerId: string): Promise<number> {
+  const rows = await db
+    .delete(importBatches)
+    .where(eq(importBatches.ownerId, ownerId))
+    .returning({ id: importBatches.id });
+  return rows.length;
 }

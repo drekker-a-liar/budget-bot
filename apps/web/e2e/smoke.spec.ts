@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
 import { E2E_EMAIL, runDbScript } from './environment';
 
@@ -46,6 +47,66 @@ const FAKE_BANK = {
    */
   charge: { description: 'Fake Hardware Supply', amount: '$114.75' },
 };
+
+/**
+ * The item id `FakeBankProvider` mints for every connection it exchanges
+ * (`fake-provider.ts`, `FAKE_ITEM_ID`) - the only one a webhook body can name
+ * for this run's connection to resolve.
+ */
+const FAKE_ITEM_ID = 'item-fake';
+
+/**
+ * One value per invocation of this suite, folded into every webhook body it
+ * sends. `webhook_events.body_hash` carries a table-wide unique constraint,
+ * and `db:seed --reset` only clears the owner's own domain tables - it has no
+ * owner to scope a webhook ledger row to before the item is resolved, so a
+ * row this suite inserted on a previous run against the same database
+ * outlives the reset. A static body would make its second post of a run
+ * collide with the first run's row and read back `duplicate:true` where this
+ * run expects `true` - not a hazard the door needs to guard against, since a
+ * real Plaid webhook body is never byte-identical across two calendar days
+ * anyway. The nonce is never read by the route's own dispatch (`type`/`code`/
+ * `item_id`/`error.error_code` are the only fields it looks at); it exists
+ * purely to make this run's hash this run's own.
+ */
+const RUN_NONCE = randomUUID();
+
+/** One connection, as `/api/export` (spec §6) is willing to describe it. */
+interface ExportConnection {
+  institutionName: string | null;
+  lastSyncedAt: string | null;
+}
+interface ExportDoc {
+  units: string;
+  connections: ExportConnection[];
+}
+
+/**
+ * The fake provider's stand-in for Plaid's signature (spec §2): a header that
+ * has to equal `sha256(rawBody)` hex, computed here the same way
+ * `FakeBankProvider.verifyAndParseWebhook` checks it.
+ */
+function fakeVerificationHeader(rawBody: string): string {
+  return createHash('sha256').update(rawBody).digest('hex');
+}
+
+/** Posts a Plaid-shaped webhook body through the real route, fake-signed. */
+function postFakeWebhook(page: Page, rawBody: string) {
+  return page.request.post('/api/webhooks/plaid', {
+    headers: {
+      'content-type': 'application/json',
+      'fake-verification': fakeVerificationHeader(rawBody),
+    },
+    data: rawBody,
+  });
+}
+
+/** The owner's own export, read the same way `DangerZone`'s link would fetch it. */
+async function fetchExport(page: Page): Promise<ExportDoc> {
+  const response = await page.request.get('/api/export');
+  expect(response.status()).toBe(200);
+  return response.json() as Promise<ExportDoc>;
+}
 
 test.describe('with no session', () => {
   test('the dashboard is the sign-in page', async ({ page }) => {
@@ -217,5 +278,135 @@ test.describe.serial('signed in through the test-only door', () => {
       'Synced: 0 added, 0 modified, 0 removed.'
     );
     await expect(connection.getByText(/Last synced .* UTC/)).toBeVisible();
+  });
+
+  /**
+   * From here on the journey drives the lifecycle Plaid pushes at this
+   * connection from the outside - a webhook, a redelivery, a broken token -
+   * through the real `/api/webhooks/plaid` route rather than the UI, the way
+   * Plaid itself would reach the app (spec §2, §3). `lastSyncWebhookBody` is
+   * the exact bytes the sync step sent, kept so the replay step can resend
+   * them byte-for-byte: a body reconstructed from the same fields would still
+   * be a *body Plaid could have sent twice*, not proof this route recognises
+   * the one it already saw.
+   */
+  let lastSyncWebhookBody: string;
+
+  test('a webhook-driven sync updates the connection without the Sync now button', async () => {
+    const before = await fetchExport(page);
+    const beforeConnection = before.connections.find(
+      (c) => c.institutionName === FAKE_BANK.institution
+    );
+    // Set by the two tests above, which already ran a connect and a manual
+    // sync - the baseline this step's own sync has to move past.
+    expect(beforeConnection?.lastSyncedAt).toBeTruthy();
+
+    lastSyncWebhookBody = JSON.stringify({
+      webhook_type: 'TRANSACTIONS',
+      webhook_code: 'SYNC_UPDATES_AVAILABLE',
+      item_id: FAKE_ITEM_ID,
+      nonce: RUN_NONCE,
+    });
+    const response = await postFakeWebhook(page, lastSyncWebhookBody);
+
+    expect(response.status()).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true });
+
+    // The fake script's two pages were already drained by the connect step
+    // (spec §2's `defaultFakeScript`), so this sync has nothing new to add -
+    // its proof of having run is `last_synced_at` moving, not a new row.
+    const after = await fetchExport(page);
+    const afterConnection = after.connections.find(
+      (c) => c.institutionName === FAKE_BANK.institution
+    );
+    expect(afterConnection?.lastSyncedAt).toBeTruthy();
+    expect(new Date(afterConnection!.lastSyncedAt!).getTime()).toBeGreaterThan(
+      new Date(beforeConnection!.lastSyncedAt!).getTime()
+    );
+
+    await page.goto('/settings/connections');
+    await expect(connectionCard().getByText(/Last synced .* UTC/)).toBeVisible();
+  });
+
+  test('replaying the identical webhook body is recognised, not reprocessed', async () => {
+    const before = await fetchExport(page);
+    const beforeConnection = before.connections.find(
+      (c) => c.institutionName === FAKE_BANK.institution
+    );
+
+    const response = await postFakeWebhook(page, lastSyncWebhookBody);
+
+    expect(response.status()).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true, duplicate: true });
+
+    // Nothing ran a second time: the replay ledger's unique `body_hash`
+    // caught it before a sync was ever dispatched (spec §3).
+    const after = await fetchExport(page);
+    const afterConnection = after.connections.find(
+      (c) => c.institutionName === FAKE_BANK.institution
+    );
+    expect(afterConnection?.lastSyncedAt).toBe(beforeConnection?.lastSyncedAt);
+  });
+
+  test('an ITEM_LOGIN_REQUIRED webhook shows the reauth banner, and Reconnect clears it', async () => {
+    const rawBody = JSON.stringify({
+      webhook_type: 'ITEM',
+      webhook_code: 'ERROR',
+      item_id: FAKE_ITEM_ID,
+      error: { error_code: 'ITEM_LOGIN_REQUIRED' },
+      nonce: RUN_NONCE,
+    });
+    const response = await postFakeWebhook(page, rawBody);
+
+    expect(response.status()).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true });
+
+    await page.goto('/settings/connections');
+    const connection = connectionCard();
+    await expect(connection.getByText('Your bank needs you to sign in again')).toBeVisible();
+    await expect(connection.getByRole('alert')).toHaveText(
+      'This bank needs you to sign in again.'
+    );
+
+    // The fake kind's Reconnect resolves immediately (no Link UI to drive
+    // behind the E2E door) - `markReconnectedAction` straight to `'active'`.
+    await connection.getByRole('button', { name: 'Reconnect' }).click();
+
+    await expect(connection.getByText('Connected')).toBeVisible();
+    await expect(connection.getByRole('alert')).toHaveCount(0);
+  });
+
+  test('disconnecting removes the connection but keeps its transactions', async () => {
+    const connection = connectionCard();
+
+    await connection.getByRole('button', { name: 'Disconnect' }).click();
+    await connection.getByLabel(/Type .disconnect. to confirm/i).fill('disconnect');
+    await connection.getByRole('button', { name: 'Disconnect' }).click();
+
+    await expect(connectionCard()).toBeHidden();
+
+    // `bank_accounts` cascades away with the connection, but
+    // `transactions.bank_account_id` is `SET NULL` (spec §6) - the charge
+    // this run synced earlier stays on the ledger with no bank behind it.
+    await page.goto('/transactions');
+    const row = page.getByRole('row').filter({ hasText: FAKE_BANK.charge.description });
+    await expect(row).toBeVisible();
+    await expect(row).toContainText(FAKE_BANK.charge.amount);
+  });
+
+  test('the settings page still offers a full export', async () => {
+    await page.goto('/settings/connections');
+
+    await expect(page.getByRole('link', { name: 'Export my data' })).toHaveAttribute(
+      'href',
+      '/api/export'
+    );
+
+    // Not a delete-all step deliberately: this suite reseeds by dropping the
+    // owner's rows, and running delete-all here would make that reset the
+    // test itself rather than `db:seed --reset`'s job. Unit and action tests
+    // already cover delete-all's own behaviour.
+    const exported = await fetchExport(page);
+    expect(exported.units).toBe('cents');
   });
 });

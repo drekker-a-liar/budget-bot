@@ -15,17 +15,29 @@ vi.mock('@/auth', () => ({
   auth: vi.fn(async () => ({ user: { id: 'user-1' }, expires: '2026-09-01' })),
 }));
 
+/**
+ * What `importCsvBatch` returns - written out rather than imported, so the
+ * mock's type does not depend on `@budget-bot/db`'s real signature. `batch`
+ * carries an index signature because the route reads `insertedCount` and
+ * `skippedCount` off it (spec §7), on top of the identity fields every
+ * mocked call returns.
+ */
+type MockImportResult = {
+  batch: { id: string; ownerId: string; createdAt: string } & Record<string, unknown>;
+  inserted: object[];
+};
+
 const db = vi.hoisted(() => ({
-  importCsvBatch: vi.fn(
-    async (
+  importCsvBatch: vi.fn<
+    (
       _db: unknown,
       ownerId: string,
-      input: { batch: object; rows: object[] }
-    ) => ({
-      batch: { id: 'batch-1', ownerId, createdAt: 'now', ...input.batch },
-      inserted: input.rows,
-    })
-  ),
+      input: { batch: Record<string, unknown>; rows: object[] }
+    ) => Promise<MockImportResult>
+  >(async (_db, ownerId, input) => ({
+    batch: { id: 'batch-1', ownerId, createdAt: 'now', ...input.batch },
+    inserted: input.rows,
+  })),
 }));
 
 vi.mock('@budget-bot/db', async (importOriginal) => ({
@@ -113,6 +125,21 @@ describe('POST /api/import/csv', () => {
       batchId: 'batch-1',
       errors: [{ line: 3, reason: expect.stringMatching(/date/i) }],
     });
+  });
+
+  it('reports the batch\'s reconciled counts, not the parse-only guess, when rows repeat an earlier import', async () => {
+    // The route's `batch` input to `importCsvBatch` is a guess made before
+    // any conflict is known (spec §7 dedupe happens in the db package). The
+    // repo corrects it in place; this asserts the response trusts that
+    // correction rather than the route's own arithmetic.
+    db.importCsvBatch.mockResolvedValueOnce({
+      batch: { id: 'batch-2', ownerId: 'user-1', createdAt: 'now', insertedCount: 1, skippedCount: 2 },
+      inserted: [{ id: 'row-1' }],
+    });
+
+    const { body } = await post(textCsv(CSV));
+
+    expect(body).toMatchObject({ inserted: 1, skipped: 2 });
   });
 
   it('imports a US-dated statement, which is what a self-hoster will upload first', async () => {

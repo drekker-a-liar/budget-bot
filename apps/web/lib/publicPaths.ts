@@ -14,6 +14,11 @@
  * `privacy` and `api/webhooks/plaid` have no route yet. They are excluded now
  * so that adding them in a later phase is not a change to this boundary, which
  * is the kind of change that deserves review.
+ *
+ * `api/internal/sync` (spec §4) is excluded for a different reason than the
+ * rest: it does not authenticate by session at all. The cron safety net
+ * checks a bearer token itself, so a redirect-to-login from this middleware
+ * would only ever be in its way.
  */
 const MIDDLEWARE_EXCLUSIONS = [
   '_next/static',
@@ -21,6 +26,7 @@ const MIDDLEWARE_EXCLUSIONS = [
   'favicon.ico',
   'api/auth',
   'api/webhooks/plaid',
+  'api/internal/sync',
   'api/health',
   'privacy',
   'login',
@@ -43,6 +49,7 @@ export const PUBLIC_PATHS = [
   '/privacy',
   '/api/auth',
   '/api/webhooks/plaid',
+  '/api/internal/sync',
   '/api/health',
 ] as const;
 

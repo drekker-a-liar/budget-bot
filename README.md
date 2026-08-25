@@ -95,23 +95,52 @@ ever stored, processed or transmitted.
 | `apps/web` | The Next.js 15 App Router application |
 | `packages/core` | Money, schemas and every margin calculation. No I/O |
 | `packages/db` | Drizzle schema, repositories, migrations, seed |
-| `packages/bank-connectors` | The `BankProvider` interface and the CSV one |
+| `packages/bank-connectors` | The `BankProvider` interface, the Plaid connector (link, sync, webhook verification), and CSV statement parsing |
 | `packages/config` | Shared tsconfig, eslint and vitest bases |
 
 ## Connecting a bank
 
 `/settings/connections` links a bank through Plaid Link and fills the card
-inbox on its own, so charges stop having to be typed in. **Sync now** pulls
-`/transactions/sync` page by page under [ADR
-0004](docs/architecture/adr/0004-transactions-sync-over-get.md)'s merge rule: a
-transaction the bank sends again is updated only in the columns the bank owns,
-so re-syncing never undoes an afternoon of filing. The access token is
-AES-256-GCM encrypted before it reaches the database, is never returned by any
-read and never appears in a log or an error. A deployment with no Plaid
-credentials is a supported deployment — the screen says so, and CSV import and
-manual entry carry on. Setting it up is in [the Vercel
-guide](docs/self-hosting/vercel.md#9-connecting-a-bank) and [the local
-one](docs/self-hosting/local.md#connecting-a-bank-locally).
+inbox on its own, so charges stop having to be typed in. Every pull —
+webhook-driven, cron-driven or manual — runs `/transactions/sync` page by page
+under [ADR 0004](docs/architecture/adr/0004-transactions-sync-over-get.md)'s
+merge rule: a transaction the bank sends again is updated only in the columns
+the bank owns, so re-syncing never undoes an afternoon of filing. The access
+token is AES-256-GCM encrypted before it reaches the database, is never
+returned by any read and never appears in a log or an error.
+
+- **Webhooks keep it current.** `POST /api/webhooks/plaid` (signature-verified,
+  no session) runs a sync the moment Plaid has new transactions, and marks a
+  connection `reauth_required` the moment a login stops working or is about to
+  expire — before the owner ever notices stale numbers.
+- **The daily cron is the backstop.** `GET /api/internal/sync` (bearer-gated,
+  `CRON_SECRET`) runs every connection a webhook could have missed once a day
+  and purges webhook ledger rows older than 30 days. It retries `active` and
+  `error` connections — a transient failure heals itself on the next run — but
+  never touches `reauth_required`: only the owner reconnecting fixes a dead
+  token.
+- **Reconnect** shows up on the connections page the moment a bank needs
+  attention, and reopens Plaid Link in update mode without re-entering
+  anything else.
+- **Disconnect** removes a linked bank; transactions already filed keep their
+  category and project, they just stop pointing at an account that no longer
+  exists.
+
+A deployment with no Plaid credentials is a supported deployment — the screen
+says so, and CSV import and manual entry carry on; disconnecting a bank and
+deleting all data both still work with no provider configured. Setting it up
+is in [the Vercel guide](docs/self-hosting/vercel.md#9-connecting-a-bank) and
+[the local one](docs/self-hosting/local.md#connecting-a-bank-locally).
+
+## Exporting or deleting your data
+
+Settings has a "Danger zone": **Export my data** downloads one JSON document
+of everything — projects, transactions, labor, invoices, import batches and
+connection metadata (institution, status, masked accounts — never a token,
+never a cursor). **Delete all my data** removes every row across every table,
+scoped to the signed-in owner, behind a type-to-confirm prompt; the Auth.js
+account itself survives so signing back in starts from empty rather than
+locked out.
 
 ## Uploading a bank statement
 

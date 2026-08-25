@@ -196,6 +196,20 @@ describe('TransactionsView', () => {
       );
     });
 
+    it('tells the user rows were skipped as duplicates when none of them had a parse error', async () => {
+      // spec §7: a row can now be skipped for repeating an earlier import,
+      // which carries no line/reason - only a parse failure does. `errors`
+      // can be empty here even though `skipped > 0`.
+      stubFetch(200, { inserted: 0, skipped: 2, errors: [] });
+      renderView();
+
+      await userEvent.upload(screen.getByLabelText(/import csv statement/i), file);
+
+      await waitFor(() =>
+        expect(screen.getByRole('alert')).toHaveTextContent(/Imported 0, skipped 2/)
+      );
+    });
+
     it('reports a rejected upload and does not refresh', async () => {
       stubFetch(413, { error: 'That file is larger than the 5 MiB import limit.' });
       renderView();

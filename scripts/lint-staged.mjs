@@ -7,9 +7,9 @@ import { dirname, join, relative, resolve } from 'node:path';
  * `eslint --fix` over what is staged, and nothing else. Run by lefthook's
  * pre-commit hook (see lefthook.yml).
  *
- * There is no single `eslint` to run at the root of this monorepo: `apps/web`
- * is on eslint 8 with the Next config and the packages are on eslint 9 with a
- * flat one. So the staged files are grouped by the workspace that owns them
+ * There is no single `eslint` to run at the root of this monorepo: every
+ * workspace carries its own eslint 9 flat config (there is deliberately no
+ * root eslint.config.js). So the staged files are grouped by the workspace that owns them
  * and each group is handed to that workspace's own eslint - which is also the
  * one CI will use, so a hook that passes is not a promise CI will break.
  *

@@ -4,7 +4,7 @@ import { expect, it } from 'vitest';
 import type { Database } from '../../src/client';
 import { loadKeysFromEnv } from '../../src/crypto';
 import { ConnectionAlreadyExistsError, bankRepo } from '../../src/repos';
-import { bankAccounts, bankConnections } from '../../src/schema';
+import { bankAccounts, bankConnections, transactions } from '../../src/schema';
 import { createOwner, describeDb, useTestDb } from '../helpers/db';
 
 const getDb = useTestDb();
@@ -472,6 +472,75 @@ describeDb('bankRepo.upsertAccounts', () => {
   });
 });
 
+/**
+ * Ordering (Task 8): `(name, id)` rather than insertion order, so the
+ * settings page draws the same list on every render instead of reshuffling
+ * whenever a balance refresh touches `updated_at`.
+ */
+describeDb('bankRepo.listAccounts', () => {
+  it('orders by name, alphabetically rather than by insertion', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const connection = await bankRepo.createConnection(db, ownerId, newConnection(), KEYRING);
+
+    // Inserted in reverse alphabetical order, so a passing test cannot be an
+    // accident of insertion or creation-time order.
+    await db.insert(bankAccounts).values([
+      { ownerId, connectionId: connection.id, externalAccountId: 'acct-c', name: 'Checking' },
+      { ownerId, connectionId: connection.id, externalAccountId: 'acct-b', name: 'Business Card' },
+      { ownerId, connectionId: connection.id, externalAccountId: 'acct-a', name: 'Autopay Savings' },
+    ]);
+
+    const accounts = await bankRepo.listAccounts(db, ownerId, connection.id);
+
+    expect(accounts.map((a) => a.name)).toEqual([
+      'Autopay Savings',
+      'Business Card',
+      'Checking',
+    ]);
+  });
+
+  it('breaks a tie on name by id, so two accounts with the same name still sort the same way every time', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const connection = await bankRepo.createConnection(db, ownerId, newConnection(), KEYRING);
+
+    const [first, second] = await db
+      .insert(bankAccounts)
+      .values([
+        { ownerId, connectionId: connection.id, externalAccountId: 'acct-x', name: 'Checking' },
+        { ownerId, connectionId: connection.id, externalAccountId: 'acct-y', name: 'Checking' },
+      ])
+      .returning({ id: bankAccounts.id });
+    const expectedIds = [first.id, second.id].sort();
+
+    const accounts = await bankRepo.listAccounts(db, ownerId, connection.id);
+
+    expect(accounts.map((a) => a.id)).toEqual(expectedIds);
+  });
+
+  it('sorts a null name last, deterministically, rather than scattering it among the named ones', async () => {
+    // The plausible real case: a Plaid account can be listed before its name
+    // has synced, or a CSV row can map to a blank name. `name` is nullable
+    // (`packages/db/src/schema/bank.ts`), and Postgres's default ASC puts
+    // NULL after every non-null value - this pins that the query relies on
+    // rather than asserting nothing.
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const connection = await bankRepo.createConnection(db, ownerId, newConnection(), KEYRING);
+
+    await db.insert(bankAccounts).values([
+      { ownerId, connectionId: connection.id, externalAccountId: 'acct-c', name: 'Checking' },
+      { ownerId, connectionId: connection.id, externalAccountId: 'acct-u', name: null },
+      { ownerId, connectionId: connection.id, externalAccountId: 'acct-a', name: 'Autopay Savings' },
+    ]);
+
+    const accounts = await bankRepo.listAccounts(db, ownerId, connection.id);
+
+    expect(accounts.map((a) => a.name)).toEqual(['Autopay Savings', 'Checking', null]);
+  });
+});
+
 describeDb('bankRepo.listConnections', () => {
   it('reports each connection with the accounts behind it', async () => {
     const db = getDb();
@@ -526,14 +595,10 @@ describeDb('bankRepo sync bookkeeping', () => {
     );
   });
 
-  it('records a completed sync and clears the last error', async () => {
+  it('records a completed sync and clears a healthy connection’s last error', async () => {
     const db = getDb();
     const ownerId = await createOwner(db);
     const connection = await bankRepo.createConnection(db, ownerId, newConnection(), KEYRING);
-    await bankRepo.recordSyncError(db, ownerId, connection.id, {
-      code: 'ITEM_LOGIN_REQUIRED',
-      status: 'reauth_required',
-    });
 
     await bankRepo.recordSyncResult(db, ownerId, connection.id, {
       added: 12,
@@ -541,6 +606,7 @@ describeDb('bankRepo sync bookkeeping', () => {
       removed: 1,
       pages: 2,
       hasMore: false,
+      unknownAccountCount: 0,
     });
 
     const after = await bankRepo.getConnection(db, ownerId, connection.id);
@@ -549,6 +615,63 @@ describeDb('bankRepo sync bookkeeping', () => {
       lastErrorCode: null,
       lastErrorAt: null,
     });
+    expect(after?.lastSyncedAt).not.toBeNull();
+  });
+
+  it('self-heals a connection standing at ‘error’ back to ‘active’ (SF-1)', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const connection = await bankRepo.createConnection(db, ownerId, newConnection(), KEYRING);
+    await bankRepo.recordSyncError(db, ownerId, connection.id, {
+      code: 'SYNC_FAILED',
+      status: 'error',
+    });
+
+    await bankRepo.recordSyncResult(db, ownerId, connection.id, {
+      added: 1,
+      modified: 0,
+      removed: 0,
+      pages: 1,
+      hasMore: false,
+      unknownAccountCount: 0,
+    });
+
+    const after = await bankRepo.getConnection(db, ownerId, connection.id);
+    expect(after).toMatchObject({
+      status: 'active',
+      lastErrorCode: null,
+      lastErrorAt: null,
+    });
+    expect(after?.lastSyncedAt).not.toBeNull();
+  });
+
+  it('leaves ‘reauth_required’ standing through a successful sync, only updating the cursor timestamp (SF-2)', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const connection = await bankRepo.createConnection(db, ownerId, newConnection(), KEYRING);
+    await bankRepo.recordSyncError(db, ownerId, connection.id, {
+      code: 'PENDING_EXPIRATION',
+      status: 'reauth_required',
+    });
+
+    await bankRepo.recordSyncResult(db, ownerId, connection.id, {
+      added: 4,
+      modified: 0,
+      removed: 0,
+      pages: 1,
+      hasMore: false,
+      unknownAccountCount: 0,
+    });
+
+    const after = await bankRepo.getConnection(db, ownerId, connection.id);
+    expect(after).toMatchObject({
+      status: 'reauth_required',
+      lastErrorCode: 'PENDING_EXPIRATION',
+    });
+    expect(after?.lastErrorAt).not.toBeNull();
+    // The one thing a sync while reauth_required is standing is still allowed
+    // to move: lastSyncedAt, so a Sync now that quietly succeeds is not lied
+    // about on the settings page even while the reconnect banner stays up.
     expect(after?.lastSyncedAt).not.toBeNull();
   });
 
@@ -568,5 +691,341 @@ describeDb('bankRepo sync bookkeeping', () => {
       lastErrorCode: 'ITEM_LOGIN_REQUIRED',
     });
     expect(after?.lastErrorAt).not.toBeNull();
+  });
+});
+
+describeDb('bankRepo.listSyncableConnectionsAllOwners', () => {
+  it('finds active and errored connections across every owner, and never the ciphertext (SF-1)', async () => {
+    const db = getDb();
+    const alice = await createOwner(db);
+    const bob = await createOwner(db);
+    const alicesActive = await bankRepo.createConnection(db, alice, newConnection(), KEYRING);
+    const bobsActive = await bankRepo.createConnection(db, bob, newConnection(), KEYRING);
+    const bobsErrored = await bankRepo.createConnection(db, bob, newConnection(), KEYRING);
+    await bankRepo.recordSyncError(db, bob, bobsErrored.id, {
+      code: 'SYNC_FAILED',
+      status: 'error',
+    });
+
+    const rows = await bankRepo.listSyncableConnectionsAllOwners(db);
+
+    expect(rows).toHaveLength(3);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        { id: alicesActive.id, ownerId: alice },
+        { id: bobsActive.id, ownerId: bob },
+        { id: bobsErrored.id, ownerId: bob },
+      ])
+    );
+    for (const row of rows) {
+      expect(Object.keys(row).sort()).toEqual(['id', 'ownerId']);
+    }
+  });
+
+  it('excludes a connection standing at ‘reauth_required’ (SF-1)', async () => {
+    const db = getDb();
+    const bob = await createOwner(db);
+    const alwaysActive = await bankRepo.createConnection(db, bob, newConnection(), KEYRING);
+    const needsReauth = await bankRepo.createConnection(db, bob, newConnection(), KEYRING);
+    await bankRepo.recordSyncError(db, bob, needsReauth.id, {
+      code: 'ITEM_LOGIN_REQUIRED',
+      status: 'reauth_required',
+    });
+
+    const rows = await bankRepo.listSyncableConnectionsAllOwners(db);
+
+    expect(rows).toEqual([{ id: alwaysActive.id, ownerId: bob }]);
+  });
+});
+
+/**
+ * Re-authentication (spec §5). Both functions end a connection at `'active'`
+ * with its errors cleared; what distinguishes them is which row they are
+ * allowed to touch. `replaceConnectionToken` is reached from the re-link
+ * upsert - a second Link run against a bank that is already connected, which
+ * arrives as `ConnectionAlreadyExistsError` and names only an item id, not a
+ * connection id - so it has to find the row itself and refuse to touch one
+ * that is not the caller's. `markConnectionActive` is reached from Link's
+ * update mode, which already has the connection id and only has to flip it.
+ */
+const NEW_ACCESS_TOKEN = 'access-sandbox-new-8f2a1c04-b6d9-4e77-9b12-0d3a5c6e7f81';
+
+describeDb('bankRepo.replaceConnectionToken', () => {
+  it('re-encrypts the new token under the existing row, decryptably', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const itemId = `item-${crypto.randomUUID()}`;
+    const original = await bankRepo.createConnection(
+      db,
+      ownerId,
+      newConnection({ itemId }),
+      KEYRING
+    );
+
+    const replaced = await bankRepo.replaceConnectionToken(db, ownerId, {
+      itemId,
+      accessToken: NEW_ACCESS_TOKEN,
+      keyring: KEYRING,
+    });
+
+    expect(replaced).toEqual({ id: original.id });
+    await expect(
+      bankRepo.withAccessToken(db, ownerId, original.id, KEYRING, async (t) => t)
+    ).resolves.toBe(NEW_ACCESS_TOKEN);
+
+    // Re-encrypted against the *existing* row id, same as `createConnection`
+    // (ADR 0002) - not a fresh row, and not decryptable under some other AAD.
+    const [raw] = await db
+      .select()
+      .from(bankConnections)
+      .where(eq(bankConnections.id, original.id));
+    expect(raw.accessTokenCiphertext).not.toContain('access-sandbox');
+  });
+
+  it('keeps the cursor: the same item, so the same pagination state', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const itemId = `item-${crypto.randomUUID()}`;
+    const original = await bankRepo.createConnection(
+      db,
+      ownerId,
+      newConnection({ itemId }),
+      KEYRING
+    );
+    await bankRepo.setCursor(db, ownerId, original.id, 'cursor-page-9');
+
+    await bankRepo.replaceConnectionToken(db, ownerId, {
+      itemId,
+      accessToken: NEW_ACCESS_TOKEN,
+      keyring: KEYRING,
+    });
+
+    expect((await bankRepo.getConnection(db, ownerId, original.id))?.cursor).toBe(
+      'cursor-page-9'
+    );
+  });
+
+  it('sets the connection active and clears whatever error it recorded', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const itemId = `item-${crypto.randomUUID()}`;
+    const original = await bankRepo.createConnection(
+      db,
+      ownerId,
+      newConnection({ itemId }),
+      KEYRING
+    );
+    await bankRepo.recordSyncError(db, ownerId, original.id, {
+      code: 'ITEM_LOGIN_REQUIRED',
+      status: 'reauth_required',
+    });
+
+    await bankRepo.replaceConnectionToken(db, ownerId, {
+      itemId,
+      accessToken: NEW_ACCESS_TOKEN,
+      keyring: KEYRING,
+    });
+
+    const after = await bankRepo.getConnection(db, ownerId, original.id);
+    expect(after).toMatchObject({
+      status: 'active',
+      lastErrorCode: null,
+      lastErrorAt: null,
+    });
+  });
+
+  it('refuses another owner’s row, untouched, byte for byte', async () => {
+    const db = getDb();
+    const alice = await createOwner(db);
+    const bob = await createOwner(db);
+    const itemId = `item-${crypto.randomUUID()}`;
+    const alices = await bankRepo.createConnection(
+      db,
+      alice,
+      newConnection({ itemId }),
+      KEYRING
+    );
+    const [before] = await db
+      .select()
+      .from(bankConnections)
+      .where(eq(bankConnections.id, alices.id));
+
+    const replaced = await bankRepo.replaceConnectionToken(db, bob, {
+      itemId,
+      accessToken: NEW_ACCESS_TOKEN,
+      keyring: KEYRING,
+    });
+
+    expect(replaced).toBeNull();
+    const [after] = await db
+      .select()
+      .from(bankConnections)
+      .where(eq(bankConnections.id, alices.id));
+    expect(after).toEqual(before);
+    // Alice's own token still opens with what she linked, not Bob's attempt.
+    await expect(
+      bankRepo.withAccessToken(db, alice, alices.id, KEYRING, async (t) => t)
+    ).resolves.toBe(ACCESS_TOKEN);
+  });
+
+  it('answers null for an item id nothing has linked, rather than throwing', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+
+    const replaced = await bankRepo.replaceConnectionToken(db, ownerId, {
+      itemId: 'item-nobody-has-linked',
+      accessToken: NEW_ACCESS_TOKEN,
+      keyring: KEYRING,
+    });
+
+    expect(replaced).toBeNull();
+  });
+});
+
+describeDb('bankRepo.markConnectionActive', () => {
+  it('activates the owner’s connection and clears its error', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const connection = await bankRepo.createConnection(db, ownerId, newConnection(), KEYRING);
+    await bankRepo.recordSyncError(db, ownerId, connection.id, {
+      code: 'ITEM_LOGIN_REQUIRED',
+      status: 'reauth_required',
+    });
+
+    const result = await bankRepo.markConnectionActive(db, ownerId, connection.id);
+
+    expect(result).toBe(true);
+    const after = await bankRepo.getConnection(db, ownerId, connection.id);
+    expect(after).toMatchObject({
+      status: 'active',
+      lastErrorCode: null,
+      lastErrorAt: null,
+    });
+  });
+
+  it('refuses to activate another owner’s connection', async () => {
+    const db = getDb();
+    const alice = await createOwner(db);
+    const bob = await createOwner(db);
+    const connection = await bankRepo.createConnection(db, alice, newConnection(), KEYRING);
+
+    expect(await bankRepo.markConnectionActive(db, bob, connection.id)).toBe(false);
+    expect((await bankRepo.getConnection(db, alice, connection.id))?.status).toBe('active');
+  });
+
+  it('answers false for a connection id that does not exist', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+
+    expect(await bankRepo.markConnectionActive(db, ownerId, crypto.randomUUID())).toBe(false);
+  });
+
+  it('refuses an id that is not a uuid rather than letting Postgres raise', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+
+    expect(await bankRepo.markConnectionActive(db, ownerId, 'conn-1')).toBe(false);
+  });
+});
+
+/**
+ * Disconnect (spec §6).
+ *
+ * Two cascades meet at this one statement: `bank_accounts.connection_id` is
+ * `ON DELETE CASCADE`, so the accounts behind a disconnected bank disappear
+ * with it, and `transactions.bank_account_id` is `ON DELETE SET NULL`, so a
+ * charge that was already filed keeps its category, its project and its place
+ * in the ledger - it just stops pointing at a bank account that no longer
+ * exists. The owner-scoped `WHERE` lives on the `DELETE` itself rather than a
+ * lookup beforehand, the same shape `markConnectionActive` uses: a connection
+ * id that belongs to somebody else and one that does not exist read as the
+ * same `false`.
+ */
+describeDb('bankRepo.deleteConnection', () => {
+  it('removes the connection and cascades its accounts', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const connection = await bankRepo.createConnection(db, ownerId, newConnection(), KEYRING);
+    await bankRepo.upsertAccounts(db, ownerId, connection.id, [account()]);
+
+    expect(await bankRepo.deleteConnection(db, ownerId, connection.id)).toBe(true);
+
+    expect(await bankRepo.getConnection(db, ownerId, connection.id)).toBeNull();
+    expect(
+      await db.select().from(bankAccounts).where(eq(bankAccounts.connectionId, connection.id))
+    ).toEqual([]);
+  });
+
+  it('leaves a filed transaction in the ledger with its bank link cleared', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const connection = await bankRepo.createConnection(db, ownerId, newConnection(), KEYRING);
+    const [linkedAccount] = await bankRepo.upsertAccounts(db, ownerId, connection.id, [account()]);
+    const [filed] = await db
+      .insert(transactions)
+      .values({
+        ownerId,
+        date: '2026-08-14',
+        description: 'THE HOME DEPOT #0421',
+        vendor: 'The Home Depot',
+        amountCents: parseMoney('114.75'),
+        category: 'materials',
+        paymentMethod: 'card',
+        status: 'matched',
+        taxDeductible: true,
+        provider: 'plaid',
+        externalId: 'tx-external-1',
+        bankAccountId: linkedAccount.id,
+      })
+      .returning({ id: transactions.id });
+
+    await bankRepo.deleteConnection(db, ownerId, connection.id);
+
+    const [after] = await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, filed.id));
+    expect(after).toMatchObject({
+      id: filed.id,
+      vendor: 'The Home Depot',
+      status: 'matched',
+      bankAccountId: null,
+    });
+  });
+
+  it('refuses another owner’s connection, leaving the row untouched', async () => {
+    const db = getDb();
+    const alice = await createOwner(db);
+    const bob = await createOwner(db);
+    const connection = await bankRepo.createConnection(db, alice, newConnection(), KEYRING);
+
+    expect(await bankRepo.deleteConnection(db, bob, connection.id)).toBe(false);
+    expect(await bankRepo.getConnection(db, alice, connection.id)).not.toBeNull();
+  });
+
+  it('leaves a second connection of the same owner untouched', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const gone = await bankRepo.createConnection(db, ownerId, newConnection(), KEYRING);
+    const kept = await bankRepo.createConnection(db, ownerId, newConnection(), KEYRING);
+
+    expect(await bankRepo.deleteConnection(db, ownerId, gone.id)).toBe(true);
+
+    expect(await bankRepo.getConnection(db, ownerId, gone.id)).toBeNull();
+    expect(await bankRepo.getConnection(db, ownerId, kept.id)).not.toBeNull();
+  });
+
+  it('answers false for a connection id that does not exist', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+
+    expect(await bankRepo.deleteConnection(db, ownerId, crypto.randomUUID())).toBe(false);
+  });
+
+  it('refuses an id that is not a uuid rather than letting Postgres raise', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+
+    expect(await bankRepo.deleteConnection(db, ownerId, 'conn-1')).toBe(false);
   });
 });

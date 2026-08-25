@@ -1,5 +1,5 @@
 import type { CardProfile } from '@budget-bot/core';
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { Database, Executor } from '../client';
 import { decryptToken, encryptToken, type TokenKeyring } from '../crypto';
 import { bankAccounts, bankConnections } from '../schema';
@@ -204,6 +204,14 @@ export interface SyncOutcome {
   removed: number;
   pages: number;
   hasMore: boolean;
+  /**
+   * Rows a page named an account for that this connection does not have.
+   * Transient like the rest of this type - `recordSyncResult` does not store
+   * it - because the durable trace of it is the `UNKNOWN_ACCOUNT` code
+   * `runSync` records on the connection, not a count that would go stale the
+   * moment the next sync ran.
+   */
+  unknownAccountCount: number;
 }
 
 export interface SyncFailure {
@@ -379,6 +387,74 @@ export async function getConnection(
   return row ? toConnection(row) : null;
 }
 
+/** What a webhook route needs to know about a connection, and nothing more. */
+export interface BankConnectionByItem {
+  id: string;
+  ownerId: string;
+  status: string;
+}
+
+/**
+ * The connection a provider's item id names, across every owner.
+ *
+ * Cross-owner by design: a webhook arrives with an item id and nothing else -
+ * there is no session on that route, and the whole point of this lookup is to
+ * find out whose connection it is (spec §3). The projection is deliberately
+ * narrower than `CONNECTION_COLUMNS`: a payload's signature has only just been
+ * checked when this runs, and the one thing that must never be one step away
+ * from a webhook body is the ciphertext column.
+ */
+export async function findConnectionByItemId(
+  db: Executor,
+  itemId: string
+): Promise<BankConnectionByItem | null> {
+  const [row] = await db
+    .select({
+      id: bankConnections.id,
+      ownerId: bankConnections.ownerId,
+      status: bankConnections.status,
+    })
+    .from(bankConnections)
+    .where(eq(bankConnections.itemId, itemId))
+    .limit(1);
+  return row ?? null;
+}
+
+/** What the cron sync (spec §4) needs to reach a connection - nothing else. */
+export interface ActiveConnectionByOwner {
+  id: string;
+  ownerId: string;
+}
+
+/**
+ * Every connection the cron may retry, across every owner: `'active'` and
+ * `'error'`, but never `'reauth_required'`.
+ *
+ * Cross-owner by design, the same way `findConnectionByItemId` is: the daily
+ * cron sync has no owner of its own to run as - it exists to catch up
+ * whatever the webhook path missed, for everyone (spec §4). `'error'` belongs
+ * in that catch-up: it is exactly the state a failed sync - webhook-driven or
+ * cron-driven - leaves behind, and a successful retry through
+ * `recordSyncResult` clears it back to `'active'`, so the cron is also how an
+ * errored connection heals itself without the owner noticing. `'reauth_required'`
+ * is deliberately excluded: that state means the stored token itself no
+ * longer works, which no amount of retrying fixes - only the owner, through
+ * Link's update mode, can clear it. The projection is narrower than
+ * `CONNECTION_COLUMNS` for the same reason it is there: the ciphertext column
+ * must never be one step away from a caller with no session to scope it.
+ * Token access for the connections this returns happens per-connection,
+ * through `withAccessToken`.
+ */
+export async function listSyncableConnectionsAllOwners(
+  db: Executor
+): Promise<ActiveConnectionByOwner[]> {
+  return db
+    .select({ id: bankConnections.id, ownerId: bankConnections.ownerId })
+    .from(bankConnections)
+    .where(inArray(bankConnections.status, ['active', 'error']))
+    .orderBy(asc(bankConnections.createdAt), asc(bankConnections.id));
+}
+
 /** Every connection the owner has linked, each with the accounts behind it. */
 export async function listConnections(
   db: Executor,
@@ -405,6 +481,81 @@ export async function listConnections(
   }));
 }
 
+/** One connection, projected to what an export may carry (spec §6). */
+export interface ExportConnection {
+  institutionName: string | null;
+  status: string;
+  createdAt: string;
+  lastSyncedAt: string | null;
+  accounts: Array<{
+    name: string | null;
+    mask: string | null;
+    type: string | null;
+    subtype: string | null;
+    isEnabled: boolean;
+  }>;
+}
+
+/**
+ * Every connection the owner has linked, projected down to what `/api/export`
+ * may hand back (spec §6): never the ciphertext, the cursor, the item id or
+ * the encryption key id - and no id at all, for the connection or for an
+ * account, because an export describes what is connected rather than handing
+ * out a handle back into this database. `CONNECTION_COLUMNS` is deliberately
+ * not reused here: it is already narrower than the table, but still carries
+ * `cursor` and `encryptionKeyId`, which is exactly the pair this projection
+ * exists to drop.
+ */
+export async function listConnectionsForExport(
+  db: Executor,
+  ownerId: string
+): Promise<ExportConnection[]> {
+  const rows = await db
+    .select({
+      id: bankConnections.id,
+      institutionName: bankConnections.institutionName,
+      status: bankConnections.status,
+      createdAt: bankConnections.createdAt,
+      lastSyncedAt: bankConnections.lastSyncedAt,
+    })
+    .from(bankConnections)
+    .where(eq(bankConnections.ownerId, ownerId))
+    .orderBy(asc(bankConnections.createdAt), asc(bankConnections.id));
+  if (rows.length === 0) return [];
+
+  const accounts = await db
+    .select({
+      connectionId: bankAccounts.connectionId,
+      name: bankAccounts.name,
+      mask: bankAccounts.mask,
+      type: bankAccounts.type,
+      subtype: bankAccounts.subtype,
+      isEnabled: bankAccounts.isEnabled,
+    })
+    .from(bankAccounts)
+    .where(eq(bankAccounts.ownerId, ownerId))
+    .orderBy(asc(bankAccounts.createdAt), asc(bankAccounts.id));
+
+  return rows.map((row) => ({
+    institutionName: row.institutionName,
+    status: row.status,
+    createdAt: toIso(row.createdAt),
+    lastSyncedAt: toIsoOrNull(row.lastSyncedAt),
+    accounts: accounts
+      .filter((account) => account.connectionId === row.id)
+      .map(({ name, mask, type, subtype, isEnabled }) => ({ name, mask, type, subtype, isEnabled })),
+  }));
+}
+
+/**
+ * The accounts behind one connection, in the order the settings page draws
+ * them.
+ *
+ * `(name, id)` rather than `created_at`: a balance refresh does not touch
+ * `created_at`, but the page re-fetches this list on every sync, and an order
+ * that was allowed to depend on anything else would reshuffle the table under
+ * a reader who is mid-glance at it.
+ */
 export async function listAccounts(
   db: Executor,
   ownerId: string,
@@ -420,7 +571,7 @@ export async function listAccounts(
         eq(bankAccounts.connectionId, connectionId)
       )
     )
-    .orderBy(asc(bankAccounts.createdAt), asc(bankAccounts.id));
+    .orderBy(asc(bankAccounts.name), asc(bankAccounts.id));
   return rows.map(toAccount);
 }
 
@@ -507,7 +658,22 @@ export async function setCursor(
 }
 
 /**
- * Marks a sync as finished, clearing whatever the last one left behind.
+ * Marks a sync as finished, clearing whatever the last one left behind - with
+ * one exception: a connection standing at `'reauth_required'` stays there.
+ *
+ * That status means a webhook has already told us the token is on its way
+ * out (`PENDING_EXPIRATION`, `USER_PERMISSION_REVOKED`) or is already dead
+ * (`ITEM_LOGIN_REQUIRED`) - and the token still works well enough to run
+ * `/transactions/sync` right up until the moment it does not. Every other
+ * transaction webhook that arrives in the meantime would otherwise call this
+ * function and erase the warning hours after it was raised, which defeats
+ * the whole point of raising it early (spec §3's dispatch map). `'error'` is
+ * not given the same treatment: it names a transient sync failure, not a
+ * dead token, and a successful sync clearing it back to `'active'` is
+ * exactly the self-heal `listSyncableConnectionsAllOwners` relies on (SF-1).
+ * The two real reconnect paths, `markConnectionActive` and
+ * `replaceConnectionToken`, are the only writes that ever move a connection
+ * *out* of `'reauth_required'`.
  *
  * The counts are not stored: there is no column for them and inventing one for
  * a number nothing reads would be worse than passing it. They are in the
@@ -521,14 +687,15 @@ export async function recordSyncResult(
   _outcome: SyncOutcome
 ): Promise<void> {
   if (!isUuid(id)) return;
+  const reauthRequired = sql`${bankConnections.status} = 'reauth_required'`;
   await db
     .update(bankConnections)
     .set({
-      status: 'active',
+      status: sql`case when ${reauthRequired} then ${bankConnections.status} else 'active' end`,
       lastSyncedAt: new Date(),
-      lastErrorCode: null,
-      lastErrorMessage: null,
-      lastErrorAt: null,
+      lastErrorCode: sql`case when ${reauthRequired} then ${bankConnections.lastErrorCode} else null end`,
+      lastErrorMessage: sql`case when ${reauthRequired} then ${bankConnections.lastErrorMessage} else null end`,
+      lastErrorAt: sql`case when ${reauthRequired} then ${bankConnections.lastErrorAt} else null end`,
       updatedAt: new Date(),
     })
     .where(and(eq(bankConnections.ownerId, ownerId), eq(bankConnections.id, id)));
@@ -557,4 +724,135 @@ export async function recordSyncError(
       updatedAt: new Date(),
     })
     .where(and(eq(bankConnections.ownerId, ownerId), eq(bankConnections.id, id)));
+}
+
+/** What the re-link upsert needs to replace a stored token with a new one. */
+export interface ReplaceConnectionTokenInput {
+  /** The provider's identifier for the linked login (Plaid Item). */
+  itemId: string;
+  /** Plaintext. Encrypted inside this function and never stored as-is. */
+  accessToken: string;
+  keyring: TokenKeyring;
+}
+
+/**
+ * Re-authentication, path b: a second Link run against a bank that is already
+ * connected (spec §5).
+ *
+ * The caller reaches here from `ConnectionAlreadyExistsError`, which names an
+ * item id and nothing else - there is no connection id, because the point of
+ * that error is that the row already existed before this call started. So
+ * this looks the row up itself and re-encrypts against its own id, the same
+ * two-step `createConnection` uses (ADR 0002): the AAD is the *existing* row's
+ * id, not a fresh one, because this is the same connection wearing a new
+ * token.
+ *
+ * `null` means the item is somebody else's - the row is left completely
+ * alone, not even touched by a query, so that a cross-tenant re-link cannot
+ * overwrite a token it has no business replacing. The caller falls back to
+ * the Phase 2 message: "This bank is already connected."
+ *
+ * The cursor is deliberately absent from the `set`: it is the same Plaid Item,
+ * so `/transactions/sync`'s cursor is still valid, and clearing it would
+ * re-fetch the item's entire history for no reason.
+ */
+export async function replaceConnectionToken(
+  db: Executor,
+  ownerId: string,
+  input: ReplaceConnectionTokenInput
+): Promise<{ id: string } | null> {
+  const [row] = await db
+    .select({ id: bankConnections.id, ownerId: bankConnections.ownerId })
+    .from(bankConnections)
+    .where(and(eq(bankConnections.provider, 'plaid'), eq(bankConnections.itemId, input.itemId)))
+    .limit(1);
+  if (!row || row.ownerId !== ownerId) return null;
+
+  await db
+    .update(bankConnections)
+    .set({
+      accessTokenCiphertext: encryptToken(input.accessToken, {
+        keyId: input.keyring.current.keyId,
+        key: input.keyring.current.key,
+        aad: row.id,
+      }),
+      encryptionKeyId: input.keyring.current.keyId,
+      status: 'active',
+      lastErrorCode: null,
+      lastErrorMessage: null,
+      lastErrorAt: null,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(bankConnections.ownerId, ownerId), eq(bankConnections.id, row.id)));
+
+  return { id: row.id };
+}
+
+/**
+ * Re-authentication, path a: Link's update mode ends with no public token
+ * exchange, so there is nothing here to re-encrypt (spec §5) - just the same
+ * "healthy again" state `recordSyncResult` and `replaceConnectionToken` both
+ * leave behind. `false` for the id, so the action can say "not found" rather
+ * than silently doing nothing.
+ */
+export async function markConnectionActive(
+  db: Executor,
+  ownerId: string,
+  connectionId: string
+): Promise<boolean> {
+  if (!isUuid(connectionId)) return false;
+  const rows = await db
+    .update(bankConnections)
+    .set({
+      status: 'active',
+      lastErrorCode: null,
+      lastErrorMessage: null,
+      lastErrorAt: null,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(bankConnections.ownerId, ownerId), eq(bankConnections.id, connectionId)))
+    .returning({ id: bankConnections.id });
+  return rows.length > 0;
+}
+
+/**
+ * Disconnecting a bank (spec §6).
+ *
+ * The owner-scoped `WHERE` is on the `DELETE` itself, the same shape
+ * `markConnectionActive` uses: a connection id that belongs to somebody else
+ * and one that does not exist are the same miss, `false`, with the row left
+ * completely alone either way.
+ *
+ * The rest of the work is two foreign keys, not this function: `bank_accounts
+ * .connection_id` is `ON DELETE CASCADE`, so the accounts behind this
+ * connection go with it, and `transactions.bank_account_id` is `ON DELETE SET
+ * NULL`, so a charge that was already filed keeps its category, its project
+ * and its place in the ledger - it only stops pointing at an account that no
+ * longer exists.
+ */
+export async function deleteConnection(
+  db: Executor,
+  ownerId: string,
+  connectionId: string
+): Promise<boolean> {
+  if (!isUuid(connectionId)) return false;
+  const rows = await db
+    .delete(bankConnections)
+    .where(and(eq(bankConnections.ownerId, ownerId), eq(bankConnections.id, connectionId)))
+    .returning({ id: bankConnections.id });
+  return rows.length > 0;
+}
+
+/**
+ * Every connection the owner has, gone at once (spec §6, delete-all). Same
+ * cascade `deleteConnection` relies on - `bank_accounts` goes with each row -
+ * in a single statement rather than one per connection, since what delete-all
+ * reports is a count of connections, not how many round trips it took.
+ */
+export async function deleteAllConnections(db: Executor, ownerId: string): Promise<number> {
+  const rows = await db
+    .delete(bankConnections)
+    .where(eq(bankConnections.ownerId, ownerId))
+    .returning({ id: bankConnections.id });
+  return rows.length;
 }

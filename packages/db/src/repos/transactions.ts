@@ -217,11 +217,15 @@ export interface ImportProvenance {
  * lands or does not.
  *
  * `bank_account_id` stays null: a file is not a linked account, and there is
- * nothing yet to point at. The dedupe index is
- * `(provider, bank_account_id, external_id)`, and Postgres counts null bank
- * accounts as distinct, so two uploads of the same statement both land. That
- * is deliberate for now - the alternative is inventing an account id whose
- * meaning would have to be unpicked when real ones arrive in Phase 2.
+ * nothing yet to point at. That leaves `transactions_owner_csv_external_key`
+ * (spec §7) as the dedupe index for a CSV row rather than the sync one, which
+ * never conflicts when `bank_account_id` is null - Postgres counts null as
+ * distinct from null. A row that collides with one already on that index is
+ * silently dropped from the return value rather than erroring, so a caller
+ * re-importing the same statement can count the difference between what it
+ * sent and what came back as skipped. The `where` predicate is the index's
+ * own, pinned in `test/migrations.test.ts`; it is inert for a non-`'csv'`
+ * provenance, since such a row is not covered by the index at all.
  */
 export async function bulkCreateImported(
   db: Executor,
@@ -244,6 +248,10 @@ export async function bulkCreateImported(
           importBatchId: provenance.importBatchId,
         }))
       )
+      .onConflictDoNothing({
+        target: [transactions.ownerId, transactions.externalId],
+        where: sql`"provider" = 'csv' AND "external_id" IS NOT NULL`,
+      })
       .returning()
   );
   return rows.map(toTransaction);
@@ -277,6 +285,15 @@ export async function deleteTransaction(
     .where(and(eq(transactions.ownerId, ownerId), eq(transactions.id, id)))
     .returning({ id: transactions.id });
   return deleted.length > 0;
+}
+
+/** Every transaction the owner has, gone at once (spec §6, delete-all). */
+export async function deleteAllTransactions(db: Executor, ownerId: string): Promise<number> {
+  const deleted = await db
+    .delete(transactions)
+    .where(eq(transactions.ownerId, ownerId))
+    .returning({ id: transactions.id });
+  return deleted.length;
 }
 
 /**

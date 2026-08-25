@@ -41,6 +41,7 @@ const bank = vi.hoisted(() => ({
     institutionId: 'ins_fake',
     institutionName: 'Fake Bank (E2E)',
   })),
+  removeItem: vi.fn(async (_accessToken: string) => undefined),
   getAccounts: vi.fn(async (_accessToken: string) => [
     { externalId: 'fake-credit', name: 'Fake Business Card', mask: '4471', type: 'credit' },
     { externalId: 'fake-checking', name: 'Fake Business Checking', mask: '0000', type: 'depository' },
@@ -57,6 +58,7 @@ const bank = vi.hoisted(() => ({
       removed: 0,
       pages: 1,
       hasMore: false,
+      unknownAccountCount: 0,
     })
   ),
 }));
@@ -128,29 +130,71 @@ const repos = vi.hoisted(() => ({
     ) => fn('access-fake')
   ),
   recordSyncError: vi.fn(async () => undefined),
+  // Re-link upsert (spec §5b): same connection id `createConnection` answers
+  // with by default, so a test that does not care about re-auth still sees
+  // the connection it expects downstream.
+  replaceConnectionToken: vi.fn(
+    async (
+      _db: unknown,
+      _owner: string,
+      _input: { itemId: string; accessToken: string }
+    ): Promise<{ id: string } | null> => ({
+      id: 'conn-1',
+    })
+  ),
+  markConnectionActive: vi.fn(async (_db: unknown, _owner: string, _id: string) => true),
+  deleteConnection: vi.fn(async (_db: unknown, _owner: string, _id: string) => true),
+  // Delete-all (spec §6): enumerated for the best-effort `removeItem` loop,
+  // then swept away table by table. Empty by default so a test that does not
+  // care about connections is not also on the hook for scripting one.
+  listConnections: vi.fn(async (_db: unknown, _owner: string) => [] as Array<{ id: string }>),
+  deleteAllConnections: vi.fn(async (_db: unknown, _owner: string) => 0),
+  deleteAllTransactions: vi.fn(async (_db: unknown, _owner: string) => 0),
+  deleteAllLaborEntries: vi.fn(async (_db: unknown, _owner: string) => 0),
+  deleteAllInvoices: vi.fn(async (_db: unknown, _owner: string) => 0),
+  deleteAllImportBatches: vi.fn(async (_db: unknown, _owner: string) => 0),
+  deleteAllProjects: vi.fn(async (_db: unknown, _owner: string) => 0),
+  deleteOwnerWebhookEvents: vi.fn(async (_db: unknown, _owner: string) => 0),
 }));
 
 vi.mock('@budget-bot/db', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@budget-bot/db')>()),
   getDb: () => ({}),
-  projectsRepo: { createProject: repos.createProject, updateProject: repos.updateProject },
+  projectsRepo: {
+    createProject: repos.createProject,
+    updateProject: repos.updateProject,
+    deleteAllProjects: repos.deleteAllProjects,
+  },
   transactionsRepo: {
     createTransaction: repos.createTransaction,
     updateTransaction: repos.updateTransaction,
     deleteTransaction: repos.deleteTransaction,
+    deleteAllTransactions: repos.deleteAllTransactions,
   },
   laborRepo: {
     createLaborEntry: repos.createLaborEntry,
     deleteLaborEntry: repos.deleteLaborEntry,
+    deleteAllLaborEntries: repos.deleteAllLaborEntries,
   },
-  invoicesRepo: { createInvoice: repos.createInvoice, updateInvoice: repos.updateInvoice },
+  invoicesRepo: {
+    createInvoice: repos.createInvoice,
+    updateInvoice: repos.updateInvoice,
+    deleteAllInvoices: repos.deleteAllInvoices,
+  },
   bankRepo: {
     createConnection: repos.createConnection,
     upsertAccounts: repos.upsertAccounts,
     getConnection: repos.getConnection,
     withAccessToken: repos.withAccessToken,
     recordSyncError: repos.recordSyncError,
+    replaceConnectionToken: repos.replaceConnectionToken,
+    markConnectionActive: repos.markConnectionActive,
+    deleteConnection: repos.deleteConnection,
+    listConnections: repos.listConnections,
+    deleteAllConnections: repos.deleteAllConnections,
   },
+  importBatchesRepo: { deleteAllImportBatches: repos.deleteAllImportBatches },
+  webhookEventsRepo: { deleteOwnerWebhookEvents: repos.deleteOwnerWebhookEvents },
 }));
 
 const { ConnectionAlreadyExistsError } = await import('@budget-bot/db');
@@ -170,9 +214,15 @@ const { createLaborEntryAction, deleteLaborEntryAction } = await import(
 const { createInvoiceAction, markInvoicePaidAction } = await import(
   '@/src/server/actions/invoices'
 );
-const { createLinkTokenAction, exchangePublicTokenAction, syncNowAction } = await import(
-  '@/src/server/actions/bank'
-);
+const {
+  createLinkTokenAction,
+  exchangePublicTokenAction,
+  syncNowAction,
+  createReauthLinkTokenAction,
+  markReconnectedAction,
+  disconnectConnectionAction,
+} = await import('@/src/server/actions/bank');
+const { deleteAllDataAction } = await import('@/src/server/actions/account');
 
 /**
  * Every action there is, read off disk rather than typed out.
@@ -185,8 +235,8 @@ const { createLinkTokenAction, exchangePublicTokenAction, syncNowAction } = awai
  */
 const DERIVED_ACTIONS = await loadActions();
 
-/** Thirteen today. A number here means shrinkage gets noticed, not just growth. */
-const ACTION_COUNT = 13;
+/** Seventeen today. A number here means shrinkage gets noticed, not just growth. */
+const ACTION_COUNT = 17;
 
 const A_PROJECT = { name: 'Cedar Deck', clientName: 'R Henderson', quotedTotal: '4500' };
 
@@ -205,17 +255,33 @@ const EVERY_ACTION: Array<[string, (input: unknown) => Promise<unknown>, unknown
   ['createLinkToken', createLinkTokenAction, {}],
   ['exchangePublicToken', exchangePublicTokenAction, { publicToken: 'public-fake' }],
   ['syncNow', syncNowAction, { connectionId: 'conn-1' }],
+  ['createReauthLinkToken', createReauthLinkTokenAction, { connectionId: 'conn-1' }],
+  ['markReconnected', markReconnectedAction, { connectionId: 'conn-1' }],
+  ['disconnectConnection', disconnectConnectionAction, { connectionId: 'conn-1' }],
+  ['deleteAllData', deleteAllDataAction, {}],
 ];
 
 /**
  * The one action that reads and writes nothing: it asks the provider for a
  * Link token and hands it back. Named here rather than leaving the two tests
- * below with a list of the twelve that do write, which would be the list that
- * a thirteenth action quietly failed to join.
+ * below with a list of the ones that do write, which would be the list that a
+ * new action quietly failed to join.
  */
 const TOUCHES_NO_REPOSITORY = new Set(['createLinkToken']);
 
+/**
+ * Actions that reach a repository only to read, never to write - so
+ * revalidating a page afterwards would be invalidating a cache for nothing
+ * that changed. `createReauthLinkToken` looks the connection up to check
+ * ownership and decrypts its token to mint an update-mode Link token, and
+ * stops there: the connection itself is not written to until Link's
+ * `onSuccess` calls `markReconnectedAction`, which does write and does
+ * invalidate.
+ */
+const DOES_NOT_WRITE = new Set(['createLinkToken', 'createReauthLinkToken']);
+
 const WRITING_ACTIONS = EVERY_ACTION.filter(([name]) => !TOUCHES_NO_REPOSITORY.has(name));
+const INVALIDATING_ACTIONS = EVERY_ACTION.filter(([name]) => !DOES_NOT_WRITE.has(name));
 
 /** Every repository call any action made, whichever repository it was. */
 function repositoryCalls(): unknown[][] {
@@ -239,6 +305,7 @@ beforeEach(() => {
     createLinkToken: bank.createLinkToken,
     exchangePublicToken: bank.exchangePublicToken,
     getAccounts: bank.getAccounts,
+    removeItem: bank.removeItem,
   };
   requestHeaders.current = { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'app.example' };
 });
@@ -306,17 +373,20 @@ describe('with a session', () => {
     expect(repositoryCalls().length).toBeGreaterThan(0);
   });
 
-  it.each(WRITING_ACTIONS)('%s invalidates the pages that drew from it', async (_name, action, input) => {
-    await action(input);
+  it.each(INVALIDATING_ACTIONS)(
+    '%s invalidates the pages that drew from it',
+    async (_name, action, input) => {
+      await action(input);
 
-    expect(revalidatePath).toHaveBeenCalledWith('/', 'layout');
-  });
+      expect(revalidatePath).toHaveBeenCalledWith('/', 'layout');
+    }
+  );
 
   it('mints a Link token without invalidating anything, because nothing changed', () => {
-    // The one action that is not a write. Spelled out so that "every action
-    // revalidates" narrowing to twelve of thirteen is a decision on the record
-    // rather than a list somebody shortened.
-    expect([...TOUCHES_NO_REPOSITORY]).toEqual(['createLinkToken']);
+    // Spelled out so that "every action revalidates" narrowing to fewer than
+    // all of them is a decision on the record rather than a list somebody
+    // shortened.
+    expect([...DOES_NOT_WRITE].sort()).toEqual(['createLinkToken', 'createReauthLinkToken']);
   });
 });
 
@@ -536,6 +606,7 @@ describe('connecting a bank', () => {
     expect(bank.createLinkToken).toHaveBeenCalledWith({
       userId: 'user-1',
       redirectUri: 'https://app.example/plaid/oauth-return',
+      webhookUrl: 'https://app.example/api/webhooks/plaid',
     });
   });
 
@@ -547,6 +618,25 @@ describe('connecting a bank', () => {
     expect(bank.createLinkToken).toHaveBeenCalledWith(
       expect.objectContaining({ redirectUri: 'http://localhost:3000/plaid/oauth-return' })
     );
+  });
+
+  it('sends webhookUrl for an https origin, so Plaid has somewhere to post updates', async () => {
+    requestHeaders.current = { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'app.example' };
+
+    await createLinkTokenAction();
+
+    expect(bank.createLinkToken).toHaveBeenCalledWith(
+      expect.objectContaining({ webhookUrl: 'https://app.example/api/webhooks/plaid' })
+    );
+  });
+
+  it('sends no webhookUrl for a plain http origin - unreachable noise in Plaid’s dashboard', async () => {
+    requestHeaders.current = { host: 'localhost:3000' };
+
+    await createLinkTokenAction();
+
+    const [args] = bank.createLinkToken.mock.calls[0] as [{ webhookUrl?: string }];
+    expect(args.webhookUrl).toBeUndefined();
   });
 
   it('falls back to the deployment url when the request says nothing about itself', async () => {
@@ -596,7 +686,14 @@ describe('exchanging the public token', () => {
       data: {
         connectionId: 'conn-1',
         accounts: 2,
-        firstSync: { added: 2, modified: 0, removed: 0, pages: 1, hasMore: false },
+        firstSync: {
+          added: 2,
+          modified: 0,
+          removed: 0,
+          pages: 1,
+          hasMore: false,
+          unknownAccountCount: 0,
+        },
       },
     });
     expect(repos.createConnection).toHaveBeenCalledWith(
@@ -666,23 +763,47 @@ describe('exchanging the public token', () => {
     expect(bank.exchangePublicToken).not.toHaveBeenCalled();
   });
 
-  it('says the bank is already connected rather than blaming the server', async () => {
-    // Re-running Link against a bank that is already linked. The public token
-    // has been spent by the time this fires, so the one thing the message must
-    // not do is tell the owner to try again: the island renders a thrown
-    // action as "Something went wrong connecting to the server. Try again.",
-    // which is advice that cannot work.
-    repos.createConnection.mockRejectedValueOnce(new ConnectionAlreadyExistsError());
+  describe('re-linking a bank that is already connected', () => {
+    it('replaces the stored token and syncs, rather than refusing (spec §5b)', async () => {
+      // Re-running Link against a bank that is already linked. Phase 2 refused
+      // this outright; Phase 3 upserts onto the existing row instead - same
+      // connection, a new token.
+      repos.createConnection.mockRejectedValueOnce(new ConnectionAlreadyExistsError());
 
-    const result = await exchangePublicTokenAction({ publicToken: 'public-fake' });
+      const result = await exchangePublicTokenAction({ publicToken: 'public-fake' });
 
-    expect(result).toEqual({
-      ok: false,
-      error: 'This bank is already connected. Use Sync now on the existing connection.',
+      expect(repos.replaceConnectionToken).toHaveBeenCalledWith(
+        {},
+        'user-1',
+        expect.objectContaining({ itemId: 'item-fake', accessToken: 'access-fake' })
+      );
+      expect(result).toMatchObject({
+        ok: true,
+        data: { connectionId: 'conn-1' },
+      });
+      // The same refresh-then-sync the create path runs, because a new token
+      // deserves the same first look as a brand-new connection.
+      expect(repos.upsertAccounts).toHaveBeenCalled();
+      expect(bank.runSync).toHaveBeenCalled();
     });
-    // Nothing was written, so nothing downstream ran either.
-    expect(repos.upsertAccounts).not.toHaveBeenCalled();
-    expect(bank.runSync).not.toHaveBeenCalled();
+
+    it('keeps the Phase 2 message when the item belongs to a different owner', async () => {
+      // The ownership check inside `replaceConnectionToken` is the one that
+      // matters here: ConnectionAlreadyExistsError alone does not say whose
+      // row it is, and a different owner's row must not be overwritten.
+      repos.createConnection.mockRejectedValueOnce(new ConnectionAlreadyExistsError());
+      repos.replaceConnectionToken.mockResolvedValueOnce(null);
+
+      const result = await exchangePublicTokenAction({ publicToken: 'public-fake' });
+
+      expect(result).toEqual({
+        ok: false,
+        error: 'This bank is already connected. Use Sync now on the existing connection.',
+      });
+      // Nothing was written, so nothing downstream ran either.
+      expect(repos.upsertAccounts).not.toHaveBeenCalled();
+      expect(bank.runSync).not.toHaveBeenCalled();
+    });
   });
 });
 
@@ -708,7 +829,7 @@ describe('syncing on demand', () => {
 
     expect(result).toEqual({
       ok: true,
-      data: { added: 2, modified: 0, removed: 0, pages: 1, hasMore: false },
+      data: { added: 2, modified: 0, removed: 0, pages: 1, hasMore: false, unknownAccountCount: 0 },
     });
   });
 
@@ -722,6 +843,7 @@ describe('syncing on demand', () => {
       removed: 0,
       pages: 2,
       hasMore: true,
+      unknownAccountCount: 0,
       retryAfterSeconds: 45,
     });
 
@@ -879,5 +1001,151 @@ describe('refreshing the accounts before a sync', () => {
       status: 'reauth_required',
     });
     expect(bank.runSync).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Re-authentication, path a: Link's update mode (spec §5a).
+ *
+ * `createReauthLinkTokenAction` is the first half - it decrypts the stored
+ * token and hands it to the provider so Link can re-authorize the same item
+ * rather than create a new one. `markReconnectedAction` is the second half,
+ * reached from `onSuccess` once update mode finishes with no public token to
+ * exchange: it flips the connection back to healthy and runs the same
+ * refresh-then-sync `syncNowAction` does, so a reconnect behaves exactly like
+ * pressing "Sync now" the moment it succeeds.
+ */
+describe('minting an update-mode Link token', () => {
+  it('checks ownership, then passes the existing access token through', async () => {
+    await createReauthLinkTokenAction({ connectionId: 'conn-1' });
+
+    expect(repos.getConnection).toHaveBeenCalledWith({}, 'user-1', 'conn-1');
+    expect(repos.withAccessToken).toHaveBeenCalledWith(
+      {},
+      'user-1',
+      'conn-1',
+      expect.anything(),
+      expect.any(Function)
+    );
+    expect(bank.createLinkToken).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user-1', accessToken: 'access-fake' })
+    );
+  });
+
+  it('refuses a connection this owner does not have, without asking Plaid for anything', async () => {
+    repos.getConnection.mockResolvedValueOnce(null as never);
+
+    const result = await createReauthLinkTokenAction({ connectionId: 'conn-9' });
+
+    expect(result).toMatchObject({ ok: false, error: 'Connection not found' });
+    expect(bank.createLinkToken).not.toHaveBeenCalled();
+  });
+
+  it('reports a refusal from the provider rather than throwing out of the action', async () => {
+    bank.createLinkToken.mockRejectedValueOnce(
+      new PlaidRequestError('INVALID_ACCESS_TOKEN', 'the access token is no longer valid')
+    );
+
+    const result = await createReauthLinkTokenAction({ connectionId: 'conn-1' });
+
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('INVALID_ACCESS_TOKEN') });
+  });
+});
+
+describe('reconnecting once Link’s update mode succeeds', () => {
+  it('activates the connection before refreshing and syncing it', async () => {
+    const result = await markReconnectedAction({ connectionId: 'conn-1' });
+
+    expect(repos.markConnectionActive).toHaveBeenCalledWith({}, 'user-1', 'conn-1');
+    expect(repos.markConnectionActive.mock.invocationCallOrder[0]).toBeLessThan(
+      bank.runSync.mock.invocationCallOrder[0]
+    );
+    expect(bank.getAccounts).toHaveBeenCalledWith('access-fake');
+    expect(result).toMatchObject({
+      ok: true,
+      data: { added: 2, modified: 0, removed: 0, pages: 1, hasMore: false },
+    });
+  });
+
+  it('refuses a connection this owner does not have', async () => {
+    repos.markConnectionActive.mockResolvedValueOnce(false);
+
+    const result = await markReconnectedAction({ connectionId: 'conn-9' });
+
+    expect(result).toMatchObject({ ok: false, error: 'Connection not found' });
+    expect(bank.getAccounts).not.toHaveBeenCalled();
+    expect(bank.runSync).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Disconnecting a bank (spec §6).
+ *
+ * `removeItem` is best-effort: the bank refusing to forget an item is not a
+ * reason to keep showing a connection the owner asked to remove, so the
+ * deletion runs either way and the provider's failure only shows up as
+ * `removed: false` on an otherwise successful result.
+ */
+describe('disconnecting a bank', () => {
+  it('checks ownership, tells the provider to forget the item, then deletes the connection', async () => {
+    const result = await disconnectConnectionAction({ connectionId: 'conn-1' });
+
+    expect(repos.getConnection).toHaveBeenCalledWith({}, 'user-1', 'conn-1');
+    expect(repos.withAccessToken).toHaveBeenCalledWith(
+      {},
+      'user-1',
+      'conn-1',
+      expect.anything(),
+      expect.any(Function)
+    );
+    expect(bank.removeItem).toHaveBeenCalledWith('access-fake');
+    expect(repos.deleteConnection).toHaveBeenCalledWith({}, 'user-1', 'conn-1');
+    // Deleted after the provider was asked, not before - a delete that ran
+    // first would leave nothing for `withAccessToken` to decrypt.
+    expect(bank.removeItem.mock.invocationCallOrder[0]).toBeLessThan(
+      repos.deleteConnection.mock.invocationCallOrder[0]
+    );
+    expect(result).toEqual({ ok: true, data: { removed: true } });
+  });
+
+  it('refuses a connection this owner does not have, without touching the provider', async () => {
+    repos.getConnection.mockResolvedValueOnce(null as never);
+
+    const result = await disconnectConnectionAction({ connectionId: 'conn-9' });
+
+    expect(result).toMatchObject({ ok: false, error: 'Connection not found' });
+    expect(bank.removeItem).not.toHaveBeenCalled();
+    expect(repos.deleteConnection).not.toHaveBeenCalled();
+  });
+
+  it('still deletes the connection when the provider refuses to remove the item', async () => {
+    bank.removeItem.mockRejectedValueOnce(
+      new PlaidRequestError('INVALID_ACCESS_TOKEN', 'the access token is no longer valid')
+    );
+
+    const result = await disconnectConnectionAction({ connectionId: 'conn-1' });
+
+    expect(repos.deleteConnection).toHaveBeenCalledWith({}, 'user-1', 'conn-1');
+    // Success, not a refusal: the owner asked for this bank to be gone, and
+    // it is. `removed: false` is the only trace the provider's own failure
+    // leaves - never a message from Plaid reaching this screen.
+    expect(result).toEqual({ ok: true, data: { removed: false } });
+  });
+
+  it('still deletes the connection on a deployment with no Plaid provider configured (SF-3)', async () => {
+    // The deliberate divergence from the NOT_CONFIGURED refusal every other
+    // Plaid-backed action here gives (spec §6): data lifecycle must not
+    // depend on Plaid credentials, the same ruling deleteAllDataAction
+    // already makes. No provider to ask means `removeItem` is never called,
+    // and the deployment-config loss shows up only as `removed: false` -
+    // never as a dead end that leaves the connection stuck showing
+    // "Connected".
+    provider.current = null;
+
+    const result = await disconnectConnectionAction({ connectionId: 'conn-1' });
+
+    expect(bank.removeItem).not.toHaveBeenCalled();
+    expect(repos.deleteConnection).toHaveBeenCalledWith({}, 'user-1', 'conn-1');
+    expect(result).toEqual({ ok: true, data: { removed: false } });
   });
 });

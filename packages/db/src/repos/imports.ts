@@ -1,6 +1,11 @@
 import type { ExpenseTransaction } from '@budget-bot/core';
 import type { Database } from '../client';
-import { createImportBatch, type ImportBatch, type NewImportBatch } from './importBatches';
+import {
+  createImportBatch,
+  updateImportBatchCounts,
+  type ImportBatch,
+  type NewImportBatch,
+} from './importBatches';
 import { bulkCreateImported, type ImportedTransaction } from './transactions';
 
 /**
@@ -38,6 +43,21 @@ export async function importCsvBatch(
       provider: input.provider,
       importBatchId: batch.id,
     });
-    return { batch, inserted };
+
+    // `input.batch`'s counts are a guess made before the insert ran - the
+    // caller has no way to know which rows the cross-batch dedupe index
+    // (spec §7) will drop. Correct the persisted batch to match what
+    // actually landed, so `ImportResult.batch` is never off by the rows this
+    // import silently skipped as duplicates of an earlier one.
+    const dbDuplicates = input.rows.length - inserted.length;
+    const reconciled =
+      dbDuplicates === 0
+        ? batch
+        : await updateImportBatchCounts(tx, batch.id, {
+            insertedCount: batch.insertedCount - dbDuplicates,
+            skippedCount: batch.skippedCount + dbDuplicates,
+          });
+
+    return { batch: reconciled, inserted };
   });
 }

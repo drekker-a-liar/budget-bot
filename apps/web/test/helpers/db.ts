@@ -92,6 +92,14 @@ async function probe(): Promise<string | null> {
 
 const skipReason = await probe();
 
+/**
+ * The connection string this harness's database lives at, for a test that
+ * has to hand it to something other than `useTestDb` - the webhook route
+ * test stubs `DATABASE_URL` with it so the route's own `getDb()` singleton
+ * resolves to the same database its assertions read back from.
+ */
+export const testDatabaseUrl = url;
+
 /** `describe`, unless there is no database, in which case it says why. */
 export function describeDb(name: string, suite: () => void): void {
   if (skipReason === null) {

@@ -4,6 +4,7 @@ import {
   PlaidMutationDuringPagination,
   PlaidRateLimited,
   PlaidRequestError,
+  WebhookVerificationError,
   toPlaidError,
 } from '../../src/plaid/errors';
 import errorItemLoginRequired from '../fixtures/plaid/error-item-login-required.json';
@@ -178,5 +179,20 @@ describe('toPlaidError', () => {
     expect(error.message).toBe(
       'ITEM_LOGIN_REQUIRED: the login details of this item have changed'
     );
+  });
+});
+
+/**
+ * The one error `verifyAndParseWebhook` ever throws (spec §2). Its message is
+ * a failure kind and nothing else - never the token-less JWT, never the raw
+ * body - so a caller can log it exactly as thrown.
+ */
+describe('WebhookVerificationError', () => {
+  it('is a named error carrying only the message it was given', () => {
+    const error = new WebhookVerificationError('signature verification failed');
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error.name).toBe('WebhookVerificationError');
+    expect(error.message).toBe('signature verification failed');
   });
 });

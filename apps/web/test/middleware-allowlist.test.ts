@@ -37,14 +37,15 @@ describe('every route in app/', () => {
 
 describe('the public allow list', () => {
   it('is the one from the spec, in full', () => {
-    // §7 names these five and nothing else. `/privacy` and the Plaid webhook
-    // do not exist yet; they are listed now so adding them in a later phase is
-    // not a change to the security boundary.
+    // §7 names five; §4 adds a sixth, the cron safety net, which
+    // authenticates by bearer token rather than a session and so belongs on
+    // this list for the same reason the webhook does.
     expect([...PUBLIC_PATHS]).toEqual([
       '/login',
       '/privacy',
       '/api/auth',
       '/api/webhooks/plaid',
+      '/api/internal/sync',
       '/api/health',
     ]);
   });

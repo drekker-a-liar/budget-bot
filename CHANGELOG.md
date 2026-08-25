@@ -4,6 +4,67 @@ Notable changes, newest first. Versions follow the sub-project sequence in the
 [architecture](docs/superpowers/specs/2026-08-20-system-architecture-design.md)
 rather than a release cadence.
 
+## v0.3.0-lifecycle — unreleased
+
+Phase 3: **Webhooks, Cron, and Connection Lifecycle.** A linked bank stays
+current and healthy without the user pressing anything: Plaid pushes updates to
+a signature-verified webhook, a daily cron catches what the webhook missed, a
+connection that needs re-authentication says so and repairs itself in one
+click, and the settings page can disconnect a bank or export/delete everything.
+
+### Webhooks
+
+- `POST /api/webhooks/plaid` verifies every payload before believing it:
+  ES256 JWT from the `plaid-verification` header (any other algorithm rejected
+  before a single key is fetched), an `iat` accepted only within a five-minute
+  past window and thirty seconds of future clock skew, and a timing-safe
+  body-hash comparison. The only non-200 is a 401 on a bad signature; response
+  bodies never carry an id.
+- A replay ledger (`webhook_events`, keyed on the body hash) makes redelivery
+  and replay a no-op; rows older than thirty days are purged by the cron.
+  `SYNC_UPDATES_AVAILABLE` triggers a sync under the same per-page advisory
+  lock as **Sync now**; `ITEM_LOGIN_REQUIRED`, `PENDING_EXPIRATION` and
+  `USER_PERMISSION_REVOKED` mark the connection for re-authentication.
+
+### Cron
+
+- `GET /api/internal/sync`, guarded by a timing-safe `CRON_SECRET` bearer
+  check, refreshes accounts and syncs every active connection across owners —
+  one connection's failure never stops the rest — then purges the webhook
+  ledger. Registered in `apps/web/vercel.json` to run daily at 06:00 UTC.
+
+### Re-authentication and lifecycle
+
+- A connection in trouble shows a banner naming the problem and a
+  **Reconnect** button: Link's update mode, including the OAuth round trip,
+  ends with the token re-encrypted in place (same row, fresh AAD-bound
+  ciphertext, cursor kept). Re-linking the same bank through the normal
+  connect flow now repairs the existing connection instead of refusing —
+  for its owner only; anyone else still gets "already connected".
+- **Disconnect** (type-to-confirm) removes the item at Plaid best-effort and
+  deletes the connection; filed transactions keep their history with the
+  account reference nulled.
+- **Export my data** downloads one JSON document of everything the owner has —
+  walked by a test that proves no token, ciphertext, cursor, or internal
+  handle rides along. **Delete all my data** (type-to-confirm) removes every
+  row the owner has, works even with Plaid unconfigured, and leaves the
+  sign-in itself intact.
+
+### Fixes and upkeep
+
+- CSV re-imports no longer duplicate rows: an owner-scoped partial unique
+  index dedupes across batches, and the import report now counts what actually
+  landed. A skip banner crash on duplicate-only imports went with it.
+- Sync results now surface rows that referenced untracked accounts; account
+  lists have a stable order; webhook URLs are only registered with Plaid for
+  https deployments.
+- The e2e journey grew from 10 to 15 steps: webhook-driven sync, replay
+  rejection, re-auth repair, disconnect, and export — rerun-safe against the
+  same database.
+- `apps/web` moved from `next lint` (deprecated in Next 15.5) to ESLint 9 flat
+  config, joining the packages that were already there; the dependency-boundary
+  rules survived the move rule-for-rule, proven by forbidden-import tests.
+
 ## v0.2.0-plaid-sandbox — unreleased
 
 Phase 2: **Plaid Sandbox Connector.** A signed-in owner links a bank through

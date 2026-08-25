@@ -6,6 +6,7 @@ export * as bankRepo from './bank';
 export * as importBatchesRepo from './importBatches';
 export * as importsRepo from './imports';
 export * as ownersRepo from './owners';
+export * as webhookEventsRepo from './webhookEvents';
 
 export { withSyncLock } from './sync-lock';
 
@@ -33,12 +34,17 @@ export type { ImportCsvBatch, ImportResult } from './imports';
 export type { NewLaborEntry } from './labor';
 export type { InvoiceUpdate, NewInvoice } from './invoices';
 export type {
+  ActiveConnectionByOwner,
   BankAccount,
   BankAccountInput,
   BankConnection,
+  BankConnectionByItem,
   CardProfileUpdate,
+  ExportConnection,
   NewBankConnection,
+  ReplaceConnectionTokenInput,
   SyncFailure,
   SyncOutcome,
 } from './bank';
 export type { SyncLockResult } from './sync-lock';
+export type { NewWebhookEvent } from './webhookEvents';

@@ -30,6 +30,28 @@ describe('the committed migrations', () => {
     expect(sqlText).toContain('WHERE "external_id" IS NOT NULL');
   });
 
+  it('creates the CSV cross-batch dedupe index as a partial one, scoped by owner', () => {
+    // The risk this pins: spec §7's whole fix is this predicate. Drop
+    // `provider = 'csv'` and a synced Plaid row sharing an owner and external
+    // id with a CSV row would be rejected as a duplicate of it; drop
+    // `external_id IS NOT NULL` and two manually-typed rows - every one of
+    // which has a null external id - could not coexist.
+    expect(sqlText).toContain(
+      'CREATE UNIQUE INDEX "transactions_owner_csv_external_key" ON "transactions" USING btree ("owner_id","external_id") WHERE "provider" = \'csv\' AND "external_id" IS NOT NULL;'
+    );
+  });
+
+  it('creates the CSV dedupe index without a backfill pass', () => {
+    // Spec §7's migration note: no backfill/dedup pass. Existing duplicates
+    // (dev data only) are left to the user's judgment rather than silently
+    // merged or deleted, and the migration says so in its own comment so the
+    // risk is visible to whoever reads it next, not just to this test.
+    const csvIndexMigration = files
+      .map((name) => readFileSync(join(MIGRATIONS_FOLDER, name), 'utf8'))
+      .find((text) => text.includes('transactions_owner_csv_external_key'));
+    expect(csvIndexMigration).toMatch(/no backfill/i);
+  });
+
   it('scopes every child table to its project by owner, not by project alone', () => {
     for (const table of ['invoices', 'labor_entries', 'transactions']) {
       expect(sqlText).toContain(
