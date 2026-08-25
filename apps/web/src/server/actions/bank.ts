@@ -511,6 +511,14 @@ export interface DisconnectedBank {
  * `transactions.bank_account_id` is `ON DELETE SET NULL` (spec §6) - so a
  * Plaid outage during disconnect must not leave a connection the owner asked
  * to remove still showing up as "Connected".
+ *
+ * A deployment with no provider configured is treated exactly like a failed
+ * `removeItem`, the same ruling `deleteAllDataAction` already makes: data
+ * lifecycle - removing a connection the owner no longer wants - must not
+ * depend on Plaid credentials being present. Refusing outright here would
+ * mean an owner who lost (or never had) Plaid config could delete *all* of
+ * their data but not *one* bank, which is the more surprising failure of the
+ * two.
  */
 export async function disconnectConnectionAction(
   input: unknown
@@ -521,21 +529,23 @@ export async function disconnectConnectionAction(
   const parsed = SyncConnectionForm.safeParse(input);
   if (!parsed.success) return invalid(parsed.error);
 
-  const provider = getBankProvider();
-  if (!provider) return failed(NOT_CONFIGURED);
-
   const db = getDb();
   const connection = await bankRepo.getConnection(db, ownerId, parsed.data.connectionId);
   if (!connection) return failed('Connection not found');
 
-  const keyring = loadKeysFromEnv();
+  const provider = getBankProvider();
 
   let removed = true;
-  try {
-    await bankRepo.withAccessToken(db, ownerId, connection.id, keyring, (accessToken) =>
-      provider.removeItem(accessToken)
-    );
-  } catch {
+  if (provider) {
+    const keyring = loadKeysFromEnv();
+    try {
+      await bankRepo.withAccessToken(db, ownerId, connection.id, keyring, (accessToken) =>
+        provider.removeItem(accessToken)
+      );
+    } catch {
+      removed = false;
+    }
+  } else {
     removed = false;
   }
 

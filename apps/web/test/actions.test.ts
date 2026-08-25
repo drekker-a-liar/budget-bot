@@ -1129,4 +1129,21 @@ describe('disconnecting a bank', () => {
     // leaves - never a message from Plaid reaching this screen.
     expect(result).toEqual({ ok: true, data: { removed: false } });
   });
+
+  it('still deletes the connection on a deployment with no Plaid provider configured (SF-3)', async () => {
+    // The deliberate divergence from the NOT_CONFIGURED refusal every other
+    // Plaid-backed action here gives (spec §6): data lifecycle must not
+    // depend on Plaid credentials, the same ruling deleteAllDataAction
+    // already makes. No provider to ask means `removeItem` is never called,
+    // and the deployment-config loss shows up only as `removed: false` -
+    // never as a dead end that leaves the connection stuck showing
+    // "Connected".
+    provider.current = null;
+
+    const result = await disconnectConnectionAction({ connectionId: 'conn-1' });
+
+    expect(bank.removeItem).not.toHaveBeenCalled();
+    expect(repos.deleteConnection).toHaveBeenCalledWith({}, 'user-1', 'conn-1');
+    expect(result).toEqual({ ok: true, data: { removed: false } });
+  });
 });
