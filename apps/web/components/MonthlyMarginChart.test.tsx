@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { parseMoney } from '@budget-bot/core';
+import { parseMoney, THRESHOLDS } from '@budget-bot/core';
 import { aMonthlyMargin } from '@/test/helpers/props';
 import { MonthlyMarginChart } from './MonthlyMarginChart';
 
@@ -257,6 +257,29 @@ describe('MonthlyMarginChart', () => {
       lines.forEach((line) => {
         expect(line.getAttribute('stroke-dasharray')).toBeTruthy();
       });
+    });
+
+    it('labels each reference line with the threshold it draws, not a literal', () => {
+      render(<MonthlyMarginChart months={MONTHS} />);
+
+      // Read off the same THRESHOLDS.GROSS_MARGIN constants the component
+      // and getGrossMarginSeverity share, rather than hardcoding "45%"/"25%"
+      // here - so a future change to the thresholds can't silently leave
+      // the chart's labels wrong while this test keeps passing.
+      expect(screen.getByText(`${THRESHOLDS.GROSS_MARGIN.HEALTHY}%`)).toBeInTheDocument();
+      expect(screen.getByText(`${THRESHOLDS.GROSS_MARGIN.CAUTION}%`)).toBeInTheDocument();
+    });
+  });
+
+  describe('legend', () => {
+    it('labels the muted bar as revenue and the severity-colored bar as margin, statically', () => {
+      render(<MonthlyMarginChart months={MONTHS} />);
+
+      // Visible without a hover, unlike the per-bar `<title>`s - the only
+      // way a touch-only reader could otherwise tell the two bar series
+      // apart.
+      expect(screen.getByText('Revenue')).toBeInTheDocument();
+      expect(screen.getByText('Margin (by severity)')).toBeInTheDocument();
     });
   });
 

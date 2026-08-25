@@ -139,6 +139,16 @@ export function MonthlyMarginChart({ months, caption = DEFAULT_CAPTION }: Monthl
             stroke="var(--border-subtle)"
             strokeDasharray="4 4"
           />
+          <text
+            className="margin-reference-label"
+            data-value="45"
+            x={PLOT_WIDTH}
+            y={pctScale(THRESHOLDS.GROSS_MARGIN.HEALTHY) - 4}
+            textAnchor="end"
+            style={{ fontSize: '10px', fill: 'var(--text-secondary)' }}
+          >
+            {`${THRESHOLDS.GROSS_MARGIN.HEALTHY}%`}
+          </text>
           <line
             className="margin-reference-line"
             data-value="25"
@@ -149,6 +159,16 @@ export function MonthlyMarginChart({ months, caption = DEFAULT_CAPTION }: Monthl
             stroke="var(--border-subtle)"
             strokeDasharray="4 4"
           />
+          <text
+            className="margin-reference-label"
+            data-value="25"
+            x={PLOT_WIDTH}
+            y={pctScale(THRESHOLDS.GROSS_MARGIN.CAUTION) - 4}
+            textAnchor="end"
+            style={{ fontSize: '10px', fill: 'var(--text-secondary)' }}
+          >
+            {`${THRESHOLDS.GROSS_MARGIN.CAUTION}%`}
+          </text>
 
           {months.map((month, index) => {
             const bandX = xScale(month.month) ?? 0;
@@ -277,6 +297,43 @@ export function MonthlyMarginChart({ months, caption = DEFAULT_CAPTION }: Monthl
           </div>
         </div>
       </div>
+
+      {!isEmpty && (
+        // Static, not hover-only: the per-bar `<title>` already says which
+        // series a bar belongs to, but that reaches nobody on a touch
+        // device. This is the always-visible version of the same fact.
+        <div
+          style={{
+            display: 'flex',
+            gap: '1rem',
+            flexWrap: 'wrap',
+            marginTop: '0.75rem',
+            fontSize: '0.7rem',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+            <span
+              style={{
+                width: '10px',
+                height: '10px',
+                borderRadius: '2px',
+                backgroundColor: 'var(--text-muted)',
+                opacity: 0.35,
+              }}
+            />
+            Revenue
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+            <span style={{ display: 'inline-flex', gap: '2px' }}>
+              <span style={{ width: '6px', height: '10px', backgroundColor: 'var(--severity-healthy)' }} />
+              <span style={{ width: '6px', height: '10px', backgroundColor: 'var(--severity-caution)' }} />
+              <span style={{ width: '6px', height: '10px', backgroundColor: 'var(--severity-critical)' }} />
+            </span>
+            Margin (by severity)
+          </span>
+        </div>
+      )}
 
       {isEmpty ? (
         <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
