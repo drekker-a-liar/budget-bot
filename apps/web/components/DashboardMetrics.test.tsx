@@ -35,6 +35,18 @@ describe('DashboardMetrics', () => {
     expect(screen.getByText('$97')).toBeInTheDocument();
   });
 
+  it('shows an em dash for margin when nothing has been invoiced', () => {
+    render(
+      <DashboardMetrics
+        summary={aSummary({ averageMarginPct: null, averageMarginSeverity: null })}
+      />
+    );
+
+    expect(screen.getByText('—')).toBeInTheDocument();
+    expect(screen.getByText('NO REVENUE')).toBeInTheDocument();
+    expect(screen.queryByText('0%')).not.toBeInTheDocument();
+  });
+
   it('shows an em dash for a realized rate nobody has logged hours for', () => {
     render(
       <DashboardMetrics

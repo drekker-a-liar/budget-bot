@@ -108,8 +108,9 @@ export interface BusinessFinancialSummary {
   totalMaterialsYTDCents: Cents;
   totalLaborYTDCents: Cents;
   totalGrossProfitYTDCents: Cents;
-  averageMarginPct: number;
-  averageMarginSeverity: SeverityLevel;
+  /** Null when nothing has been invoiced — never a fabricated 0%. */
+  averageMarginPct: number | null;
+  averageMarginSeverity: SeverityLevel | null;
   /** Null when no hours have been logged anywhere in the book of business. */
   averageHourlyRealizationCents: Cents | null;
   averageHourlySeverity: SeverityLevel | null;

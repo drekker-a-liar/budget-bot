@@ -42,9 +42,12 @@ if the cause was a repo-side defect, a regression guard for it.
 `averageMarginPct = percent(...) ?? 0` — the `?? 0` fabricates a number where
 `/margin` shows an em dash. Decision: the dashboard adopts the `/margin`
 philosophy. `averageMarginPct` becomes `number | null`, null at zero YTD
-revenue; `averageMarginSeverity` becomes `'none'` in that case (the
-thresholds helper must not receive null); `DashboardMetrics` renders the same
-em dash treatment `/margin` uses. This is the Phase 1 realization rule
+revenue; `averageMarginSeverity` becomes `null` in that case — the
+`BusinessFinancialSummary` type's own no-data convention (see
+`averageHourlySeverity`) and what `SeverityBadge` already renders as its
+neutral state, rather than importing `/margin`'s `'none'` literal into a
+second type; the thresholds helper must not receive null. `DashboardMetrics`
+renders the same em dash treatment `/margin` uses. This is the Phase 1 realization rule
 ("null, never a fabricated sentinel") finally applied everywhere.
 
 **Seed settings clobber.** `seed/index.ts` writes

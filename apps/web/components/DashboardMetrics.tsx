@@ -55,12 +55,20 @@ export function DashboardMetrics({ summary, onOpenInbox }: DashboardMetricsProps
           <span className="swiss-label">Gross Profit Margin</span>
           <SeverityBadge
             level={summary.averageMarginSeverity}
-            label={summary.averageMarginPct >= 45 ? 'TARGET MET' : summary.averageMarginPct >= 25 ? 'CAUTION' : 'COMPRESSED'}
+            label={
+              summary.averageMarginPct === null
+                ? 'NO REVENUE'
+                : summary.averageMarginPct >= THRESHOLDS.GROSS_MARGIN.HEALTHY
+                  ? 'TARGET MET'
+                  : summary.averageMarginPct >= THRESHOLDS.GROSS_MARGIN.CAUTION
+                    ? 'CAUTION'
+                    : 'COMPRESSED'
+            }
           />
         </div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.25rem' }}>
           <span className="swiss-header tnum" style={{ fontSize: '2.25rem', color: '#f8fafc' }}>
-            {summary.averageMarginPct}%
+            {summary.averageMarginPct === null ? '—' : `${summary.averageMarginPct}%`}
           </span>
           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>avg across jobs</span>
         </div>

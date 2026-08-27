@@ -97,6 +97,15 @@ describe('calculateBusinessSummary', () => {
     expect(summary.weeklyCashOutflowCents).toBe(139_155);
   });
 
+  // CHANGED (Phase 5): zero revenue used to fabricate a 0% margin (and a
+  // 'critical' severity for it). /margin's rule — null, never a sentinel —
+  // now applies to the dashboard aggregate too.
+  it('CHANGED: reports null margin and severity when there is no revenue', () => {
+    const summary = calculateBusinessSummary([], [], [], [], NOW);
+    expect(summary.averageMarginPct).toBeNull();
+    expect(summary.averageMarginSeverity).toBeNull();
+  });
+
   // CHANGED: `now` used to be read from the wall clock inside the function.
   it('CHANGED: takes `now` as a required parameter and never reads the wall clock', () => {
     vi.useFakeTimers();

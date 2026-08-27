@@ -32,8 +32,9 @@ export function calculateBusinessSummary(
   const totalLaborYTDCents = addCents(...kpis.map((k) => k.actualLaborCostCents));
   const totalGrossProfitYTDCents = addCents(...kpis.map((k) => k.grossProfitCents));
 
-  const averageMarginPct =
-    percent(totalGrossProfitYTDCents, totalRevenueYTDCents) ?? 0;
+  // Null at zero revenue, same as /margin's monthly figure — a book with no
+  // paid invoices has no margin, not a 0% one.
+  const averageMarginPct = percent(totalGrossProfitYTDCents, totalRevenueYTDCents);
 
   // Realization uses the same net earnings each project reports, so the
   // business figure is the per-project figure scaled up rather than a second,
@@ -115,7 +116,8 @@ export function calculateBusinessSummary(
     totalLaborYTDCents,
     totalGrossProfitYTDCents,
     averageMarginPct,
-    averageMarginSeverity: getGrossMarginSeverity(averageMarginPct),
+    averageMarginSeverity:
+      averageMarginPct === null ? null : getGrossMarginSeverity(averageMarginPct),
     averageHourlyRealizationCents,
     averageHourlySeverity:
       averageHourlyRealizationCents === null
