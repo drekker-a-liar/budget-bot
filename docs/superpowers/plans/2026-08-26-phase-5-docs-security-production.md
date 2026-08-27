@@ -28,40 +28,40 @@
 ### Task 2: Dashboard margin null-propagation (spec §3)
 
 **Files:** `packages/core/src/metrics/business.ts` (+ its test), `packages/core/src/types.ts`, `apps/web/components/DashboardMetrics.tsx` (+ colocated test).
-- [ ] `averageMarginPct: number | null` (drop the `?? 0`); severity `'none'` when null; fixtures pin zero-revenue → null/'none'.
-- [ ] `DashboardMetrics` renders the `/margin` em dash treatment for null; component test pins it.
+- [x] `averageMarginPct: number | null` (drop the `?? 0`); severity `'none'` when null; fixtures pin zero-revenue → null/'none'.
+- [x] `DashboardMetrics` renders the `/margin` em dash treatment for null; component test pins it.
 
 ### Task 3: Seed polish (spec §3)
 
 **Files:** `packages/db/src/seed/{index,fixtures}.ts` + seed tests.
-- [ ] Settings write becomes a merge preserving unknown jsonb keys; test seeds twice with an extra key present.
-- [ ] Fixture dates become month-offsets from the seed-run date (same shapes/amounts); test asserts all fixtures land inside the trailing 13-month window regardless of run date.
-- [ ] Full e2e (16 steps) twice — the format-level assertions must survive the offset dates.
+- [x] Settings write becomes a merge preserving unknown jsonb keys; test seeds twice with an extra key present.
+- [x] Fixture dates become month-offsets from the seed-run date (same shapes/amounts); test asserts all fixtures land inside the trailing 13-month window regardless of run date.
+- [x] Full e2e (16 steps) twice — the format-level assertions must survive the offset dates.
 
 ### Task 4: SECURITY.md + threat model (spec §4)
 
 **Files:** Create `SECURITY.md`, `docs/architecture/threat-model.md`.
-- [ ] SECURITY.md: supported versions (main), GitHub private vulnerability reporting, honest response expectations, fail-closed posture with ADR pointers.
-- [ ] Threat model: assets, single-owner trust model, boundaries, threats+mitigations (ADR 0002/0003, Phase 3 webhook verification), explicit non-goals.
+- [x] SECURITY.md: supported versions (main), GitHub private vulnerability reporting, honest response expectations, fail-closed posture with ADR pointers.
+- [x] Threat model: assets, single-owner trust model, boundaries, threats+mitigations (ADR 0002/0003, Phase 3 webhook verification), explicit non-goals.
 
 ### Task 5: Security audit (spec §4)
 
-- [ ] Audit routes/repos/secrets/webhooks/injection against the threat model.
-- [ ] Fix findings in-phase or ledger with reasons; record date + outcome in threat-model.md.
+- [x] Audit routes/repos/secrets/webhooks/injection against the threat model.
+- [x] Fix findings in-phase or ledger with reasons; record date + outcome in threat-model.md.
 
 ### Task 6: Release + deployment collateral (spec §5)
 
 **Files:** Create `docs/release-checklist.md`, `docs/self-hosting/privacy-template.md`; Modify `docs/self-hosting/vercel.md` §"Going live", `README.md`.
-- [ ] Release checklist (suite twice, CHANGELOG, tag, deploy verify, post-deploy smoke, rollback).
-- [ ] Plaid Production walk inside vercel.md §Going live.
-- [ ] Privacy template, marked not-legal-advice.
-- [ ] Deploy-to-Vercel button in README (clone URL, `apps/web` root, env var names), linking to vercel.md.
+- [x] Release checklist (suite twice, CHANGELOG, tag, deploy verify, post-deploy smoke, rollback).
+- [x] Plaid Production walk inside vercel.md §Going live.
+- [x] Privacy template, marked not-legal-advice.
+- [x] Deploy-to-Vercel button in README (clone URL, `apps/web` root, env var names), linking to vercel.md.
 
 ### Task 7: CHANGELOG + phase close
 
-- [ ] CHANGELOG `## v0.5.0 — unreleased` entry; README touch-ups.
-- [ ] Ledger the owner actions that remain: Plaid Production application, real card link.
-- [ ] Full turbo suite + e2e twice; PR.
+- [x] CHANGELOG `## v0.5.0 — unreleased` entry; README touch-ups.
+- [x] Ledger the owner actions that remain: Plaid Production application, real card link.
+- [x] Full turbo suite + e2e twice; PR.
 
 ---
 
