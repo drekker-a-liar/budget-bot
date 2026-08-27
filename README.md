@@ -11,6 +11,18 @@ Phase 1 of the [architecture](docs/superpowers/specs/2026-08-20-system-architect
 Bank connections, monthly gross margin and the production security audit are
 the sub-projects after it.
 
+## Deploy it
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fdrekker-a-liar%2Fbudget-bot&project-name=budget-bot&repository-name=budget-bot&root-directory=apps%2Fweb&env=AUTH_SECRET,AUTH_GITHUB_ID,AUTH_GITHUB_SECRET,ALLOWED_EMAILS,BANK_TOKEN_ENCRYPTION_KEY,DATABASE_URL&envDescription=Every%20variable%20is%20documented%20in%20.env.example%3B%20the%20deploy%20guide%20walks%20each%20one.&envLink=https%3A%2F%2Fgithub.com%2Fdrekker-a-liar%2Fbudget-bot%2Fblob%2Fmain%2Fdocs%2Fself-hosting%2Fvercel.md)
+
+The button clones the repository into your account and asks for the
+variables the app refuses to boot without. It is honestly a **two-pass
+setup**: the GitHub OAuth callback URL only exists after the first deploy,
+so expect the first one to be a deployment you cannot sign in to yet.
+[docs/self-hosting/vercel.md](docs/self-hosting/vercel.md) is the full walk
+— including checking that the project's Root Directory ended up as
+`apps/web`, the one setting a monorepo cannot survive without.
+
 ## Prerequisites
 
 - **Node 24**

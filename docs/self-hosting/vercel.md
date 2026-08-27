@@ -262,6 +262,47 @@ it was written, and the dashboard is the only place it is authoritative.
 Until that approval lands, leave the three variables unset. The connections
 screen says Plaid is not configured, and CSV import and manual entry carry on.
 
+The walk, once you decide to go:
+
+1. **Apply.** In the Plaid dashboard, follow its **request Production
+   access** flow — the dashboard moves this around, but the phrase survives
+   its redesigns. Describe the product honestly: a self-hosted, single-user dashboard that reads
+   transactions from the owner's own accounts to compute job margins; no
+   payments, no data resale, no third-party users. Reviews of this shape
+   are routinely approved; expect days, not hours.
+
+2. **Re-register the redirect URI for Production.** The allowed-redirect-URI
+   list is per environment. Add `https://<your-host>/plaid/oauth-return`
+   under Production exactly as you did for Sandbox, or every OAuth bank will
+   refuse to open Link while non-OAuth banks work — the most confusing
+   possible half-failure.
+
+3. **Swap the variables** in Vercel, Production scope only (Preview stays
+   Plaid-free on purpose):
+
+   ```
+   PLAID_ENV=production
+   PLAID_CLIENT_ID=<same client id>
+   PLAID_SECRET=<the *production* secret — each environment has its own>
+   CRON_SECRET=<openssl rand -base64 32, if not already set>
+   ```
+
+   `CRON_SECRET` matters now: the daily sync is what keeps live data fresh
+   when webhooks miss, and an unset secret means the cron endpoint refuses
+   to run.
+
+4. **Redeploy, then link the real account.** `/settings/connections` →
+   Connect a bank. The first sync after linking is the proof: transactions
+   appear with real dates and amounts, and the connection card shows a
+   last-synced time. If Link opens but your bank's OAuth page never returns,
+   it is almost always step 2.
+
+5. **Check the webhook.** After the first sync, the Plaid dashboard's
+   webhook log should show deliveries to
+   `https://<your-host>/api/webhooks/plaid` answered with 200. Webhook URLs
+   are only registered for https deployments, so a custom-domain change
+   means the next link/re-link registers the new host.
+
 ## Custom domains
 
 Add the domain in Vercel, then update the OAuth app's callback URL to the new
