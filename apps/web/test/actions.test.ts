@@ -296,6 +296,9 @@ beforeEach(() => {
   vi.unstubAllEnvs();
   resetEnvCache();
   vi.stubEnv('BANK_TOKEN_ENCRYPTION_KEY', TEST_KEY);
+  // The webhook-origin check reads the validated env on every link token,
+  // and the schema requires a database even when a test never touches one.
+  vi.stubEnv('DATABASE_URL', 'postgres://stub/stub');
   vi.mocked(auth).mockResolvedValue({
     user: { id: 'user-1' },
     expires: '2026-09-01',
@@ -652,6 +655,27 @@ describe('connecting a bank', () => {
 
     expect(bank.createLinkToken).toHaveBeenCalledWith(
       expect.objectContaining({ redirectUri: 'https://books.example/plaid/oauth-return' })
+    );
+  });
+
+  it('registers the webhook at the configured deployment URL, never the request host (Phase 5 audit)', async () => {
+    // The redirect URI may follow the request's own origin - Plaid refuses
+    // any it was never told about, which is the backstop. The webhook URL
+    // has no such backstop: Plaid registers whatever it is handed, so a
+    // forged Host header must not be able to point an item's events at
+    // someone else's server.
+    requestHeaders.current = { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'evil.example' };
+    vi.stubEnv('DATABASE_URL', 'postgres://stub/stub');
+    vi.stubEnv('AUTH_URL', 'https://books.example/');
+    resetEnvCache();
+
+    await createLinkTokenAction();
+
+    expect(bank.createLinkToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        redirectUri: 'https://evil.example/plaid/oauth-return',
+        webhookUrl: 'https://books.example/api/webhooks/plaid',
+      })
     );
   });
 

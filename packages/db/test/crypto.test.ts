@@ -123,6 +123,37 @@ describe('encryptToken / decryptToken', () => {
     );
   });
 
+  it('refuses a truncated auth tag rather than authenticating against less of it', () => {
+    // GCM will verify against however many tag bytes it is handed; a 4-byte
+    // tag drops forgery cost from 2^128 to 2^32 for anyone who can rewrite
+    // the ciphertext column (Phase 5 audit).
+    const [version, keyId, iv, tag, ct] = encryptToken(TOKEN, {
+      keyId: KEY_ID,
+      key: KEY,
+      aad: ROW_ID,
+    }).split(':');
+    const truncated = Buffer.from(tag, 'base64').subarray(0, 4).toString('base64');
+    const tampered = [version, keyId, iv, truncated, ct].join(':');
+
+    expect(() => decryptToken(tampered, keyring({ [KEY_ID]: KEY }))).toThrow(
+      /authentication/i
+    );
+  });
+
+  it('refuses an IV that is not the 96 bits the format writes', () => {
+    const [version, keyId, , tag, ct] = encryptToken(TOKEN, {
+      keyId: KEY_ID,
+      key: KEY,
+      aad: ROW_ID,
+    }).split(':');
+    const shortIv = Buffer.alloc(4).toString('base64');
+    const tampered = [version, keyId, shortIv, tag, ct].join(':');
+
+    expect(() => decryptToken(tampered, keyring({ [KEY_ID]: KEY }))).toThrow(
+      /authentication/i
+    );
+  });
+
   it('names the missing key id when the keyring cannot decrypt a row', () => {
     const ciphertext = encryptToken(TOKEN, { keyId: OTHER_KEY_ID, key: OTHER_KEY, aad: ROW_ID });
 

@@ -7,9 +7,10 @@ It is a private, single-tenant application you host yourself. Sign-in is a
 GitHub OAuth app you own, restricted to an allow list you write, and the data
 lives in a Postgres you control.
 
-Phase 1 of the [architecture](docs/superpowers/specs/2026-08-20-system-architecture-design.md).
-Bank connections, monthly gross margin and the production security audit are
-the sub-projects after it.
+Phases 1–5 of the [architecture](docs/superpowers/specs/2026-08-20-system-architecture-design.md):
+the locked door, bank connections, their lifecycle, monthly gross margin,
+and the production hardening — shipped in that order, each with its spec in
+`docs/superpowers/`.
 
 ## Deploy it
 

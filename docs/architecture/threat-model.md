@@ -74,4 +74,43 @@ the gate).
 
 | Date | Scope | Outcome |
 | --- | --- | --- |
-| 2026-08-26 | Phase 5 review of routes, repos, secret handling, webhook verification, and injection surfaces against this model | _recorded when the audit task completes_ |
+| 2026-08-26 | Phase 5: three independent review passes (authorization; secrets and crypto; unauthenticated surface and injection) against this model | Authorization clean: every route, page, and action guarded; every repo call owner-scoped from the session; no injection surfaces. Eight findings fixed in-phase, six ledgered below. |
+
+**Fixed (2026-08-26):** decrypt now pins the GCM tag and IV lengths (a
+truncated tag would have lowered forgery cost to 2³²); the webhook route
+caps its body at 1 MiB (the one unauthenticated POST could be made to
+buffer arbitrarily many bytes); the verifier refuses a signing key Plaid
+has marked expired; the boot assertion now also requires `DATABASE_URL`
+and holds `CRON_SECRET` to the same 32-character floor as `AUTH_SECRET`;
+the GitHub OAuth token is stripped before the `accounts` row is written
+and migration 0002 clears what earlier sign-ins stored (nothing ever read
+it back — a dump that ADR 0002 keeps from reading a bank must not hand
+over GitHub instead); the webhook URL Plaid registers is now built from
+the configured `AUTH_URL` first, request host second (the redirect URI
+keeps the reverse order because Plaid validates it against a registered
+list, which the webhook URL is not); the CSV import failure log carries
+the error message rather than the raw driver object.
+
+**Ledgered (accepted or deferred, with reasons):**
+
+- *Key-fetch amplification:* an unsigned request with a random `kid` costs
+  one Plaid key-server call, and failures are not negatively cached.
+  Bounded by Plaid's own rate limits; a TTL'd negative cache is the fix if
+  it is ever observed. Availability-only.
+- *Cross-customer JWTs:* Plaid's webhook JWTs carry no audience claim to
+  pin, so a JWT+body pair issued to another Plaid customer verifies here.
+  Bounded to a no-op (unknown item) plus a ledger row that ages out in 30
+  days. Nothing to fix on this side of Plaid's API.
+- *Replay-response oracle:* `{duplicate: true}` distinguishes a replay
+  from a first delivery, post-signature. Deliberate: the response carries
+  no identifier, and only a holder of a validly signed body sees it.
+- *`rotate-keys` script:* ADR 0002 promises a bulk re-encryption script
+  that does not exist yet; until it does, a retired key stays configured
+  as `..._PREVIOUS`. Rotation itself works. Deferred, tracked in the ADR.
+- *CSV formula injection:* imported descriptors are stored verbatim; the
+  only export today is JSON, so there is no spreadsheet to inject into.
+  Neutralize on the day an export becomes CSV.
+- *Middleware matcher anchoring:* the Edge matcher's exclusions are
+  prefix-anchored more loosely than `isPublicPath`; a future route named
+  like a public one would skip the tripwire but still fail the
+  authoritative `auth()` check. Defense-in-depth nuance only.

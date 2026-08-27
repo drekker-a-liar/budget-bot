@@ -234,7 +234,12 @@ export async function POST(req: Request): Promise<NextResponse> {
     // is here for parity with every other write: a reference to a project that
     // is not the caller's is a bad request, not a server fault.
     if (error instanceof UnknownProjectError) return badRequest(error.message);
-    console.error('Failed to import CSV:', error);
+    // The message only: a raw driver error object can carry the database
+    // host and user into the logs (Phase 5 audit).
+    console.error(
+      'Failed to import CSV:',
+      error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+    );
     return NextResponse.json({ error: 'Failed to import the file' }, { status: 500 });
   }
 }

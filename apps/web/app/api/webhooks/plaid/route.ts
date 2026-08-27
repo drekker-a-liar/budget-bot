@@ -20,17 +20,61 @@ import { runSync, syncFailureOf } from '@/src/server/bank/sync';
  * echoed one of those back would hand an attacker a way to learn which ids
  * are real before the next request's signature is even asked for.
  *
- * The only non-200 is 401, for a body whose signature does not check out.
- * Every other outcome - no provider configured, an item this deployment does
- * not recognise, a crash after the payload was accepted - answers 200, so
- * Plaid neither retries forever nor learns anything from the status code
- * alone about what is running behind it. The cron sync (spec §4) is the
- * retry mechanism for whatever this request could not finish; a Plaid
- * redelivery is not.
+ * The only non-200s are 401, for a body whose signature does not check out
+ * (an unreachable key server lands here too - the verifier cannot tell an
+ * unknown `kid` from an unfetchable one), and 413, for a body too large to
+ * be anything Plaid sends. Every other outcome - no provider configured, an
+ * item this deployment does not recognise, a crash after the payload was
+ * accepted - answers 200, so Plaid neither retries forever nor learns
+ * anything from the status code alone about what is running behind it. The
+ * cron sync (spec §4) is the retry mechanism for whatever this request
+ * could not finish; a Plaid redelivery is not.
  */
 
 /** `ITEM` codes that mean the user has to reconnect, not the system retrying. */
 const ITEM_REAUTH_CODES = new Set(['PENDING_EXPIRATION', 'USER_PERMISSION_REVOKED']);
+
+/**
+ * Far beyond any webhook Plaid sends, which is a few hundred bytes of JSON.
+ * This is the app's one unauthenticated POST, and a route handler has no
+ * body limit of its own (the CSV route makes the same argument at greater
+ * length) - so without a cap, an unsigned request could make this route
+ * buffer and hash arbitrarily many bytes before verification ever refused
+ * it (Phase 5 audit).
+ */
+const WEBHOOK_MAX_BYTES = 1024 * 1024;
+
+class BodyTooLarge extends Error {}
+
+/** The body, read a chunk at a time and abandoned the moment it passes the cap. */
+async function readCappedBody(request: Request): Promise<string> {
+  const declared = Number(request.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > WEBHOOK_MAX_BYTES) {
+    throw new BodyTooLarge();
+  }
+  if (!request.body) return '';
+
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  const reader = request.body.getReader();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > WEBHOOK_MAX_BYTES) {
+        throw new BodyTooLarge();
+      }
+      chunks.push(value);
+    }
+  } finally {
+    await reader.cancel().catch(() => {
+      // The stream is already going away; nothing here depends on how.
+    });
+  }
+
+  return new TextDecoder().decode(Buffer.concat(chunks));
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -79,7 +123,15 @@ function isSyncDispatch(event: WebhookEvent): boolean {
 export async function POST(request: Request): Promise<NextResponse> {
   // Read before any parse: the signature covers the exact bytes that arrived,
   // and anything that touched the body first could disagree with it.
-  const rawBody = await request.text();
+  let rawBody: string;
+  try {
+    rawBody = await readCappedBody(request);
+  } catch (error) {
+    if (error instanceof BodyTooLarge) {
+      return NextResponse.json({ ok: false }, { status: 413 });
+    }
+    throw error;
+  }
   const headers = headerRecord(request.headers);
 
   const provider = getBankProvider();
@@ -97,9 +149,12 @@ export async function POST(request: Request): Promise<NextResponse> {
     if (error instanceof WebhookVerificationError) {
       return NextResponse.json({ ok: false }, { status: 401 });
     }
-    // Something failed before a signature could even be checked - an
-    // unreachable key server, say. Nothing has been recorded, and nothing
-    // safe can be said about why; the cron sync is the backstop.
+    // Something other than verification failed - a bug in the verifier, not
+    // a bad signature. (An unreachable key server is NOT this branch: the
+    // verifier reports it as a verification failure, because it cannot tell
+    // an unknown `kid` from an unfetchable one, and that answers 401 above.)
+    // Nothing has been recorded, and nothing safe can be said about why; the
+    // cron sync is the backstop.
     return NextResponse.json({ ok: true });
   }
 

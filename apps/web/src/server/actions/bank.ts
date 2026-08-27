@@ -125,6 +125,22 @@ async function currentOrigin(): Promise<string | null> {
   return (await requestOrigin()) ?? configuredOrigin();
 }
 
+/**
+ * The origin the *webhook* is registered at - the configured URL first,
+ * request second, the reverse of `currentOrigin`'s preference.
+ *
+ * The redirect URI can afford to follow the request: Plaid refuses any
+ * redirect it was never told about, so a forged `Host` is a failed Link
+ * token. The webhook URL has no such backstop - Plaid registers whatever it
+ * is handed - and a forged host there would point the item's events at
+ * someone else's server for as long as the connection lives (Phase 5
+ * audit). `AUTH_URL` is optional, so the request origin remains the
+ * fallback for a deployment that never set it.
+ */
+async function webhookOrigin(): Promise<string | null> {
+  return configuredOrigin() ?? (await requestOrigin());
+}
+
 async function oauthReturnUri(): Promise<string | null> {
   const origin = await currentOrigin();
   return origin === null ? null : `${origin}${OAUTH_RETURN_PATH}`;
@@ -163,11 +179,13 @@ export async function createLinkTokenAction(): Promise<ActionResult<{ linkToken:
     );
   }
 
+  const originForWebhook = await webhookOrigin();
+
   try {
     const { linkToken } = await provider.createLinkToken({
       userId: ownerId,
       redirectUri: `${origin}${OAUTH_RETURN_PATH}`,
-      webhookUrl: webhookUrlFor(origin),
+      webhookUrl: originForWebhook === null ? undefined : webhookUrlFor(originForWebhook),
     });
     return ok({ linkToken });
   } catch (error) {

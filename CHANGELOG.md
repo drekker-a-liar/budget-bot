@@ -4,6 +4,40 @@ Notable changes, newest first. Versions follow the sub-project sequence in the
 [architecture](docs/superpowers/specs/2026-08-20-system-architecture-design.md)
 rather than a release cadence.
 
+## v0.5.0-production — unreleased
+
+Phase 5: **Docs, Security Audit, Production.** The phase where a stranger can
+run this in production and trust it: the security posture written down and
+audited, the release path documented, and the debts Phase 4 ledgered paid.
+
+- `SECURITY.md` (GitHub private vulnerability reporting; posture by pointer
+  to the ADRs) and a threat model (`docs/architecture/threat-model.md`) that
+  ranks the assets, walks the trust boundaries, and names what is
+  deliberately not defended.
+- A security audit — three independent passes over authorization, secrets
+  and crypto, and the unauthenticated surface — recorded in the threat
+  model's audit log. Authorization came back clean. Eight findings fixed:
+  token decryption pins the GCM tag and IV lengths; the webhook route caps
+  its body at 1 MiB and refuses signing keys Plaid has expired; the boot
+  assertion also requires `DATABASE_URL` and holds `CRON_SECRET` to the
+  32-character floor; the GitHub OAuth token is no longer stored (stripped
+  at sign-in, cleared from existing rows by migration 0002 — nothing ever
+  read it back); the webhook URL registered with Plaid is built from the
+  configured `AUTH_URL` before the request's own host; the CSV import
+  failure log drops the raw driver error. Six accepted or deferred items
+  are ledgered in the audit log with reasons.
+- A release checklist (`docs/release-checklist.md`), a five-step Plaid
+  Production walk in the Vercel guide, a fill-in privacy policy template
+  (`docs/self-hosting/privacy-template.md`), and a Deploy-to-Vercel button
+  in the README that is honest about the two-pass setup.
+- The dashboard's gross-margin KPI now reports **null at zero revenue** —
+  an em dash, like `/margin` — instead of a fabricated 0% with a 'critical'
+  badge (`averageMarginPct: number | null`).
+- The demo seed became evergreen: fixture dates shift forward by whole
+  calendar months from their authored anchor at seed time, so the book never
+  ages out of the trailing 13-month margin window; and the seed now merges
+  `settings.timeZone` into the jsonb instead of replacing the whole object.
+
 ## v0.4.0-margin — unreleased
 
 Phase 4: **Monthly Gross Margin.** `/margin` charts the trailing 12 months of

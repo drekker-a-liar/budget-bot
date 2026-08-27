@@ -441,6 +441,14 @@ export class PlaidProvider implements BankProvider {
       throw new WebhookVerificationError('unknown key id');
     }
 
+    // Plaid retires a signing key by setting `expired_at`; trusting one past
+    // that is trusting whatever leaked with it. Not cached, either way: an
+    // expiry recorded in error recovers on the next fetch rather than at the
+    // next process restart (Phase 5 audit).
+    if (key.expired_at !== null && key.expired_at !== undefined) {
+      throw new WebhookVerificationError('expired key');
+    }
+
     this.#webhookKeys.set(kid, key);
     return key;
   }

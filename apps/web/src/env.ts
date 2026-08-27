@@ -172,6 +172,14 @@ export function assertProductionSecurity(raw: RawEnv = process.env): void {
 
   const problems: string[] = [];
 
+  // Availability rather than disclosure, but the same shape of mistake: the
+  // schema requires it, yet the schema is only read lazily on the first
+  // request, so without this line a deployment missing its database boots
+  // and then fails on every request instead of failing once, loudly, here.
+  if (!raw.DATABASE_URL) {
+    problems.push('DATABASE_URL is missing; there is no file-backed fallback.');
+  }
+
   if (!raw.AUTH_SECRET || raw.AUTH_SECRET.length < AUTH_SECRET_MIN_LENGTH) {
     problems.push(
       `AUTH_SECRET is missing or shorter than ${AUTH_SECRET_MIN_LENGTH} characters. Generate one with \`openssl rand -base64 32\`.`
@@ -247,6 +255,15 @@ export function assertProductionSecurity(raw: RawEnv = process.env): void {
         'CRON_SECRET is missing, and PLAID_ENV=production means the sync endpoint is live.'
       );
     }
+  }
+
+  // The cron route is live whenever the secret is set, Plaid or no Plaid,
+  // and it is the credential for an endpoint that syncs every owner - so a
+  // guessable one gets the same floor AUTH_SECRET does.
+  if (raw.CRON_SECRET && raw.CRON_SECRET.length < AUTH_SECRET_MIN_LENGTH) {
+    problems.push(
+      `CRON_SECRET is shorter than ${AUTH_SECRET_MIN_LENGTH} characters. Generate one with \`openssl rand -base64 32\`.`
+    );
   }
 
   // Anything but absent or an explicit "0". The variable exists to let a test
