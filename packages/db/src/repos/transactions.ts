@@ -1,5 +1,18 @@
-import type { ExpenseTransaction } from '@budget-bot/core';
-import { and, desc, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
+import type { ExpenseTransaction, MonthlyMarginRange } from '@budget-bot/core';
+import {
+  and,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  ne,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import type { Database, Executor } from '../client';
 import { transactions } from '../schema';
 import { rejectingForeignProject } from './errors';
@@ -143,6 +156,57 @@ export async function listTransactions(
         filter.projectId === undefined
           ? undefined
           : eq(transactions.projectId, filter.projectId)
+      )
+    )
+    .orderBy(desc(transactions.createdAt), desc(transactions.id));
+  return rows.map(toTransaction);
+}
+
+/**
+ * Candidate cost rows for a cash-basis window (spec §2): non-ignored,
+ * non-pending, non-removed transactions whose bucket date - `postedAt ?? date`
+ * in the owner's time zone - could fall in `range`, for the margin query
+ * (spec §3).
+ *
+ * `date` is a plain calendar string, compared directly against `range` the
+ * same way `calculateMonthlyMargins`'s `inRange` does - no zone conversion to
+ * get wrong. `postedAt` is an instant, so instead of repeating that function's
+ * `Intl` bucketing here (the zone math core exists to own), its side of the
+ * `OR` pads `range` by a day on each end: enough to cover every IANA offset
+ * (UTC-12 to UTC+14) no matter which one the owner is in. This only has to
+ * bound what reaches core - core applies the exact cut.
+ */
+export async function listTransactionsInRange(
+  db: Database,
+  ownerId: string,
+  range: MonthlyMarginRange
+): Promise<ExpenseTransaction[]> {
+  const postedAtFrom = new Date(`${range.start}T00:00:00.000Z`);
+  postedAtFrom.setUTCDate(postedAtFrom.getUTCDate() - 1);
+  const postedAtTo = new Date(`${range.end}T23:59:59.999Z`);
+  postedAtTo.setUTCDate(postedAtTo.getUTCDate() + 1);
+
+  const rows = await db
+    .select()
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.ownerId, ownerId),
+        isNull(transactions.removedAt),
+        ne(transactions.status, 'ignored'),
+        eq(transactions.pending, false),
+        or(
+          and(
+            isNull(transactions.postedAt),
+            gte(transactions.date, range.start),
+            lte(transactions.date, range.end)
+          ),
+          and(
+            isNotNull(transactions.postedAt),
+            gte(transactions.postedAt, postedAtFrom),
+            lte(transactions.postedAt, postedAtTo)
+          )
+        )
       )
     )
     .orderBy(desc(transactions.createdAt), desc(transactions.id));

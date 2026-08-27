@@ -1,3 +1,4 @@
+import { eq } from 'drizzle-orm';
 import { expect, it } from 'vitest';
 import { ownersRepo } from '../../src/repos';
 import { users } from '../../src/schema';
@@ -40,5 +41,26 @@ describeDb('ownersRepo.findOwnerIdByEmail', () => {
     await db.insert(users).values({ email: 'mike@example.com.au' });
 
     expect(await ownersRepo.findOwnerIdByEmail(db, 'mike@example.com')).toBeUndefined();
+  });
+});
+
+/** What `calculateMonthlyMargins` (spec §2, §5) buckets a month by. */
+describeDb('ownersRepo.getTimeZone', () => {
+  it('is UTC for an owner who has never set one', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+
+    expect(await ownersRepo.getTimeZone(db, ownerId)).toBe('UTC');
+  });
+
+  it('reads the zone out of settings once one is set', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    await db
+      .update(users)
+      .set({ settings: { timeZone: 'America/Los_Angeles' } })
+      .where(eq(users.id, ownerId));
+
+    expect(await ownersRepo.getTimeZone(db, ownerId)).toBe('America/Los_Angeles');
   });
 });

@@ -4,6 +4,25 @@ Notable changes, newest first. Versions follow the sub-project sequence in the
 [architecture](docs/superpowers/specs/2026-08-20-system-architecture-design.md)
 rather than a release cadence.
 
+## v0.4.0-margin — unreleased
+
+Phase 4: **Monthly Gross Margin.** `/margin` charts the trailing 12 months of
+gross margin, cash basis (ADR 0006): paid invoices as revenue against posted
+transactions and labor as cost, bucketed by month in the owner's own time
+zone rather than UTC, with the current month carried to date and marked as
+still in progress.
+
+- `calculateMonthlyMargins` (`packages/core`) is a pure function of a date
+  range and time zone — invoices, transactions and labor go in, one row per
+  month comes out, with severity thresholds at 45%/25% and a null (never a
+  fabricated zero) margin percentage for a month with no revenue.
+- `MonthlyMarginChart` draws it as hand-rolled SVG, no chart library: bars for
+  revenue and margin, a margin-percent line, reference lines at the severity
+  thresholds, a diagonal hatch over the current month's bar, and an explicit
+  empty state rather than a chart with nothing to show.
+- `/margin` joined the header nav, gated behind the same session check as
+  every other page. The e2e journey grew from 15 to 16 steps to cover it.
+
 ## v0.3.0-lifecycle — unreleased
 
 Phase 3: **Webhooks, Cron, and Connection Lifecycle.** A linked bank stays

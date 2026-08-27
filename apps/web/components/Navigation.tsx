@@ -8,6 +8,7 @@ import {
   Hammer,
   CreditCard,
   TrendingUp,
+  Percent,
   Plus,
   Clock,
   Receipt,
@@ -39,6 +40,7 @@ export function Navigation({
       badge: unassignedCount > 0 ? unassignedCount : undefined,
     },
     { label: 'Cash Flow & Runway', href: '/cashflow', icon: TrendingUp },
+    { label: 'Margin', href: '/margin', icon: Percent },
     { label: 'Connections', href: '/settings/connections', icon: Landmark },
   ];
 

@@ -1,0 +1,347 @@
+'use client';
+
+import React from 'react';
+import { scaleBand, scaleLinear } from 'd3-scale';
+import { curveMonotoneX, line as d3Line } from 'd3-shape';
+import {
+  addCents,
+  formatCents,
+  percent,
+  THRESHOLDS,
+  type MonthlyMargin,
+  type SeverityLevel,
+} from '@budget-bot/core';
+
+/**
+ * Trailing-12-month gross margin, cash basis, as a hand-rolled SVG (spec §4:
+ * no chart library - d3-scale/d3-shape are used only for the scales and the
+ * line path generator, every element below is written JSX).
+ */
+
+interface MonthlyMarginChartProps {
+  /** Oldest first; the last entry is always the current month to date (spec §3). */
+  months: MonthlyMargin[];
+  caption?: string;
+}
+
+const DEFAULT_CAPTION = 'Cash basis: paid invoices vs. posted costs.';
+const EM_DASH = '—';
+
+const WIDTH = 880;
+const HEIGHT = 320;
+const PLOT_MARGIN = { top: 16, right: 56, bottom: 40, left: 64 };
+const PLOT_WIDTH = WIDTH - PLOT_MARGIN.left - PLOT_MARGIN.right;
+const PLOT_HEIGHT = HEIGHT - PLOT_MARGIN.top - PLOT_MARGIN.bottom;
+
+/** "Aug 26" - short enough to fit 13 months of ticks without crowding. */
+function monthLabel(month: string): string {
+  return new Date(`${month}-01T00:00:00Z`).toLocaleDateString('en-US', {
+    month: 'short',
+    year: '2-digit',
+    timeZone: 'UTC',
+  });
+}
+
+/** `55.6` -> `"55.6%"`; null (zero revenue, spec §2) -> an em dash, never a fabricated number. */
+function pctLabel(pct: number | null): string {
+  return pct === null ? EM_DASH : `${pct}%`;
+}
+
+/** The margin bar's fill: the same `var(--severity-*)` tokens `MarginGauge` paints its segments with. */
+function severityFill(severity: SeverityLevel | 'none'): string {
+  if (severity === 'healthy') return 'var(--severity-healthy)';
+  if (severity === 'caution') return 'var(--severity-caution)';
+  if (severity === 'critical') return 'var(--severity-critical)';
+  return 'var(--text-secondary)';
+}
+
+export function MonthlyMarginChart({ months, caption = DEFAULT_CAPTION }: MonthlyMarginChartProps) {
+  // Scoped per instance so two charts on one page never share a pattern id.
+  const hatchId = `mtd-hatch-${React.useId()}`;
+
+  // Nothing to draw a shape from is not the same as a zero chart: a bar at
+  // 0% height reads as "we checked and there is nothing", a blank card reads
+  // as "we forgot to check". Say which one this is.
+  const isEmpty = months.every((month) => month.revenueCents === 0 && month.cogs.total === 0);
+
+  // The trailing-12 KPI totals are the 12 full months only - the query
+  // always appends the current month to date last (spec §3), so it is
+  // always the one entry this excludes.
+  const fullMonths = months.slice(0, -1);
+  const kpiRevenueCents = addCents(...fullMonths.map((month) => month.revenueCents));
+  const kpiMarginCents = addCents(...fullMonths.map((month) => month.marginCents));
+  const kpiBlendedPct = percent(kpiMarginCents, kpiRevenueCents);
+  const latestFullMonth = fullMonths[fullMonths.length - 1];
+  const ariaLabel = latestFullMonth
+    ? `Monthly gross margin chart. Latest full month ${monthLabel(latestFullMonth.month)}: revenue ${formatCents(latestFullMonth.revenueCents)}, margin ${formatCents(latestFullMonth.marginCents)} (${pctLabel(latestFullMonth.marginPct)}).`
+    : 'Monthly gross margin chart. No full month of data yet.';
+
+  let chart: React.ReactNode = null;
+
+  if (!isEmpty) {
+    const xScale = scaleBand<string>()
+      .domain(months.map((month) => month.month))
+      .range([0, PLOT_WIDTH])
+      .paddingInner(0.35)
+      .paddingOuter(0.2);
+
+    // One shared money scale for both bar series, so a margin bar is always
+    // legible against the revenue bar it sits in front of. Domain reaches
+    // below zero when a month's margin is a loss, so that bar draws downward
+    // from the baseline instead of clipping at it.
+    const moneyValues = months.flatMap((month) => [month.revenueCents, month.marginCents]);
+    const moneyScale = scaleLinear()
+      .domain([Math.min(0, ...moneyValues), Math.max(1, ...moneyValues)])
+      .range([PLOT_HEIGHT, 0]);
+    const baselineY = moneyScale(0);
+
+    // Right axis: percent, not dollars. 0-100 always fits (so the 45%/25%
+    // reference lines are always on-scale) and widens only for a month that
+    // ran a genuine loss or an outsized margin.
+    const pctValues = months
+      .map((month) => month.marginPct)
+      .filter((pct): pct is number => pct !== null);
+    const pctScale = scaleLinear()
+      .domain([Math.min(0, ...pctValues), Math.max(100, ...pctValues)])
+      .range([PLOT_HEIGHT, 0]);
+
+    const centerX = (month: string) => (xScale(month) ?? 0) + xScale.bandwidth() / 2;
+
+    // `defined()` is what keeps a month with no margin percentage (zero
+    // revenue, spec §2) from being interpolated through as if it had one:
+    // the line breaks there instead of drawing a point nobody computed.
+    const linePath =
+      d3Line<MonthlyMargin>()
+        .defined((month) => month.marginPct !== null)
+        .x((month) => centerX(month.month))
+        .y((month) => pctScale(month.marginPct as number))
+        .curve(curveMonotoneX)(months) ?? '';
+
+    chart = (
+      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label={ariaLabel} width="100%">
+        <defs>
+          {/* The current month reads as still-in-progress, not just another
+              bar: a diagonal hatch over its severity fill, on top of the
+              solid colour rather than instead of it. */}
+          <pattern id={hatchId} width={6} height={6} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1={0} y1={0} x2={0} y2={6} stroke="var(--bg-panel)" strokeWidth={3} />
+          </pattern>
+        </defs>
+
+        <g transform={`translate(${PLOT_MARGIN.left}, ${PLOT_MARGIN.top})`}>
+          <line
+            className="margin-reference-line"
+            data-value="45"
+            x1={0}
+            x2={PLOT_WIDTH}
+            y1={pctScale(THRESHOLDS.GROSS_MARGIN.HEALTHY)}
+            y2={pctScale(THRESHOLDS.GROSS_MARGIN.HEALTHY)}
+            stroke="var(--border-subtle)"
+            strokeDasharray="4 4"
+          />
+          <text
+            className="margin-reference-label"
+            data-value="45"
+            x={PLOT_WIDTH}
+            y={pctScale(THRESHOLDS.GROSS_MARGIN.HEALTHY) - 4}
+            textAnchor="end"
+            style={{ fontSize: '10px', fill: 'var(--text-secondary)' }}
+          >
+            {`${THRESHOLDS.GROSS_MARGIN.HEALTHY}%`}
+          </text>
+          <line
+            className="margin-reference-line"
+            data-value="25"
+            x1={0}
+            x2={PLOT_WIDTH}
+            y1={pctScale(THRESHOLDS.GROSS_MARGIN.CAUTION)}
+            y2={pctScale(THRESHOLDS.GROSS_MARGIN.CAUTION)}
+            stroke="var(--border-subtle)"
+            strokeDasharray="4 4"
+          />
+          <text
+            className="margin-reference-label"
+            data-value="25"
+            x={PLOT_WIDTH}
+            y={pctScale(THRESHOLDS.GROSS_MARGIN.CAUTION) - 4}
+            textAnchor="end"
+            style={{ fontSize: '10px', fill: 'var(--text-secondary)' }}
+          >
+            {`${THRESHOLDS.GROSS_MARGIN.CAUTION}%`}
+          </text>
+
+          {months.map((month, index) => {
+            const bandX = xScale(month.month) ?? 0;
+            const bandwidth = xScale.bandwidth();
+            const label = monthLabel(month.month);
+            const isMtd = index === months.length - 1;
+
+            const revenueTop = Math.min(moneyScale(month.revenueCents), baselineY);
+            const revenueHeight = Math.abs(moneyScale(month.revenueCents) - baselineY);
+
+            const marginBarWidth = bandwidth * 0.55;
+            const marginBarX = bandX + (bandwidth - marginBarWidth) / 2;
+            const marginTop = Math.min(moneyScale(month.marginCents), baselineY);
+            const marginHeight = Math.abs(moneyScale(month.marginCents) - baselineY);
+
+            return (
+              <g key={month.month}>
+                <rect
+                  className="revenue-bar"
+                  x={bandX}
+                  y={revenueTop}
+                  width={bandwidth}
+                  height={revenueHeight}
+                  style={{ fill: 'var(--text-muted)', opacity: 0.35 }}
+                >
+                  <title>{`${label} revenue: ${formatCents(month.revenueCents)}`}</title>
+                </rect>
+                <rect
+                  className="margin-bar"
+                  x={marginBarX}
+                  y={marginTop}
+                  width={marginBarWidth}
+                  height={marginHeight}
+                  style={{ fill: severityFill(month.severity) }}
+                >
+                  <title>{`${label} margin: ${formatCents(month.marginCents)} (${pctLabel(month.marginPct)})`}</title>
+                </rect>
+                {isMtd && (
+                  <rect
+                    className="mtd-hatch"
+                    data-month={month.month}
+                    x={marginBarX}
+                    y={marginTop}
+                    width={marginBarWidth}
+                    height={marginHeight}
+                    fill={`url(#${hatchId})`}
+                  />
+                )}
+
+                <text
+                  x={bandX + bandwidth / 2}
+                  y={PLOT_HEIGHT + 18}
+                  textAnchor="middle"
+                  style={{ fontSize: '10px', fill: 'var(--text-secondary)' }}
+                >
+                  {label}
+                </text>
+                {isMtd && (
+                  <text
+                    x={bandX + bandwidth / 2}
+                    y={PLOT_HEIGHT + 32}
+                    textAnchor="middle"
+                    style={{ fontSize: '9px', fontWeight: 700, fill: 'var(--text-secondary)' }}
+                  >
+                    MTD
+                  </text>
+                )}
+              </g>
+            );
+          })}
+
+          <path className="margin-line" d={linePath} fill="none" stroke="var(--accent-cyan)" strokeWidth={2} />
+          {months
+            .filter((month) => month.marginPct !== null)
+            .map((month) => (
+              <circle
+                key={month.month}
+                className="margin-point"
+                data-month={month.month}
+                cx={centerX(month.month)}
+                cy={pctScale(month.marginPct as number)}
+                r={3}
+                style={{ fill: 'var(--accent-cyan)' }}
+              />
+            ))}
+        </g>
+      </svg>
+    );
+  }
+
+  return (
+    <div className="swiss-card">
+      <div className="swiss-card-header">
+        <div>
+          <div className="swiss-header" style={{ fontSize: '1.05rem', fontWeight: 800 }}>
+            Monthly Gross Margin
+          </div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{caption}</div>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+          gap: '1rem',
+          marginTop: '1rem',
+        }}
+      >
+        <div>
+          <span className="swiss-label">Trailing 12 months Revenue</span>
+          <div className="tnum swiss-header" style={{ fontSize: '1.4rem', marginTop: '0.15rem' }}>
+            {formatCents(kpiRevenueCents, { showCents: false })}
+          </div>
+        </div>
+        <div>
+          <span className="swiss-label">Trailing 12 months Margin</span>
+          <div className="tnum swiss-header" style={{ fontSize: '1.4rem', marginTop: '0.15rem' }}>
+            {formatCents(kpiMarginCents, { showCents: false })}
+          </div>
+        </div>
+        <div>
+          <span className="swiss-label">Trailing 12 months</span>
+          <div className="tnum swiss-header" style={{ fontSize: '1.4rem', marginTop: '0.15rem' }}>
+            {kpiBlendedPct === null ? EM_DASH : `${kpiBlendedPct}%`}
+          </div>
+        </div>
+      </div>
+
+      {!isEmpty && (
+        // Static, not hover-only: the per-bar `<title>` already says which
+        // series a bar belongs to, but that reaches nobody on a touch
+        // device. This is the always-visible version of the same fact.
+        <div
+          style={{
+            display: 'flex',
+            gap: '1rem',
+            flexWrap: 'wrap',
+            marginTop: '0.75rem',
+            fontSize: '0.7rem',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+            <span
+              style={{
+                width: '10px',
+                height: '10px',
+                borderRadius: '2px',
+                backgroundColor: 'var(--text-muted)',
+                opacity: 0.35,
+              }}
+            />
+            Revenue
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+            <span style={{ display: 'inline-flex', gap: '2px' }}>
+              <span style={{ width: '6px', height: '10px', backgroundColor: 'var(--severity-healthy)' }} />
+              <span style={{ width: '6px', height: '10px', backgroundColor: 'var(--severity-caution)' }} />
+              <span style={{ width: '6px', height: '10px', backgroundColor: 'var(--severity-critical)' }} />
+            </span>
+            Margin (by severity)
+          </span>
+        </div>
+      )}
+
+      {isEmpty ? (
+        <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+          No paid invoices yet
+        </div>
+      ) : (
+        chart
+      )}
+    </div>
+  );
+}

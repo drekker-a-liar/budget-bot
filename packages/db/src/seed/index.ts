@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import type { Database, Executor } from '../client';
-import { bankConnections, invoices, laborEntries, projects, transactions } from '../schema';
+import { bankConnections, invoices, laborEntries, projects, transactions, users } from '../schema';
 import {
   SEED_INVOICES,
   SEED_LABOR,
@@ -15,7 +15,11 @@ export * from './fixtures';
  *
  * It never creates the `users` row: Auth.js owns that table and creates a user
  * on first sign-in (ADR 0003), so a row planted here would collide with the
- * OAuth account link rather than save anyone a step.
+ * OAuth account link rather than save anyone a step. It does update that row's
+ * `settings.timeZone` (spec §5) whenever it writes fixtures: the dates below
+ * are written as if lived in the Pacific time zone, and an owner with no
+ * settings would otherwise default to UTC and bucket a fixture up to a day
+ * into the wrong month in the margin metrics.
  */
 
 export interface SeedOptions {
@@ -74,6 +78,11 @@ export async function seedOwner(
         .limit(1);
       if (existing) return { seeded: false, counts: EMPTY };
     }
+
+    await tx
+      .update(users)
+      .set({ settings: { timeZone: 'America/Los_Angeles' } })
+      .where(eq(users.id, ownerId));
 
     const projectRows = await tx
       .insert(projects)

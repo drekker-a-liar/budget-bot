@@ -380,3 +380,94 @@ describeDb('transactionsRepo owner isolation', () => {
     expect(updated).toMatchObject({ category: 'tools', projectId: project.id });
   });
 });
+
+/** The candidate rows the margin query layer (spec §3) hands to `calculateMonthlyMargins`. */
+describeDb('transactionsRepo.listTransactionsInRange', () => {
+  const range = { start: '2026-08-01', end: '2026-08-31' };
+
+  it('excludes an ignored transaction', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    await transactionsRepo.createTransaction(
+      db,
+      ownerId,
+      manual({ date: '2026-08-15', status: 'ignored' })
+    );
+
+    expect(await transactionsRepo.listTransactionsInRange(db, ownerId, range)).toEqual([]);
+  });
+
+  it('excludes a pending transaction', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const bankAccountId = await createBankAccount(db, ownerId);
+    await transactionsRepo.upsertFromBank(db, ownerId, [
+      synced(bankAccountId, { date: '2026-08-15', pending: true }),
+    ]);
+
+    expect(await transactionsRepo.listTransactionsInRange(db, ownerId, range)).toEqual([]);
+  });
+
+  it('excludes a soft-deleted transaction', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const project = await projectsRepo.createProject(db, ownerId, newProject());
+    const created = await transactionsRepo.createTransaction(db, ownerId, {
+      ...manual({ date: '2026-08-15' }),
+      projectId: project.id,
+      status: 'matched',
+    });
+    await db.update(transactions).set({ removedAt: new Date() }).where(eq(transactions.id, created.id));
+
+    expect(await transactionsRepo.listTransactionsInRange(db, ownerId, range)).toEqual([]);
+  });
+
+  it('excludes a manually-dated row outside the range, and includes each inclusive boundary', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    await transactionsRepo.createTransaction(db, ownerId, manual({ date: '2026-07-31' }));
+    const first = await transactionsRepo.createTransaction(
+      db,
+      ownerId,
+      manual({ date: '2026-08-01' })
+    );
+    const last = await transactionsRepo.createTransaction(
+      db,
+      ownerId,
+      manual({ date: '2026-08-31' })
+    );
+    await transactionsRepo.createTransaction(db, ownerId, manual({ date: '2026-09-01' }));
+
+    const rows = await transactionsRepo.listTransactionsInRange(db, ownerId, range);
+
+    expect(rows.map((row) => row.id).sort()).toEqual([first.id, last.id].sort());
+  });
+
+  it('buckets a synced row by postedAt, not its (possibly different) date field', async () => {
+    // A charge authorized in July can post in August - cash basis (ADR 0006)
+    // reads the posted date, so a row like that belongs in the window even
+    // though `date` alone would place it a month early.
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    const bankAccountId = await createBankAccount(db, ownerId);
+    const [row] = await transactionsRepo.upsertFromBank(db, ownerId, [
+      synced(bankAccountId, {
+        date: '2026-07-30',
+        postedAt: new Date('2026-08-01T12:00:00Z'),
+      }),
+    ]);
+
+    const rows = await transactionsRepo.listTransactionsInRange(db, ownerId, range);
+
+    expect(rows.map((r) => r.id)).toEqual([row.id]);
+  });
+
+  it('never returns another owner’s transactions', async () => {
+    const db = getDb();
+    const alice = await createOwner(db);
+    const bob = await createOwner(db);
+    await transactionsRepo.createTransaction(db, alice, manual({ date: '2026-08-15' }));
+
+    expect(await transactionsRepo.listTransactionsInRange(db, bob, range)).toEqual([]);
+  });
+});

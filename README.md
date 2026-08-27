@@ -158,6 +158,12 @@ wrong guess files a charge in the wrong month without saying so. Rows with a
 date in any other form come back in the response's `errors`, with the line
 number and what would have worked.
 
+## Monthly gross margin
+
+`/margin` charts the trailing 12 months of gross margin, cash basis — paid
+invoices as revenue against posted transactions and labor as cost, bucketed
+by month in the owner's own time zone, with the current month shown to date.
+
 ## Documentation
 
 - [System architecture](docs/superpowers/specs/2026-08-20-system-architecture-design.md)

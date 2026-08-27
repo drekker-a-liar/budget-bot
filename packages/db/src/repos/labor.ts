@@ -1,5 +1,5 @@
-import type { LaborEntry } from '@budget-bot/core';
-import { and, desc, eq } from 'drizzle-orm';
+import type { LaborEntry, MonthlyMarginRange } from '@budget-bot/core';
+import { and, desc, eq, gte, lte } from 'drizzle-orm';
 import type { Database } from '../client';
 import { laborEntries } from '../schema';
 import { rejectingForeignProject } from './errors';
@@ -38,6 +38,31 @@ export async function listLaborEntries(
       projectId === undefined
         ? eq(laborEntries.ownerId, ownerId)
         : and(eq(laborEntries.ownerId, ownerId), eq(laborEntries.projectId, projectId))
+    )
+    .orderBy(desc(laborEntries.createdAt), desc(laborEntries.id));
+  return rows.map(toLaborEntry);
+}
+
+/**
+ * Labor entries dated in `range` (inclusive) - the exact predicate
+ * `calculateMonthlyMargins` (spec §2) applies to labor cost, pushed down to
+ * `labor_entries_owner_date_idx` for the margin query (spec §3) rather than
+ * fetched in full and filtered in the app.
+ */
+export async function listLaborEntriesInRange(
+  db: Database,
+  ownerId: string,
+  range: MonthlyMarginRange
+): Promise<LaborEntry[]> {
+  const rows = await db
+    .select()
+    .from(laborEntries)
+    .where(
+      and(
+        eq(laborEntries.ownerId, ownerId),
+        gte(laborEntries.date, range.start),
+        lte(laborEntries.date, range.end)
+      )
     )
     .orderBy(desc(laborEntries.createdAt), desc(laborEntries.id));
   return rows.map(toLaborEntry);

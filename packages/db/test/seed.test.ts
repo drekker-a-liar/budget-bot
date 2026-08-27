@@ -1,6 +1,7 @@
+import { eq } from 'drizzle-orm';
 import { expect, it } from 'vitest';
-import { bankRepo, invoicesRepo, laborRepo, projectsRepo, transactionsRepo } from '../src/repos';
-import { bankAccounts, bankConnections } from '../src/schema';
+import { bankRepo, invoicesRepo, laborRepo, ownersRepo, projectsRepo, transactionsRepo } from '../src/repos';
+import { bankAccounts, bankConnections, users } from '../src/schema';
 import { SEED_PROJECTS, SEED_TRANSACTIONS, seedOwner } from '../src/seed';
 import { createOwner, describeDb, useTestDb } from './helpers/db';
 
@@ -119,5 +120,39 @@ describeDb('seedOwner', () => {
     await seedOwner(db, alice);
 
     expect(await projectsRepo.listProjects(db, bob)).toEqual([]);
+  });
+
+  it('gives the demo owner a time zone the metrics can bucket by', async () => {
+    // The seed's fixtures are dated as if lived in the Pacific time zone
+    // (spec §5); an owner with no settings would otherwise fall back to UTC
+    // and bucket every one of those dates up to a day into the wrong month.
+    const db = getDb();
+    const ownerId = await createOwner(db);
+
+    await seedOwner(db, ownerId);
+
+    expect(await ownersRepo.getTimeZone(db, ownerId)).toBe('America/Los_Angeles');
+  });
+
+  it('sets the time zone again on a reset', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    await seedOwner(db, ownerId);
+    await db.update(users).set({ settings: { timeZone: 'America/New_York' } }).where(eq(users.id, ownerId));
+
+    await seedOwner(db, ownerId, { reset: true });
+
+    expect(await ownersRepo.getTimeZone(db, ownerId)).toBe('America/Los_Angeles');
+  });
+
+  it('leaves an owner’s own time zone alone when it already had data', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    await seedOwner(db, ownerId);
+    await db.update(users).set({ settings: { timeZone: 'America/New_York' } }).where(eq(users.id, ownerId));
+
+    await seedOwner(db, ownerId);
+
+    expect(await ownersRepo.getTimeZone(db, ownerId)).toBe('America/New_York');
   });
 });
