@@ -13,8 +13,8 @@
   },
   "dependencies": {
     "@budget-bot/core": "workspace:*",
-    "jose": "^6.2.9",
-    "papaparse": "^5.5.3",
+    "jose": "^6.2.10",
+    "papaparse": "^5.7.0",
     "plaid": "46.0.0"
   },
   "devDependencies": {
