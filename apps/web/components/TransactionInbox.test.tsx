@@ -2,7 +2,7 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { parseMoney } from '@budget-bot/core';
+import { ExpenseCategorySchema, parseMoney } from '@budget-bot/core';
 import { aProject, aTransaction } from '@/test/helpers/props';
 import { TransactionInbox } from './TransactionInbox';
 
@@ -171,6 +171,49 @@ describe('TransactionInbox', () => {
 
     expect(within(rowFor('Carded')).getByText('••• 4892')).toBeInTheDocument();
     expect(within(rowFor('Imported')).queryByText(/•••/)).not.toBeInTheDocument();
+  });
+
+  it('names the delete button for a screen reader, not only on hover', () => {
+    // `title` shows a tooltip; it is not a reliable accessible name. An
+    // icon-only button without `aria-label` is announced as just "button".
+    renderInbox();
+
+    const button = within(rowFor('The Home Depot')).getByRole('button', { name: /delete expense/i });
+    expect(button).toHaveAttribute('aria-label', 'Delete expense');
+    expect(button).toHaveAttribute('type', 'button');
+  });
+
+  it('tells assistive tech which filter is pressed', async () => {
+    // Three look-alike buttons where only a colour says which one is active;
+    // aria-pressed is how that state reaches anyone not looking at the colour.
+    renderInbox();
+    const pending = screen.getByRole('button', { name: /pending inbox/i });
+    const assigned = screen.getByRole('button', { name: /assigned to jobs/i });
+
+    expect(pending).toHaveAttribute('aria-pressed', 'true');
+    expect(assigned).toHaveAttribute('aria-pressed', 'false');
+
+    await userEvent.click(assigned);
+
+    expect(pending).toHaveAttribute('aria-pressed', 'false');
+    expect(assigned).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('offers every category core knows as a filter, subcontractor included', () => {
+    // The filter was a second hand-typed list and had lost `subcontractor`,
+    // so sub invoices could be filed under it but never filtered back out.
+    // Deriving both selects from the schema keeps them from drifting again.
+    renderInbox();
+
+    const filter = screen.getByDisplayValue('All Categories');
+    const values = [...filter.querySelectorAll('option')].map((option) => option.value);
+    expect(values).toEqual(['all', ...ExpenseCategorySchema.options]);
+    expect(values).toContain('subcontractor');
+
+    const rowSelect = within(rowFor('The Home Depot')).getByRole('combobox', { name: /expense category/i });
+    expect([...rowSelect.querySelectorAll('option')].map((option) => option.value)).toEqual([
+      ...ExpenseCategorySchema.options,
+    ]);
   });
 
   it('offers every job as somewhere to file a charge', () => {

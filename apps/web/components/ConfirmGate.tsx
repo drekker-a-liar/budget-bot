@@ -67,6 +67,7 @@ export function ConfirmGate({
   if (!open) {
     return (
       <button
+        type="button"
         onClick={() => setOpen(true)}
         className="btn-secondary"
         style={{ padding: '0.4rem 0.75rem', fontSize: '0.78rem' }}
@@ -94,6 +95,7 @@ export function ConfirmGate({
           style={{ minWidth: '9rem', padding: '0.35rem 0.5rem', fontSize: '0.78rem' }}
         />
         <button
+          type="button"
           onClick={onConfirm}
           disabled={!confirmed || busy}
           className="btn-secondary"
@@ -107,7 +109,7 @@ export function ConfirmGate({
           {busy ? <Loader2 size={13} /> : confirmIcon}
           <span>{busy ? busyLabel : confirmLabel}</span>
         </button>
-        <button onClick={cancel} disabled={busy} className="btn-secondary" style={{ padding: '0.4rem 0.75rem', fontSize: '0.78rem' }}>
+        <button type="button" onClick={cancel} disabled={busy} className="btn-secondary" style={{ padding: '0.4rem 0.75rem', fontSize: '0.78rem' }}>
           Cancel
         </button>
       </div>

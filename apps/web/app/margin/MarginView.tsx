@@ -29,7 +29,7 @@ export function MarginView({ months }: MarginViewProps) {
           <div className="swiss-label" style={{ marginBottom: '0.2rem' }}>
             Profitability
           </div>
-          <h1 className="swiss-header" style={{ fontSize: '1.85rem', color: '#f8fafc' }}>
+          <h1 className="swiss-header" style={{ fontSize: '1.85rem', color: 'var(--text-primary)' }}>
             Margin
           </h1>
         </div>
