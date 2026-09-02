@@ -1,5 +1,17 @@
 {
   "$schema": "https://turborepo.com/schema.json",
+  // Strict env mode hides everything not listed here from every task. `TMPDIR`
+  // has to pass through: vitest and tsx write their transforms to it, and in a
+  // sandboxed shell that denies `/tmp` the fallback fails with
+  // `EPERM: mkdir '/tmp/...'` - which looks like a broken test and is not one.
+  "globalPassThroughEnv": ["TMPDIR", "CI"],
+  // `DATABASE_URL_TEST` is in `globalEnv`, not pass-through, so a test run
+  // with a database and one without hash differently: a cached "passed" from
+  // a run that skipped every Postgres suite must not replay as a pass once the
+  // database is there. Until this was declared, strict mode hid the variable
+  // from every task and CI skipped 231 database-backed tests for months while
+  // reporting green - the harnesses skip "with a reason" nobody reads.
+  "globalEnv": ["DATABASE_URL_TEST"],
   "tasks": {
     "build": {
       // `typecheck` as well as `^build`: `next build` deletes and rewrites
