@@ -27,9 +27,19 @@ import {
 
 const isoDate = ProjectInput.shape.startDate;
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+/**
+ * A date the form has to send. There is deliberately no "today" default here.
+ *
+ * Which calendar day it is depends on where the owner is, not where the server
+ * runs (CLAUDE.md: `toISOString()` for a calendar date is a bug), and the
+ * schemas in this file are module-level constants whose defaults cannot wait on
+ * a per-request lookup of `settings.timeZone`. The browser already knows the
+ * day on the person's clock and the modal always has one to send, so the
+ * client owns this default (`lib/localDate.ts`) and the server refuses a form
+ * that left it out - with a message that names the box, because zod's own
+ * "expected string, received undefined" does not.
+ */
+const requiredDate = (message: string) => z.string({ error: message }).pipe(isoDate);
 
 function isParsableMoney(value: string | number): boolean {
   try {
@@ -104,7 +114,7 @@ export const CreateProjectForm = z
     quotedLaborHours: optionalQuantity(0),
     targetHourlyRate: optionalMoney(85),
     targetMarginPct: optionalQuantity(45),
-    startDate: isoDate.default(today),
+    startDate: requiredDate('When does the job start?'),
     deadlineDate: isoDate.optional(),
     notes: text,
   })
@@ -137,7 +147,7 @@ export const UpdateProjectStatusForm = z.object({
 
 export const CreateTransactionForm = z
   .object({
-    date: isoDate.default(today),
+    date: requiredDate('When was this bought?'),
     description: text,
     vendor: named('Name the vendor'),
     amount: money,
@@ -181,7 +191,7 @@ export const TransactionIdForm = z.object({ id: named('Which charge?') });
 export const CreateLaborEntryForm = z
   .object({
     projectId: named('Which job were the hours worked on?'),
-    date: isoDate.default(today),
+    date: requiredDate('Which day were the hours worked?'),
     hours: quantity,
     hourlyRate: optionalMoney(85),
     workerName: text,
@@ -192,7 +202,9 @@ export const CreateLaborEntryForm = z
     date: form.date,
     hours: form.hours,
     hourlyRateCents: form.hourlyRate,
-    workerName: form.workerName.trim() || 'Mike (Owner/Lead)',
+    // Blank stays blank here: the one default that depends on who is signed
+    // in is applied in the action, which is where the session is known.
+    workerName: form.workerName.trim(),
     notes: form.notes,
   }))
   .pipe(LaborEntryInput);
@@ -205,10 +217,8 @@ export const CreateInvoiceForm = z
     invoiceNumber: named('Give the invoice a number'),
     amount: money,
     depositAmount: optionalMoney(0),
-    dateIssued: isoDate.default(today),
-    dueDate: isoDate.default(() =>
-      new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10)
-    ),
+    dateIssued: requiredDate('When was the invoice issued?'),
+    dueDate: requiredDate('When is the invoice due?'),
     status: InvoiceStatusSchema.default('sent'),
     notes: text,
   })
@@ -226,7 +236,7 @@ export const CreateInvoiceForm = z
 
 export const MarkInvoicePaidForm = z.object({
   id: named('Which invoice?'),
-  paidDate: isoDate.default(today),
+  paidDate: requiredDate('When was it paid?'),
 });
 
 /**

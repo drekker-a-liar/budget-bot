@@ -109,6 +109,20 @@ describe('ProjectsView', () => {
     expect(screen.getByLabelText(/project \/ job/i)).toHaveValue('proj-1');
   });
 
+  it('opens against the second job after being closed on the first', async () => {
+    // The modal is mounted only while open, so each open reads its job afresh.
+    // Kept mounted behind an `isOpen` flag it remembered the first job for the
+    // life of the page, and hours pressed on the second card went to the first.
+    renderView();
+    await userEvent.click(screen.getAllByRole('button', { name: /log hours/i })[0]);
+    expect(screen.getByLabelText(/project \/ job/i)).toHaveValue('proj-1');
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    await userEvent.click(screen.getAllByRole('button', { name: /log hours/i })[1]);
+
+    expect(screen.getByLabelText(/project \/ job/i)).toHaveValue('proj-2');
+  });
+
   it('closes the modal again', async () => {
     renderView();
     await userEvent.click(screen.getByRole('button', { name: /new project estimate/i }));

@@ -13,9 +13,9 @@ import { declaredBodyBytes, readCappedBody } from '@/lib/readCappedBody';
 /**
  * Uploading a bank statement.
  *
- * The only REST route this application keeps besides `/api/auth/*` and
- * `/api/health` (spec §6). Everything else a person does is a server action;
- * this stays a route because the caller is a file upload, which is a machine
+ * One of six route handlers (spec §6; `test/route-gating.test.ts` lists them),
+ * each here because its caller is not a person on a page. Everything else a
+ * person does is a server action; this stays a route because the caller is a file upload, which is a machine
  * shape, and because a self-hoster with a cron job and `curl` should be able
  * to feed it.
  *
@@ -56,10 +56,17 @@ const CSV_ACCOUNT = 'csv-upload';
  * A route handler has no body limit of its own, and a self-hoster running this
  * on their own box has no platform limit in front of it either, so an
  * unbounded `req.text()` is a way to fill the server's memory from outside.
- * Five MiB is generous for what this is: a year of one contractor's card
+ * Four MiB is generous for what this is: a year of one contractor's card
  * statements is well under one.
+ *
+ * Four rather than five because Vercel refuses any request body over 4.5 MB
+ * before a function runs, with a 413 whose body is not JSON and not this
+ * route's message. A cap above that line is one this route can never enforce
+ * on Vercel, so the number the user is told would have been a lie there: the
+ * platform would have said no first, in a shape the inbox could not read. Below
+ * it, the same message comes back on every deployment.
  */
-const CSV_IMPORT_MAX_BYTES = 5 * 1024 * 1024;
+const CSV_IMPORT_MAX_BYTES = 4 * 1024 * 1024;
 
 interface Upload {
   text: string;
@@ -94,7 +101,7 @@ function assertDeclaredSizeIsSane(req: Request): void {
     throw new UploadRefused(411, 'Content-Length is not a number of bytes.');
   }
   if (bytes > CSV_IMPORT_MAX_BYTES) {
-    throw new UploadRefused(413, 'That file is larger than the 5 MiB import limit.');
+    throw new UploadRefused(413, 'That file is larger than the 4 MiB import limit.');
   }
 }
 
@@ -105,7 +112,7 @@ function assertDeclaredSizeIsSane(req: Request): void {
 async function readCappedText(req: Request): Promise<string> {
   const text = await readCappedBody(req, CSV_IMPORT_MAX_BYTES);
   if (text === null) {
-    throw new UploadRefused(413, 'That file is larger than the 5 MiB import limit.');
+    throw new UploadRefused(413, 'That file is larger than the 4 MiB import limit.');
   }
   return text;
 }

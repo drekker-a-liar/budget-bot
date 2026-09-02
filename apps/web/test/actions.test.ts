@@ -157,9 +157,29 @@ const repos = vi.hoisted(() => ({
   deleteOwnerWebhookEvents: vi.fn(async (_db: unknown, _owner: string) => 0),
 }));
 
+/**
+ * The database handle the actions are given, and the transaction it opens.
+ *
+ * Two distinct objects, so a test can tell which one a repository was handed:
+ * `deleteAllDataAction` has to run its deletes on `tx` and nothing else on
+ * it. `transaction` is non-enumerable so that `db` still compares equal to
+ * `{}` - every `toHaveBeenCalledWith({}, ...)` in this file is asserting on
+ * the handle by shape, and would otherwise have to change to say the same
+ * thing.
+ */
+const handle = vi.hoisted(() => {
+  const tx = {};
+  const db = {};
+  Object.defineProperty(db, 'transaction', {
+    value: async (fn: (tx: object) => Promise<unknown>) => fn(tx),
+    enumerable: false,
+  });
+  return { db, tx };
+});
+
 vi.mock('@budget-bot/db', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@budget-bot/db')>()),
-  getDb: () => ({}),
+  getDb: () => handle.db,
   projectsRepo: {
     createProject: repos.createProject,
     updateProject: repos.updateProject,
@@ -238,20 +258,36 @@ const DERIVED_ACTIONS = await loadActions();
 /** Seventeen today. A number here means shrinkage gets noticed, not just growth. */
 const ACTION_COUNT = 17;
 
-const A_PROJECT = { name: 'Cedar Deck', clientName: 'R Henderson', quotedTotal: '4500' };
+/**
+ * Every form sends its dates. The schemas take no "today" default: which day
+ * it is depends on the owner's zone, which the form knows and the server does
+ * not without a lookup, so a form that left a date out is refused.
+ */
+const TODAY = '2026-08-20';
+
+const A_PROJECT = {
+  name: 'Cedar Deck',
+  clientName: 'R Henderson',
+  quotedTotal: '4500',
+  startDate: TODAY,
+};
 
 /** Every action, with an input that would otherwise succeed. */
 const EVERY_ACTION: Array<[string, (input: unknown) => Promise<unknown>, unknown]> = [
   ['createProject', createProjectAction, A_PROJECT],
   ['updateProjectStatus', updateProjectStatusAction, { id: 'proj-1', status: 'completed' }],
-  ['createTransaction', createTransactionAction, { vendor: 'The Home Depot', amount: '10' }],
+  ['createTransaction', createTransactionAction, { vendor: 'The Home Depot', amount: '10', date: TODAY }],
   ['assignTransaction', assignTransactionAction, { id: 'tx-1', projectId: 'proj-1' }],
   ['updateTransactionCategory', updateTransactionCategoryAction, { id: 'tx-1', category: 'tools' }],
   ['deleteTransaction', deleteTransactionAction, { id: 'tx-1' }],
-  ['createLaborEntry', createLaborEntryAction, { projectId: 'proj-1', hours: '6' }],
+  ['createLaborEntry', createLaborEntryAction, { projectId: 'proj-1', hours: '6', date: TODAY }],
   ['deleteLaborEntry', deleteLaborEntryAction, { id: 'lab-1' }],
-  ['createInvoice', createInvoiceAction, { projectId: 'proj-1', invoiceNumber: 'INV-1', amount: '1950' }],
-  ['markInvoicePaid', markInvoicePaidAction, { id: 'inv-1' }],
+  [
+    'createInvoice',
+    createInvoiceAction,
+    { projectId: 'proj-1', invoiceNumber: 'INV-1', amount: '1950', dateIssued: TODAY, dueDate: '2026-09-03' },
+  ],
+  ['markInvoicePaid', markInvoicePaidAction, { id: 'inv-1', paidDate: TODAY }],
   ['createLinkToken', createLinkTokenAction, {}],
   ['exchangePublicToken', exchangePublicTokenAction, { publicToken: 'public-fake' }],
   ['syncNow', syncNowAction, { connectionId: 'conn-1' }],
@@ -396,8 +432,7 @@ describe('with a session', () => {
 describe('money', () => {
   it('reaches the repository as cents, however the user wrote it', async () => {
     await createProjectAction({
-      name: 'Cedar Deck',
-      clientName: 'R Henderson',
+      ...A_PROJECT,
       quotedTotal: '$1,234.56',
       quotedMaterials: '750',
     });
@@ -420,7 +455,7 @@ describe('money', () => {
   });
 
   it('reads an accounting negative on an expense the way the bank wrote it', async () => {
-    await createTransactionAction({ vendor: 'REFUND', amount: '(114.75)' });
+    await createTransactionAction({ vendor: 'REFUND', amount: '(114.75)', date: TODAY });
 
     expect(repos.createTransaction).toHaveBeenCalledWith(
       {},
@@ -433,7 +468,7 @@ describe('money', () => {
   });
 
   it('files a positive expense against the job it was given', async () => {
-    await createTransactionAction({ vendor: 'LOWES', amount: '10', projectId: 'proj-1' });
+    await createTransactionAction({ vendor: 'LOWES', amount: '10', projectId: 'proj-1', date: TODAY });
 
     expect(repos.createTransaction).toHaveBeenCalledWith(
       {},
@@ -443,7 +478,7 @@ describe('money', () => {
   });
 
   it('leaves a positive expense with no job in the inbox', async () => {
-    await createTransactionAction({ vendor: 'LOWES', amount: '10' });
+    await createTransactionAction({ vendor: 'LOWES', amount: '10', date: TODAY });
 
     expect(repos.createTransaction).toHaveBeenCalledWith(
       {},
@@ -466,7 +501,7 @@ describe('what a form got wrong', () => {
   });
 
   it('reports a required field with the message a person can act on', async () => {
-    const result = await createProjectAction({ clientName: 'R Henderson', quotedTotal: '10' });
+    const result = await createProjectAction({ ...A_PROJECT, name: undefined });
 
     expect(result).toMatchObject({
       ok: false,
@@ -480,14 +515,73 @@ describe('what a form got wrong', () => {
 
     expect(result).toMatchObject({ ok: false });
     const { fieldErrors } = result as { fieldErrors: Record<string, string[]> };
-    expect(Object.keys(fieldErrors).sort()).toEqual(['clientName', 'name', 'quotedTotal']);
+    expect(Object.keys(fieldErrors).sort()).toEqual(['clientName', 'name', 'quotedTotal', 'startDate']);
   });
 
   it('refuses hours that are not a number', async () => {
-    const result = await createLaborEntryAction({ projectId: 'proj-1', hours: 'eight' });
+    const result = await createLaborEntryAction({ projectId: 'proj-1', hours: 'eight', date: TODAY });
 
     expect(result).toMatchObject({ ok: false, fieldErrors: { hours: expect.any(Array) } });
     expect(repos.createLaborEntry).not.toHaveBeenCalled();
+  });
+
+  it('refuses a form that left the date out, naming the box rather than the type', async () => {
+    // No "today" on the server: it would be the server's day, or UTC's, and
+    // neither is the owner's (CLAUDE.md). The form always has the day on the
+    // browser's clock to send, so a missing one is a bug in the form and the
+    // message says which date, not "expected string, received undefined".
+    const result = await createTransactionAction({ vendor: 'LOWES', amount: '10' });
+
+    expect(result).toMatchObject({
+      ok: false,
+      fieldErrors: { date: ['When was this bought?'] },
+    });
+    expect(repos.createTransaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('logging hours', () => {
+  it('puts the signed-in owner’s name on an entry the form left unnamed', async () => {
+    // A one-person business logs its own hours. The name comes from the
+    // session, not from a literal in the schema - the literal was one
+    // particular person's, on every deployment.
+    vi.mocked(auth).mockResolvedValue({
+      user: { id: 'user-1', name: 'R Henderson' },
+      expires: '2026-09-01',
+    } as never);
+
+    await createLaborEntryAction({ projectId: 'proj-1', hours: '6', date: TODAY, workerName: '' });
+
+    expect(repos.createLaborEntry).toHaveBeenCalledWith(
+      {},
+      'user-1',
+      expect.objectContaining({ workerName: 'R Henderson' })
+    );
+  });
+
+  it('keeps the worker the form named', async () => {
+    vi.mocked(auth).mockResolvedValue({
+      user: { id: 'user-1', name: 'R Henderson' },
+      expires: '2026-09-01',
+    } as never);
+
+    await createLaborEntryAction({ projectId: 'proj-1', hours: '6', date: TODAY, workerName: 'J Ortiz' });
+
+    expect(repos.createLaborEntry).toHaveBeenCalledWith(
+      {},
+      'user-1',
+      expect.objectContaining({ workerName: 'J Ortiz' })
+    );
+  });
+
+  it('leaves the worker blank rather than inventing one when the profile has no name', async () => {
+    await createLaborEntryAction({ projectId: 'proj-1', hours: '6', date: TODAY });
+
+    expect(repos.createLaborEntry).toHaveBeenCalledWith(
+      {},
+      'user-1',
+      expect.objectContaining({ workerName: '' })
+    );
   });
 });
 
@@ -571,12 +665,22 @@ describe('marking an invoice paid', () => {
   it('records the date as well as the status, because revenue is dated', async () => {
     // Cash basis (ADR 0006): a `paid` invoice with no `paidDate` drops out of
     // every figure the payment should have appeared in.
-    await markInvoicePaidAction({ id: 'inv-1' });
+    await markInvoicePaidAction({ id: 'inv-1', paidDate: TODAY });
 
     expect(repos.updateInvoice).toHaveBeenCalledWith({}, 'user-1', 'inv-1', {
       status: 'paid',
-      paidDate: new Date().toISOString().slice(0, 10),
+      paidDate: TODAY,
     });
+  });
+
+  it('refuses to mark an invoice paid on no particular day', async () => {
+    // The server has no "today" to fall back on that is the owner's (see
+    // `inputs.ts`), and a paid invoice with no date is worse than an unpaid
+    // one: it vanishes from every month.
+    const result = await markInvoicePaidAction({ id: 'inv-1' });
+
+    expect(result).toMatchObject({ ok: false, fieldErrors: { paidDate: ['When was it paid?'] } });
+    expect(repos.updateInvoice).not.toHaveBeenCalled();
   });
 
   it('takes a date the caller supplies, for a payment recorded late', async () => {
@@ -827,6 +931,65 @@ describe('exchanging the public token', () => {
       // Nothing was written, so nothing downstream ran either.
       expect(repos.upsertAccounts).not.toHaveBeenCalled();
       expect(bank.runSync).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * The exchanged token that never reached a row (Phase 5 audit).
+   *
+   * "Nothing has been stored" is true of this database and false of Plaid: by
+   * the time `createConnection` refuses, the exchange has already succeeded,
+   * so the item is live and billable and the token about to be dropped is a
+   * working credential with no copy anywhere. Without these, every refused
+   * exchange left one of those behind in Plaid's dashboard.
+   */
+  describe('a token that could not be stored', () => {
+    it('asks Plaid to forget the item when storing the connection fails', async () => {
+      repos.createConnection.mockRejectedValueOnce(new Error('the database went away'));
+
+      const result = await exchangePublicTokenAction({ publicToken: 'public-fake' });
+
+      expect(result).toMatchObject({ ok: false, error: expect.stringContaining('SYNC_FAILED') });
+      expect(bank.removeItem).toHaveBeenCalledWith('access-fake');
+      expect(repos.upsertAccounts).not.toHaveBeenCalled();
+    });
+
+    it('asks Plaid to forget the item when the existing connection is somebody else’s', async () => {
+      repos.createConnection.mockRejectedValueOnce(new ConnectionAlreadyExistsError());
+      repos.replaceConnectionToken.mockResolvedValueOnce(null);
+
+      const result = await exchangePublicTokenAction({ publicToken: 'public-fake' });
+
+      expect(result).toMatchObject({ ok: false });
+      expect(bank.removeItem).toHaveBeenCalledWith('access-fake');
+    });
+
+    it('does not ask Plaid to forget an item whose token was stored onto the existing row', async () => {
+      // The re-link path: the token *was* stored, so the item is wanted.
+      repos.createConnection.mockRejectedValueOnce(new ConnectionAlreadyExistsError());
+
+      await exchangePublicTokenAction({ publicToken: 'public-fake' });
+
+      expect(bank.removeItem).not.toHaveBeenCalled();
+    });
+
+    it('still gives the owner the refusal when Plaid will not forget the item either', async () => {
+      // Best-effort: a Plaid outage on top of a database failure must not turn
+      // a refusal with a sentence in it into a rejected action call with none.
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+      repos.createConnection.mockRejectedValueOnce(new Error('the database went away'));
+      bank.removeItem.mockRejectedValueOnce(
+        new PlaidRequestError('INTERNAL_SERVER_ERROR', 'plaid is having a bad day')
+      );
+
+      const result = await exchangePublicTokenAction({ publicToken: 'public-fake' });
+
+      expect(result).toMatchObject({ ok: false, error: expect.stringContaining('SYNC_FAILED') });
+      expect(logged).toHaveBeenCalledTimes(1);
+      // The message and stack, never the object: a Plaid error carries the
+      // request it was answering.
+      expect(logged.mock.calls[0].every((part) => typeof part === 'string')).toBe(true);
+      logged.mockRestore();
     });
   });
 });
@@ -1171,5 +1334,57 @@ describe('disconnecting a bank', () => {
     expect(bank.removeItem).not.toHaveBeenCalled();
     expect(repos.deleteConnection).toHaveBeenCalledWith({}, 'user-1', 'conn-1');
     expect(result).toEqual({ ok: true, data: { removed: false } });
+  });
+});
+
+/**
+ * Deleting everything (spec §6) is all or nothing (Phase 5 audit).
+ *
+ * The rows themselves are `account-actions.test.ts`'s to prove against a real
+ * Postgres. What is pinned here is the shape that makes the rollback possible
+ * at all: the seven deletes share one transaction, and the Plaid calls stay
+ * outside it.
+ */
+describe('deleting everything', () => {
+  const DELETES = [
+    repos.deleteAllConnections,
+    repos.deleteAllTransactions,
+    repos.deleteAllLaborEntries,
+    repos.deleteAllInvoices,
+    repos.deleteAllImportBatches,
+    repos.deleteAllProjects,
+    repos.deleteOwnerWebhookEvents,
+  ];
+
+  it('runs every delete on one transaction, and nothing else on it', async () => {
+    repos.listConnections.mockResolvedValueOnce([{ id: 'conn-1' }]);
+
+    const result = await deleteAllDataAction();
+
+    expect(result).toMatchObject({ ok: true });
+    for (const remove of DELETES) {
+      expect(remove).toHaveBeenCalledTimes(1);
+      expect(remove.mock.calls[0][0]).toBe(handle.tx);
+    }
+    // Talking to Plaid inside the transaction would hold it open for as long
+    // as Plaid takes to answer, so the `removeItem` loop runs before it.
+    expect(repos.listConnections.mock.calls[0][0]).toBe(handle.db);
+    expect(repos.withAccessToken.mock.calls[0][0]).toBe(handle.db);
+  });
+
+  it('refuses with "nothing was deleted" when a delete fails, rather than rejecting the call', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    repos.deleteAllProjects.mockRejectedValueOnce(new Error('the database went away'));
+
+    const result = await deleteAllDataAction();
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('Nothing was deleted'),
+    });
+    // The database's own words never reach the screen.
+    expect(JSON.stringify(result)).not.toContain('went away');
+    expect(logged).toHaveBeenCalledTimes(1);
+    logged.mockRestore();
   });
 });
