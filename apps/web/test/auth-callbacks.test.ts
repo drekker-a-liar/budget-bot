@@ -231,4 +231,43 @@ describe('resolving the GitHub address to check', () => {
       expect(url.startsWith('https://api.github.com/')).toBe(true);
     }
   });
+
+  /**
+   * A GitHub call that never answers (Phase 5 audit). Without a signal, a
+   * stalled connection holds the OAuth callback open until the platform
+   * kills the function; with one, it becomes the same "no verified address"
+   * refusal a 401 already is.
+   */
+  describe('when GitHub does not answer', () => {
+    it('puts a timeout on both calls, so a stalled connection cannot hang the sign-in', async () => {
+      const fetchMock = vi.fn(async (url: string, init?: RequestInit) =>
+        url.endsWith('/user/emails')
+          ? { ok: true, json: async () => [] }
+          : { ok: true, json: async () => ({ id: 42, login: 'mike' }) }
+      );
+      vi.stubGlobal('fetch', fetchMock);
+
+      await fetchGithubProfile('gho_token');
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      for (const [, init] of fetchMock.mock.calls) {
+        expect(init?.signal).toBeInstanceOf(AbortSignal);
+      }
+    });
+
+    it('treats a timed-out call as no verified address, the same refusal as a 401', async () => {
+      // What `AbortSignal.timeout` makes `fetch` reject with once it fires.
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => {
+          throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+        })
+      );
+
+      const profile = await fetchGithubProfile('gho_token');
+
+      expect(profile.email).toBeNull();
+      expect(profile.email_verified).toBe(false);
+    });
+  });
 });

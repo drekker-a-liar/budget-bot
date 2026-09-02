@@ -32,6 +32,16 @@ import { runSync, syncFailureOf } from '@/src/server/bank/sync';
  * could not finish; a Plaid redelivery is not.
  */
 
+/**
+ * How long Vercel lets one delivery run, in seconds. The platform default is
+ * 10, and a `SYNC_UPDATES_AVAILABLE` delivery runs the whole sync inline
+ * (below) - on a connection's first backfill that is many pages, and a
+ * function killed mid-run is a sync the cron has to finish. 60 is the Hobby
+ * plan's ceiling; Pro allows up to 300, and a self-hoster there can raise
+ * this. Ignored outside Vercel.
+ */
+export const maxDuration = 60;
+
 /** `ITEM` codes that mean the user has to reconnect, not the system retrying. */
 const ITEM_REAUTH_CODES = new Set(['PENDING_EXPIRATION', 'USER_PERMISSION_REVOKED']);
 
@@ -192,7 +202,23 @@ export async function POST(request: Request): Promise<NextResponse> {
     // through, so this row never carries more than a connection's own
     // `last_error_code` would.
     if (eventId) {
-      await webhookEventsRepo.markWebhookProcessed(db, eventId, syncFailureOf(error).code);
+      try {
+        await webhookEventsRepo.markWebhookProcessed(db, eventId, syncFailureOf(error).code);
+      } catch (ledgerError) {
+        // If the database is what failed above, this write fails with it,
+        // and a throw from here would leave the handler as a 500 - the one
+        // outcome after verification this route promises never to produce,
+        // and a status Plaid retries against (Phase 5 audit). The row stays
+        // unmarked, which the cron sync's catch-up covers. The message and
+        // stack, never the object: a driver error carries the failing query
+        // and its parameters.
+        console.error(
+          'Failed to record a webhook failure on its ledger row:',
+          ledgerError instanceof Error
+            ? (ledgerError.stack ?? `${ledgerError.name}: ${ledgerError.message}`)
+            : String(ledgerError)
+        );
+      }
     }
     return NextResponse.json({ ok: true });
   }

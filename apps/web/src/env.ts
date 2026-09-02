@@ -46,7 +46,12 @@ export const envSchema = z.object({
   AUTH_SECRET: z.string().optional(),
   AUTH_GITHUB_ID: z.string().optional(),
   AUTH_GITHUB_SECRET: z.string().optional(),
-  /** Only needed where Auth.js cannot infer the deployment URL itself. */
+  /**
+   * The deployment's own origin. Auth.js only needs it behind a proxy that
+   * rewrites the host; the Plaid webhook URL is built from it first and the
+   * request's host second, so a forged `Host` cannot choose where an item's
+   * events go (`actions/bank.ts`). Set it in Production.
+   */
   AUTH_URL: z.string().optional(),
   /** Who may sign in. Anyone not on this list is refused before a user row exists. */
   ALLOWED_EMAILS: emailList,

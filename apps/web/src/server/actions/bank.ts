@@ -177,18 +177,22 @@ export async function createLinkTokenAction(): Promise<ActionResult<{ linkToken:
   const provider = getBankProvider();
   if (!provider) return failed(NOT_CONFIGURED);
 
-  const origin = await currentOrigin();
-  if (!origin) {
-    return failed(
-      'This deployment does not know its own address, so Plaid cannot be told where to send you back. Set AUTH_URL.'
-    );
-  }
-
   try {
-    // Inside the try on purpose: `configuredOrigin` is the first thing in this
-    // action to read the zod-validated `env`, and a schema failure thrown from
-    // above the try reaches the browser as a rejected action call - the button
-    // that says "Connecting…" for ever, which the catch below exists to avoid.
+    // `currentOrigin` is inside the try on purpose, not just the provider
+    // call: when the request carries no host it falls through to
+    // `configuredOrigin`, which is the first thing in this action to read the
+    // zod-validated `env`, and a schema failure thrown from above the try
+    // reaches the browser as a rejected action call - the button that says
+    // "Connecting…" for ever, which the catch below exists to avoid.
+    // `webhookUrlWhenLinking` reads the same `env` and sits inside for the
+    // same reason.
+    const origin = await currentOrigin();
+    if (!origin) {
+      return failed(
+        'This deployment does not know its own address, so Plaid cannot be told where to send you back. Set AUTH_URL.'
+      );
+    }
+
     const { linkToken } = await provider.createLinkToken({
       userId: ownerId,
       redirectUri: `${origin}${OAUTH_RETURN_PATH}`,
@@ -266,6 +270,14 @@ export async function exchangePublicTokenAction(
     // row instead of refusing (spec §5b) - same connection, a new token -
     // unless that row belongs to somebody else, in which case the Phase 2
     // message still stands: no cross-tenant token overwrite.
+    //
+    // "Nothing has been stored" is true of this database and not of Plaid: the
+    // exchange already succeeded, so the item is live and billable on Plaid's
+    // side, and the token this action is about to drop is a working credential
+    // nobody holds a copy of. Both refusals below ask Plaid to forget the item
+    // first (Phase 5 audit). Best-effort, like every other `removeItem` here:
+    // a Plaid outage must not turn a refusal that has a sentence into a
+    // rejected action call that has none.
     if (error instanceof ConnectionAlreadyExistsError) {
       const replaced = await bankRepo.replaceConnectionToken(db, ownerId, {
         itemId: item.itemId,
@@ -273,10 +285,12 @@ export async function exchangePublicTokenAction(
         keyring,
       });
       if (!replaced) {
+        await forgetOrphanedItem(provider, item.accessToken);
         return failed('This bank is already connected. Use Sync now on the existing connection.');
       }
       connectionId = replaced.id;
     } else {
+      await forgetOrphanedItem(provider, item.accessToken);
       return failed(readable(error, EXCHANGE_REFUSED));
     }
   }
@@ -310,6 +324,28 @@ export async function exchangePublicTokenAction(
 
   revalidateApp();
   return ok({ connectionId, accounts: stored.length, firstSync });
+}
+
+/**
+ * Asks Plaid to forget an item whose token was exchanged but never stored.
+ *
+ * Logged and swallowed rather than surfaced: the caller is already on its way
+ * to telling the owner why the connection was refused, and that sentence is
+ * worth more than a second failure stacked on top of it. What is lost when
+ * this fails is a stray live item in Plaid's dashboard, which the owner can
+ * remove there; what would be lost by throwing is the explanation. The
+ * message and stack only, never the error object (a Plaid error carries the
+ * request it was answering).
+ */
+async function forgetOrphanedItem(provider: BankProvider, accessToken: string): Promise<void> {
+  try {
+    await provider.removeItem(accessToken);
+  } catch (error) {
+    console.error(
+      'Failed to remove a Plaid item whose token was never stored:',
+      error instanceof Error ? (error.stack ?? `${error.name}: ${error.message}`) : String(error)
+    );
+  }
 }
 
 /**
