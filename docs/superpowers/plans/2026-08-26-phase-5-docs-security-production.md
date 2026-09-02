@@ -22,7 +22,7 @@
 ### Task 1: Diagnose and fix the Vercel deploy (spec §2)
 
 - [ ] Obtain deploy logs: `npx vercel inspect dpl_FVvq6c8rFyY75yT2ePu7vSedhw1y --logs` (needs `vercel login` by Tyler or the founder — **blocking external dependency**).
-- [ ] Fix per diagnosis (env vars / root directory / repo-side defect); if repo-side, add a regression guard.
+- [x] Fix per diagnosis (env vars / root directory / repo-side defect); if repo-side, add a regression guard. *(2026-09-01, ahead of the logs: the build command migrated unconditionally, and previews have no `DATABASE_URL`, so every preview build failed at the migrate step. Gated to `VERCEL_ENV=production`; `apps/web/test/vercel-config.test.ts` pins it. Logs still wanted to confirm this is the whole story.)*
 - [ ] Verify: next push to `main` reports Vercel SUCCESS.
 
 ### Task 2: Dashboard margin null-propagation (spec §3)

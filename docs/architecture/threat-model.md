@@ -75,6 +75,7 @@ the gate).
 | Date | Scope | Outcome |
 | --- | --- | --- |
 | 2026-08-26 | Phase 5: three independent review passes (authorization; secrets and crypto; unauthenticated surface and injection) against this model | Authorization clean: every route, page, and action guarded; every repo call owner-scoped from the session; no injection surfaces. Eight findings fixed in-phase, six ledgered below. |
+| 2026-09-01 | Pre-release review pass over production readiness and the audit's own fixes | Five fixes with a security edge: a bank link that fails after the token exchange now asks Plaid to remove the item rather than leaving a live credential nobody stored; "delete all my data" is one transaction; the webhook's failure-ledger write is guarded so a database outage cannot turn the always-200 contract into a 500 that Plaid retries; the Plaid signing-key cache expires hourly instead of living for the process; `Content-Length` is parsed as digits only. Build-time migrations are gated to Production so a preview can never migrate the live database. **One finding against this document:** the owner-scoping tests it cites as pinning cross-owner isolation had never run in CI — `turbo`'s strict env mode hid `DATABASE_URL_TEST`, and 231 Postgres-backed tests skipped behind a green check since Phase 3. They pass; they now run, and a skip under `CI` is a failure. |
 
 **Fixed (2026-08-26):** decrypt now pins the GCM tag and IV lengths (a
 truncated tag would have lowered forgery cost to 2³²); the webhook route

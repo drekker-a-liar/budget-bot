@@ -32,9 +32,16 @@ and the build fails.
 `apps/web/vercel.json` supplies the rest:
 
 - `installCommand`: `pnpm install --frozen-lockfile`
-- `buildCommand`: `pnpm --filter @budget-bot/db db:migrate && pnpm --filter web build`
+- `buildCommand`: `if [ "$VERCEL_ENV" = production ]; then pnpm --filter @budget-bot/db db:migrate; fi && pnpm --filter web build`
 
-Migrations run as part of the build, from committed SQL.
+Migrations run as part of the build, from committed SQL, **for Production
+deployments only.** A preview deployment has no `DATABASE_URL` (the next
+section scopes every secret to Production), so it builds without migrating
+and then refuses to serve — the intended outcome for a preview. If you do give
+Preview a database branch of its own, migrate it by hand or with a branch
+workflow; the build will not do it for you, and that is deliberate: a preview
+that migrated the *production* database ahead of the code that needs it would
+be the worst failure this guide can set you up for.
 
 ## 4. Environment variables
 
@@ -46,10 +53,11 @@ intended outcome, and much better than a preview holding real secrets.
 
 | Variable | Scope | Value |
 | --- | --- | --- |
-| `DATABASE_URL` | Production (Preview: a separate branch/database, or nothing) | From the Neon integration |
+| `DATABASE_URL` | Production (Preview: nothing, or a separate branch you migrate yourself) | From the Neon integration — scope it to **Production** in the integration's settings, not all environments |
 | `AUTH_SECRET` | Production | `openssl rand -base64 32` |
 | `AUTH_GITHUB_ID` | Production | Filled in at step 6 |
 | `AUTH_GITHUB_SECRET` | Production | Filled in at step 6 |
+| `AUTH_URL` | Production | `https://<your production host>`, no trailing slash. This is the address Plaid webhooks are registered at, so it has to be the host Plaid can reach - not a preview URL |
 | `ALLOWED_EMAILS` | Production | Your verified GitHub address, comma-separated for more |
 | `BANK_TOKEN_ENCRYPTION_KEY` | Production | `openssl rand -base64 32` |
 | `PLAID_ENV` | Production only, and only `production` | See "Connecting a bank" below |
@@ -305,6 +313,13 @@ The walk, once you decide to go:
 
 ## Custom domains
 
-Add the domain in Vercel, then update the OAuth app's callback URL to the new
-host and redeploy. Auth.js works the deployment URL out of the request, so
-`AUTH_URL` is only needed behind a proxy that rewrites the host.
+Add the domain in Vercel, update the OAuth app's callback URL to the new host,
+set `AUTH_URL` to the new host, and redeploy. Auth.js works the deployment URL
+out of the request, so for signing in `AUTH_URL` only matters behind a proxy
+that rewrites the host - but the Plaid webhook URL is registered from
+`AUTH_URL` first and the request's own host only as a fallback, because a
+webhook URL has no registered-redirect check behind it and must not be
+something a forged `Host` header can choose. An `AUTH_URL` still naming the
+old domain registers the next linked bank's webhooks there. Banks linked
+before the change keep the URL they were registered with until they are
+re-linked (step 5 of "Going live").

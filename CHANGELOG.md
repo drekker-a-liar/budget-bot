@@ -37,6 +37,71 @@ audited, the release path documented, and the debts Phase 4 ledgered paid.
   calendar months from their authored anchor at seed time, so the book never
   ages out of the trailing 13-month margin window; and the seed now merges
   `settings.timeZone` into the jsonb instead of replacing the whole object.
+- The Vercel build runs migrations **for Production deployments only**. The
+  build command used to migrate unconditionally, and a preview deployment —
+  which the deploy guide gives no `DATABASE_URL` — failed at that step before
+  `next build` ever ran; a preview that did inherit the production URL would
+  have migrated the live database ahead of the code that needs it. A test
+  runs the build command with `pnpm` shimmed and pins what each environment
+  does.
+- **CI now runs the database-backed tests.** `turbo`'s strict env mode had
+  been hiding `DATABASE_URL_TEST` from every task since the suites were
+  written, so the 231 tests that need Postgres — owner scoping, the sync
+  writes, the lifecycle and delete-all paths — skipped "with a reason" on every
+  CI run while the check stayed green. `turbo.json` now declares the variable,
+  and both harnesses fail rather than skip when `CI` is set. `TMPDIR` passes
+  through as well, so vitest and tsx work in a sandboxed shell that denies
+  `/tmp`.
+- A `CLAUDE.md` for agentic contributors: the hard rules the tests pin, the
+  house voice for comments and docs, and the deployment facts that are easy
+  to get wrong.
+- Quick Add opens against the job whose button was pressed, every time. It
+  used to remember the first job it was opened for on that page, so hours and
+  receipts logged from a second card landed on the first.
+- Default dates in Quick Add (purchase, work, invoice due) and the "Mark
+  paid" date follow the day on your own clock, not the UTC day, so a
+  late-evening entry no longer lands on tomorrow — or in next month's margin
+  bucket. The server now requires a date on every write rather than guessing
+  one.
+- The CSV import limit is 4 MiB (Vercel refuses larger bodies before the app
+  sees them), and an oversized upload shows a message instead of failing
+  silently.
+- Labor entries logged without a worker name are attributed to the signed-in
+  owner rather than a name hard-coded into the form.
+- A bank link that fails after Plaid's token exchange — the database refused,
+  or the bank is already linked to another owner — asks Plaid to remove the
+  item instead of leaving a live, billable item with an unstored credential.
+- "Delete all my data" is all-or-nothing: a failure partway rolls every table
+  back and says so, instead of leaving a half-emptied account.
+- The Plaid webhook answers 200 even when the database refuses to record a
+  failure, so Plaid no longer retries against a 500; it and the cron route
+  declare `maxDuration = 60`, so a first backfill is not killed at Vercel's
+  10-second default.
+- GitHub profile lookups during sign-in time out after 10 seconds and refuse,
+  rather than hanging the OAuth callback.
+- `AUTH_URL` is documented as the origin Plaid webhooks are registered at, in
+  the Vercel guide's env table and its custom-domain section. Package versions
+  now say `0.5.0`, matching this heading.
+- Overdue receivables now fire. An invoice that is sent and past its due date
+  on the owner's calendar counts as overdue, and the receivables badge grades
+  on the age of the oldest one (14/30 days) as well as the amount. Nothing
+  ever set the `overdue` status before, so the dashboard always showed $0
+  overdue and a healthy badge.
+- The dashboard's "YTD Profit" is relabelled **"Profit, all jobs (invoiced or
+  quoted)"** and its fields renamed to match: it sums every job with no date
+  filter and is not cash-basis, so it is not expected to agree with `/margin`.
+  The README says so.
+- A job with no quote and nothing invoiced shows an em dash for gross margin
+  and budget instead of a red "0%" and a green budget — the same null rule the
+  dashboard KPI got, applied per job as the spec said.
+- The project page and the margin gauge show an em dash for a job with no
+  revenue instead of "null%", and the gauge's target notch follows the
+  healthy-margin threshold from core rather than a hard-coded 55%.
+- UI colours come from the design tokens in `globals.css`, pinned by a test
+  that walks every component and refuses a hex literal or an undefined token.
+  Buttons gained an explicit `type`, the inbox filters `aria-pressed`, the
+  inbox delete button an accessible name, and the inbox category filter the
+  Subcontractor option the row select already had.
 
 ## v0.4.0-margin — unreleased
 

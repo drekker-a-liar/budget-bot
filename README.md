@@ -97,9 +97,10 @@ page, action and route handler asks `auth()` again rather than trusting it. A
 production deployment missing `AUTH_SECRET`, the GitHub pair, a non-empty allow
 list or a 32-byte `BANK_TOKEN_ENCRYPTION_KEY` throws at boot instead of serving
 data — `pnpm check:security` says so without deploying to find out. Bank access
-tokens will be AES-256-GCM encrypted with a key that lives only in the
-environment, so a leaked database is not enough on its own. No card number is
-ever stored, processed or transmitted.
+tokens are AES-256-GCM encrypted with a key that lives only in the environment
+([ADR 0002](docs/architecture/adr/0002-app-level-token-encryption.md)), so a
+leaked database is not enough on its own. No card number is ever stored,
+processed or transmitted.
 
 ## Layout
 
@@ -158,7 +159,7 @@ locked out.
 ## Uploading a bank statement
 
 `POST /api/import/csv` takes a CSV export as a raw `text/csv` body — send
-`Content-Type: text/csv` and a `Content-Length`, up to 5 MiB.
+`Content-Type: text/csv` and a `Content-Length`, up to 4 MiB.
 `multipart/form-data` is refused with `415`.
 
 Columns are found by name, not position: a date column (`Date`, `Transaction
@@ -176,6 +177,10 @@ number and what would have worked.
 `/margin` charts the trailing 12 months of gross margin, cash basis — paid
 invoices as revenue against posted transactions and labor as cost, bucketed
 by month in the owner's own time zone, with the current month shown to date.
+The dashboard's margin and "Profit, all jobs" figures are a different view —
+every job's invoiced (or, before invoicing, quoted) revenue against its direct
+costs, across all jobs regardless of date — so the two are not expected to
+agree.
 
 ## Documentation
 
