@@ -125,22 +125,6 @@ async function currentOrigin(): Promise<string | null> {
   return (await requestOrigin()) ?? configuredOrigin();
 }
 
-/**
- * The origin the *webhook* is registered at - the configured URL first,
- * request second, the reverse of `currentOrigin`'s preference.
- *
- * The redirect URI can afford to follow the request: Plaid refuses any
- * redirect it was never told about, so a forged `Host` is a failed Link
- * token. The webhook URL has no such backstop - Plaid registers whatever it
- * is handed - and a forged host there would point the item's events at
- * someone else's server for as long as the connection lives (Phase 5
- * audit). `AUTH_URL` is optional, so the request origin remains the
- * fallback for a deployment that never set it.
- */
-async function webhookOrigin(): Promise<string | null> {
-  return configuredOrigin() ?? (await requestOrigin());
-}
-
 async function oauthReturnUri(): Promise<string | null> {
   const origin = await currentOrigin();
   return origin === null ? null : `${origin}${OAUTH_RETURN_PATH}`;
@@ -157,6 +141,27 @@ async function oauthReturnUri(): Promise<string | null> {
  */
 function webhookUrlFor(origin: string): string | undefined {
   return new URL(origin).protocol === 'https:' ? `${origin}${WEBHOOK_PATH}` : undefined;
+}
+
+/**
+ * Where Plaid should post this item's events - the configured URL first,
+ * the serving origin second, the reverse of `currentOrigin`'s preference.
+ *
+ * The redirect URI can afford to follow the request: Plaid refuses any
+ * redirect it was never told about, so a forged `Host` is a failed Link token.
+ * The webhook URL has no such backstop - Plaid registers whatever it is handed
+ * - and a forged host there would point the item's events at someone else's
+ * server for as long as the connection lives (Phase 5 audit).
+ *
+ * The fallback covers the two ways a configured origin yields nothing usable:
+ * `AUTH_URL` unset at all, and `AUTH_URL` set to an http address (a developer
+ * running `next dev` behind an https tunnel). Falling back to the serving
+ * origin there registers the tunnel, which is what the pre-Phase-5 code did;
+ * silently registering no webhook at all would be a demo that never syncs.
+ */
+function webhookUrlWhenLinking(servingOrigin: string): string | undefined {
+  const configured = configuredOrigin();
+  return (configured === null ? undefined : webhookUrlFor(configured)) ?? webhookUrlFor(servingOrigin);
 }
 
 /**
@@ -179,13 +184,15 @@ export async function createLinkTokenAction(): Promise<ActionResult<{ linkToken:
     );
   }
 
-  const originForWebhook = await webhookOrigin();
-
   try {
+    // Inside the try on purpose: `configuredOrigin` is the first thing in this
+    // action to read the zod-validated `env`, and a schema failure thrown from
+    // above the try reaches the browser as a rejected action call - the button
+    // that says "Connecting…" for ever, which the catch below exists to avoid.
     const { linkToken } = await provider.createLinkToken({
       userId: ownerId,
       redirectUri: `${origin}${OAUTH_RETURN_PATH}`,
-      webhookUrl: originForWebhook === null ? undefined : webhookUrlFor(originForWebhook),
+      webhookUrl: webhookUrlWhenLinking(origin),
     });
     return ok({ linkToken });
   } catch (error) {

@@ -73,7 +73,7 @@ export function DashboardMetrics({ summary, onOpenInbox }: DashboardMetricsProps
           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>avg across jobs</span>
         </div>
         <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.5rem' }}>
-          <span>Target: <strong style={{ color: '#f8fafc' }}>45.0%</strong></span>
+          <span>Target: <strong style={{ color: '#f8fafc' }}>{THRESHOLDS.GROSS_MARGIN.HEALTHY.toFixed(1)}%</strong></span>
           <span>YTD Profit: <strong className="tnum" style={{ color: summary.totalGrossProfitYTDCents >= 0 ? 'var(--severity-healthy)' : 'var(--severity-critical)' }}>{formatCents(summary.totalGrossProfitYTDCents)}</strong></span>
         </div>
       </div>
@@ -103,7 +103,7 @@ export function DashboardMetrics({ summary, onOpenInbox }: DashboardMetricsProps
           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>/ billable hr</span>
         </div>
         <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.5rem' }}>
-          <span>Target: <strong style={{ color: '#f8fafc' }}>$85.00/hr</strong></span>
+          <span>Target: <strong style={{ color: '#f8fafc' }}>{formatCents(THRESHOLDS.HOURLY_REALIZATION.HEALTHY)}/hr</strong></span>
           <span>After Material Pass-through</span>
         </div>
       </div>

@@ -8,6 +8,7 @@ import {
   type ImportedTransaction,
 } from '@budget-bot/db';
 import { currentOwnerId } from '@/lib/ownerSession';
+import { declaredBodyBytes, readCappedBody } from '@/lib/readCappedBody';
 
 /**
  * Uploading a bank statement.
@@ -84,13 +85,12 @@ class UploadRefused extends Error {
  * the caller can fix it by sending one.
  */
 function assertDeclaredSizeIsSane(req: Request): void {
-  const declared = req.headers.get('content-length');
-  if (declared === null) {
+  if (req.headers.get('content-length') === null) {
     throw new UploadRefused(411, 'Send a Content-Length; this endpoint will not read an unmeasured body.');
   }
 
-  const bytes = Number(declared);
-  if (!Number.isFinite(bytes) || bytes < 0) {
+  const bytes = declaredBodyBytes(req);
+  if (bytes === null) {
     throw new UploadRefused(411, 'Content-Length is not a number of bytes.');
   }
   if (bytes > CSV_IMPORT_MAX_BYTES) {
@@ -99,33 +99,15 @@ function assertDeclaredSizeIsSane(req: Request): void {
 }
 
 /**
- * The body, read a chunk at a time and abandoned the moment it goes past the
- * cap. `Content-Length` is the caller's word for it; this is the part that
- * does not take their word.
+ * The body, capped. `Content-Length` is the caller's word for it; this is the
+ * part that does not take their word.
  */
 async function readCappedText(req: Request): Promise<string> {
-  if (!req.body) return '';
-
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  const reader = req.body.getReader();
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > CSV_IMPORT_MAX_BYTES) {
-        throw new UploadRefused(413, 'That file is larger than the 5 MiB import limit.');
-      }
-      chunks.push(value);
-    }
-  } finally {
-    await reader.cancel().catch(() => {
-      // The stream is already going away; nothing here depends on how.
-    });
+  const text = await readCappedBody(req, CSV_IMPORT_MAX_BYTES);
+  if (text === null) {
+    throw new UploadRefused(413, 'That file is larger than the 5 MiB import limit.');
   }
-
-  return new TextDecoder().decode(Buffer.concat(chunks));
+  return text;
 }
 
 /** The file, sent as a raw `text/csv` body. */
@@ -234,11 +216,14 @@ export async function POST(req: Request): Promise<NextResponse> {
     // is here for parity with every other write: a reference to a project that
     // is not the caller's is a bad request, not a server fault.
     if (error instanceof UnknownProjectError) return badRequest(error.message);
-    // The message only: a raw driver error object can carry the database
-    // host and user into the logs (Phase 5 audit).
+    // Never the raw error object: a driver error carries the failing `query`
+    // and its `parameters` - the caller's own transaction rows - as enumerable
+    // properties, and logging the object spills them (Phase 5 audit). The
+    // stack is kept, because a 500 on somebody else's CSV is unreproducible
+    // without one, and it says nothing the message does not already say.
     console.error(
       'Failed to import CSV:',
-      error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+      error instanceof Error ? (error.stack ?? `${error.name}: ${error.message}`) : String(error)
     );
     return NextResponse.json({ error: 'Failed to import the file' }, { status: 500 });
   }

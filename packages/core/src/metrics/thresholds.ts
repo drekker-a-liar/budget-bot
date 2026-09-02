@@ -7,10 +7,11 @@ export const THRESHOLDS = {
     HEALTHY: 45, // >= 45% is green
     CAUTION: 25, // 25% - 44% is yellow, < 25% is red
   },
-  // Rates are cents per hour, like every other money value (ADR 0007).
+  // Rates are cents per hour, like every other money value (ADR 0007), and
+  // branded as such so a display can hand them straight to `formatCents`.
   HOURLY_REALIZATION: {
-    HEALTHY: 8500, // >= $85.00/hr is green
-    CAUTION: 5000, // $50.00 - $84.99/hr is yellow, < $50.00 is red
+    HEALTHY: 8500 as Cents, // >= $85.00/hr is green
+    CAUTION: 5000 as Cents, // $50.00 - $84.99/hr is yellow, < $50.00 is red
   },
   MATERIAL_MARKUP: {
     HEALTHY: 20, // >= 20% is green

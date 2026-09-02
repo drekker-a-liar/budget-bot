@@ -96,11 +96,15 @@ export async function seedOwner(
 
     // Merge, never replace: the jsonb can hold settings keys this build has
     // never heard of, and a seed that erases them is a seed nobody asked for.
+    // `FOR UPDATE`, because a merge built from an unlocked read is the same
+    // clobber with a shorter window: this runs from the first-sign-in event
+    // while the first requests are already in flight.
     const [owner] = await tx
       .select({ settings: users.settings })
       .from(users)
       .where(eq(users.id, ownerId))
-      .limit(1);
+      .limit(1)
+      .for('update');
     await tx
       .update(users)
       .set({ settings: { ...owner?.settings, timeZone: DEMO_TIME_ZONE } })

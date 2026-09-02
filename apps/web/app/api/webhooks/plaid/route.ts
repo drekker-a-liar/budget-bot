@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { WebhookVerificationError, type WebhookEvent } from '@budget-bot/bank-connectors';
 import { bankRepo, getDb, webhookEventsRepo } from '@budget-bot/db';
 import { loadKeysFromEnv } from '@budget-bot/db/crypto';
+import { declaredBodyBytes, readCappedBody } from '@/lib/readCappedBody';
 import { getBankProvider } from '@/src/server/bank/provider';
 import { runSync, syncFailureOf } from '@/src/server/bank/sync';
 
@@ -44,36 +45,17 @@ const ITEM_REAUTH_CODES = new Set(['PENDING_EXPIRATION', 'USER_PERMISSION_REVOKE
  */
 const WEBHOOK_MAX_BYTES = 1024 * 1024;
 
-class BodyTooLarge extends Error {}
+/**
+ * The body, capped, or `null` when the caller went past the cap - by its own
+ * `Content-Length`, or by the bytes it actually sent. An unmeasured body is
+ * read rather than refused: the streaming cap is the guard that does not take
+ * the caller's word, and Plaid is the only caller whose requests matter here.
+ */
+async function readWebhookBody(request: Request): Promise<string | null> {
+  const declared = declaredBodyBytes(request);
+  if (declared !== null && declared > WEBHOOK_MAX_BYTES) return null;
 
-/** The body, read a chunk at a time and abandoned the moment it passes the cap. */
-async function readCappedBody(request: Request): Promise<string> {
-  const declared = Number(request.headers.get('content-length'));
-  if (Number.isFinite(declared) && declared > WEBHOOK_MAX_BYTES) {
-    throw new BodyTooLarge();
-  }
-  if (!request.body) return '';
-
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  const reader = request.body.getReader();
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > WEBHOOK_MAX_BYTES) {
-        throw new BodyTooLarge();
-      }
-      chunks.push(value);
-    }
-  } finally {
-    await reader.cancel().catch(() => {
-      // The stream is already going away; nothing here depends on how.
-    });
-  }
-
-  return new TextDecoder().decode(Buffer.concat(chunks));
+  return readCappedBody(request, WEBHOOK_MAX_BYTES);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -121,26 +103,24 @@ function isSyncDispatch(event: WebhookEvent): boolean {
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
-  // Read before any parse: the signature covers the exact bytes that arrived,
-  // and anything that touched the body first could disagree with it.
-  let rawBody: string;
-  try {
-    rawBody = await readCappedBody(request);
-  } catch (error) {
-    if (error instanceof BodyTooLarge) {
-      return NextResponse.json({ ok: false }, { status: 413 });
-    }
-    throw error;
-  }
-  const headers = headerRecord(request.headers);
-
+  // Asked before the body is touched: a deployment with no Plaid credentials
+  // configured is a supported deployment (spec §7) and has nothing to verify
+  // against, so there is no reason for it to buffer and decode a megabyte of
+  // an unauthenticated stranger's body before saying so. Nothing below the
+  // body read needs it, either.
   const provider = getBankProvider();
   if (!provider) {
-    // A deployment with no Plaid credentials configured is a supported
-    // deployment (spec §7); there is nothing here to verify against, and
-    // nothing to learn from refusing a webhook it never asked Plaid to send.
+    // Nothing to learn from refusing a webhook it never asked Plaid to send.
     return NextResponse.json({ ok: true });
   }
+
+  // Read before any parse: the signature covers the exact bytes that arrived,
+  // and anything that touched the body first could disagree with it.
+  const rawBody = await readWebhookBody(request);
+  if (rawBody === null) {
+    return NextResponse.json({ ok: false }, { status: 413 });
+  }
+  const headers = headerRecord(request.headers);
 
   let event: WebhookEvent;
   try {
