@@ -288,4 +288,20 @@ describe('calculateMonthlyMargins', () => {
     expect(result[0].cogs.materials).toBe(7_500);
     expect(result[0].counts.transactions).toBe(1);
   });
+
+  // The trailing-12-month window /margin asks for crosses a year boundary for
+  // eleven months of every year; a month counter that never wrapped would
+  // hand back `2025-13` and drop January.
+  it('zero-fills every month across a year boundary, in order', () => {
+    const result = calculateMonthlyMargins({
+      invoices: [],
+      transactions: [],
+      laborEntries: [],
+      range: { start: '2025-11-01', end: '2026-02-28' },
+      timeZone: 'UTC',
+    });
+
+    expect(result.map((m) => m.month)).toEqual(['2025-11', '2025-12', '2026-01', '2026-02']);
+    expect(result.every((m) => m.revenueCents === 0 && m.marginPct === null)).toBe(true);
+  });
 });

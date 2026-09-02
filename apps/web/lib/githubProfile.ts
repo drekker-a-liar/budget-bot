@@ -15,6 +15,18 @@ import type { GitHubProfile } from 'next-auth/providers/github';
 
 const GITHUB_API = 'https://api.github.com';
 
+/**
+ * How long either GitHub call may take before it counts as failed.
+ *
+ * This runs inside the OAuth callback, and a `fetch` with no signal waits on
+ * a stalled connection for as long as the platform lets the function live -
+ * on Vercel, a sign-in that spins until the function is killed and the owner
+ * sees a bare error page with nothing to act on (Phase 5 audit). Ten seconds
+ * is generous for two small JSON responses from api.github.com and well
+ * inside the function's own budget.
+ */
+const GITHUB_TIMEOUT_MS = 10_000;
+
 interface GithubEmail {
   email: string;
   primary: boolean;
@@ -30,6 +42,27 @@ export type VerifiedGithubProfile = GitHubProfile & {
   email_verified: boolean;
 };
 
+/**
+ * One GitHub call, or `null` when it did not succeed: a non-2xx answer, a
+ * connection that failed, or the timeout above. All three land on the same
+ * `null` on purpose. The caller's rule is that either call failing means "no
+ * verified address" - a refusal the allow list already handles - and a
+ * timeout that surfaced as a thrown `TimeoutError` instead would be a second,
+ * different failure for the sign-in flow to render, with nothing more useful
+ * to say.
+ */
+async function githubGet(path: string, headers: HeadersInit): Promise<Response | null> {
+  try {
+    const response = await fetch(`${GITHUB_API}${path}`, {
+      headers,
+      signal: AbortSignal.timeout(GITHUB_TIMEOUT_MS),
+    });
+    return response.ok ? response : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchGithubProfile(accessToken: string): Promise<VerifiedGithubProfile> {
   const headers = {
     Authorization: `Bearer ${accessToken}`,
@@ -42,13 +75,11 @@ export async function fetchGithubProfile(accessToken: string): Promise<VerifiedG
   // close. A revoked or throttled token answers 401 here with a JSON error
   // body, and parsing it anyway would hand the allow-list check an object to
   // guess at, so the status is what decides.
-  const userResponse = await fetch(`${GITHUB_API}/user`, { headers });
-  const profile = (userResponse.ok ? await userResponse.json() : {}) as GitHubProfile;
+  const userResponse = await githubGet('/user', headers);
+  const profile = (userResponse ? await userResponse.json() : {}) as GitHubProfile;
 
-  const emailsResponse = userResponse.ok
-    ? await fetch(`${GITHUB_API}/user/emails`, { headers })
-    : undefined;
-  const emails = (emailsResponse?.ok ? await emailsResponse.json() : []) as GithubEmail[];
+  const emailsResponse = userResponse ? await githubGet('/user/emails', headers) : null;
+  const emails = (emailsResponse ? await emailsResponse.json() : []) as GithubEmail[];
   const primary = emails.find((entry) => entry.primary && entry.verified);
 
   return { ...profile, email: primary?.email ?? null, email_verified: Boolean(primary) };

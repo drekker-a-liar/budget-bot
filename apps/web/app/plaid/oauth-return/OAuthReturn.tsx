@@ -151,12 +151,12 @@ export function OAuthReturn() {
         </div>
 
         {!asked || resumed ? (
-          <h1 className="swiss-header" style={{ fontSize: '1.2rem', color: '#f8fafc' }}>
+          <h1 className="swiss-header" style={{ fontSize: '1.2rem', color: 'var(--text-primary)' }}>
             Finishing the connection with your bank…
           </h1>
         ) : (
           <>
-            <h1 className="swiss-header" style={{ fontSize: '1.2rem', color: '#f8fafc' }}>
+            <h1 className="swiss-header" style={{ fontSize: '1.2rem', color: 'var(--text-primary)' }}>
               There is nothing to finish here.
             </h1>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '0.6rem 0 1rem' }}>

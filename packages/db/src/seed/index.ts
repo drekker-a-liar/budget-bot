@@ -1,14 +1,13 @@
 import { eq } from 'drizzle-orm';
 import type { Database, Executor } from '../client';
 import { bankConnections, invoices, laborEntries, projects, transactions, users } from '../schema';
-import {
-  SEED_INVOICES,
-  SEED_LABOR,
-  SEED_PROJECTS,
-  SEED_TRANSACTIONS,
-} from './fixtures';
+import { monthsSinceAnchor, shiftedSeedFixtures } from './shift';
 
 export * from './fixtures';
+export * from './shift';
+
+/** The fixtures are dated as if lived here; the demo owner's zone must agree. */
+const DEMO_TIME_ZONE = 'America/Los_Angeles';
 
 /**
  * Writes the demo fixtures for one owner.
@@ -16,15 +15,23 @@ export * from './fixtures';
  * It never creates the `users` row: Auth.js owns that table and creates a user
  * on first sign-in (ADR 0003), so a row planted here would collide with the
  * OAuth account link rather than save anyone a step. It does update that row's
- * `settings.timeZone` (spec §5) whenever it writes fixtures: the dates below
+ * `settings.timeZone` (spec §5) whenever it writes fixtures: the fixture dates
  * are written as if lived in the Pacific time zone, and an owner with no
  * settings would otherwise default to UTC and bucket a fixture up to a day
  * into the wrong month in the margin metrics.
+ *
+ * The fixture dates are shifted forward by whole months at seed time so the
+ * demo book always ends near the month it is written in (see `shift.ts`).
  */
 
 export interface SeedOptions {
   /** Delete this owner's existing rows first. Off by default. */
   reset?: boolean;
+  /**
+   * The instant the fixture dates are shifted relative to (see `shift.ts`).
+   * Defaults to the wall clock; tests pass one to pin the shift.
+   */
+  now?: Date;
 }
 
 export interface SeedResult {
@@ -67,6 +74,14 @@ export async function seedOwner(
   ownerId: string,
   options: SeedOptions = {}
 ): Promise<SeedResult> {
+  const delta = monthsSinceAnchor(options.now ?? new Date(), DEMO_TIME_ZONE);
+  const {
+    projects: seedProjects,
+    transactions: seedTransactions,
+    laborEntries: seedLabor,
+    invoices: seedInvoices,
+  } = shiftedSeedFixtures(delta);
+
   return db.transaction(async (tx) => {
     if (options.reset) {
       await deleteOwnerData(tx, ownerId);
@@ -79,15 +94,26 @@ export async function seedOwner(
       if (existing) return { seeded: false, counts: EMPTY };
     }
 
+    // Merge, never replace: the jsonb can hold settings keys this build has
+    // never heard of, and a seed that erases them is a seed nobody asked for.
+    // `FOR UPDATE`, because a merge built from an unlocked read is the same
+    // clobber with a shorter window: this runs from the first-sign-in event
+    // while the first requests are already in flight.
+    const [owner] = await tx
+      .select({ settings: users.settings })
+      .from(users)
+      .where(eq(users.id, ownerId))
+      .limit(1)
+      .for('update');
     await tx
       .update(users)
-      .set({ settings: { timeZone: 'America/Los_Angeles' } })
+      .set({ settings: { ...owner?.settings, timeZone: DEMO_TIME_ZONE } })
       .where(eq(users.id, ownerId));
 
     const projectRows = await tx
       .insert(projects)
       .values(
-        SEED_PROJECTS.map((project) => ({
+        seedProjects.map((project) => ({
           ownerId,
           name: project.name,
           clientName: project.clientName,
@@ -115,7 +141,7 @@ export async function seedOwner(
     // generated real ones. Insert order is the order given, so the two lists
     // line up.
     const projectIds = new Map(
-      SEED_PROJECTS.map((project, index) => [project.id, projectRows[index].id])
+      seedProjects.map((project, index) => [project.id, projectRows[index].id])
     );
     const projectId = (fixtureId: string): string => {
       const id = projectIds.get(fixtureId);
@@ -124,7 +150,7 @@ export async function seedOwner(
     };
 
     await tx.insert(transactions).values(
-      SEED_TRANSACTIONS.map((transaction) => ({
+      seedTransactions.map((transaction) => ({
         ownerId,
         date: transaction.date,
         description: transaction.description,
@@ -144,7 +170,7 @@ export async function seedOwner(
     );
 
     await tx.insert(laborEntries).values(
-      SEED_LABOR.map((entry) => ({
+      seedLabor.map((entry) => ({
         ownerId,
         projectId: projectId(entry.projectId),
         date: entry.date,
@@ -158,7 +184,7 @@ export async function seedOwner(
     );
 
     await tx.insert(invoices).values(
-      SEED_INVOICES.map((invoice) => ({
+      seedInvoices.map((invoice) => ({
         ownerId,
         projectId: projectId(invoice.projectId),
         invoiceNumber: invoice.invoiceNumber,
@@ -177,10 +203,10 @@ export async function seedOwner(
     return {
       seeded: true,
       counts: {
-        projects: SEED_PROJECTS.length,
-        transactions: SEED_TRANSACTIONS.length,
-        laborEntries: SEED_LABOR.length,
-        invoices: SEED_INVOICES.length,
+        projects: seedProjects.length,
+        transactions: seedTransactions.length,
+        laborEntries: seedLabor.length,
+        invoices: seedInvoices.length,
       },
     };
   });

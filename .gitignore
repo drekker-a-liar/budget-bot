@@ -44,3 +44,6 @@ next-env.d.ts
 
 # SDD controller scratch (superpowers)
 .superpowers/
+
+# pnpm drops a fallback store here when it cannot reach the global one
+.pnpm-store/

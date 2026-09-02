@@ -64,7 +64,7 @@ export function DangerZone() {
       <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start', marginBottom: '1rem' }}>
         <AlertTriangle size={16} color="var(--severity-critical)" />
         <div>
-          <div style={{ fontWeight: 700, color: '#f8fafc' }}>Danger zone</div>
+          <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Danger zone</div>
           <p style={{ margin: '0.25rem 0 0', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
             Take a copy of everything, or make everything go away.
           </p>

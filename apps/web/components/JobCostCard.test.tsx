@@ -65,6 +65,46 @@ describe('JobCostCard', () => {
     expect(screen.getByText('—')).toBeInTheDocument();
   });
 
+  /**
+   * A job with no quote and nothing invoiced has no margin. It used to arrive
+   * as `grossMarginPct: 0` with severity 'critical' and put a red "0%" on the
+   * card for a job nothing had happened to; the KPI is now null and the card
+   * draws the em dash on a neutral badge, the way the dashboard aggregate does.
+   */
+  it('shows an em dash on a neutral badge for a job with no margin to report', () => {
+    render(
+      <JobCostCard
+        project={aProject({ quotedTotalCents: parseMoney(0) })}
+        kpi={aKpi({
+          quotedTotalCents: parseMoney(0),
+          revenueCents: parseMoney(0),
+          grossMarginPct: null,
+          grossMarginSeverity: null,
+        })}
+      />
+    );
+
+    expect(screen.getByText('—').parentElement).toHaveClass('badge-neutral');
+    expect(screen.queryByText('0%')).not.toBeInTheDocument();
+  });
+
+  it('still warns about a zero-quote job that has spent money, without inventing a percentage', () => {
+    render(
+      <JobCostCard
+        project={aProject({ quotedTotalCents: parseMoney(0) })}
+        kpi={aKpi({
+          quotedTotalCents: parseMoney(0),
+          isOverBudget: true,
+          budgetVariancePct: null,
+          budgetSeverity: null,
+        })}
+      />
+    );
+
+    expect(screen.getByText(/Over Budget \(—\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/Over Budget \(0%\)/)).not.toBeInTheDocument();
+  });
+
   it('warns about a job that has run past its hours, and by how much', () => {
     render(
       <JobCostCard

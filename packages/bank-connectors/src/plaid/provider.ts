@@ -85,6 +85,14 @@ const WEBHOOK_MAX_CLOCK_SKEW_SECONDS = 30;
 const WEBHOOK_SIGNATURE_HEADER = 'plaid-verification';
 
 /**
+ * How long a fetched verification key is trusted before it is asked about
+ * again. Keys rotate rarely, so this is not about freshness for its own sake:
+ * it bounds how long a key Plaid has since retired can keep verifying
+ * webhooks here, at a cost of one key fetch per hour per `kid`.
+ */
+const WEBHOOK_KEY_TTL_MS = 60 * 60 * 1000;
+
+/**
  * A header, found by name without regard to case.
  *
  * `Record<string, string>` carries no promise about casing - a route handler
@@ -179,12 +187,16 @@ export class PlaidProvider implements BankProvider {
   readonly #client: PlaidClientLike;
 
   /**
-   * Verification keys rotate rarely, so a `kid` seen once is good for the
-   * life of this instance - one process serves one deployment's worth of
-   * webhooks, and a key rotation is rare enough that "restart to pick up the
-   * new key" is an acceptable cost next to a fetch on every webhook.
+   * Verification keys rotate rarely, so a `kid` is worth remembering rather
+   * than fetching on every webhook. It is remembered with the instant it was
+   * fetched, not for ever: Plaid retires a key by setting `expired_at`, and a
+   * cache with no expiry of its own would keep verifying with a key that was
+   * retired one webhook after it was first seen - for the life of the process,
+   * which is the window an attacker holding a leaked key would be working in.
+   * `WEBHOOK_KEY_TTL_MS` bounds that window without paying a fetch per
+   * webhook.
    */
-  readonly #webhookKeys = new Map<string, JWKPublicKey>();
+  readonly #webhookKeys = new Map<string, { key: JWKPublicKey; fetchedAt: number }>();
 
   constructor({ client }: PlaidProviderDeps) {
     this.#client = client;
@@ -424,15 +436,19 @@ export class PlaidProvider implements BankProvider {
   }
 
   /**
-   * The key behind `kid`: from cache when this instance has seen it before,
+   * The key behind `kid`: from cache when this instance fetched it recently,
    * from Plaid otherwise. A cache miss fetches exactly once - success or
    * failure - and only a success is cached, so an unrecognised or
    * momentarily-unreachable `kid` costs one fetch per webhook rather than
    * being remembered as a permanent failure.
+   *
+   * A cached entry older than the TTL is re-fetched rather than trusted: the
+   * `expired_at` check below is the whole point of asking, and a key that was
+   * live when it was cached is exactly the key Plaid retires next.
    */
   async #webhookKey(kid: string): Promise<JWKPublicKey> {
     const cached = this.#webhookKeys.get(kid);
-    if (cached) return cached;
+    if (cached && Date.now() - cached.fetchedAt < WEBHOOK_KEY_TTL_MS) return cached.key;
 
     let key: JWKPublicKey;
     try {
@@ -441,7 +457,17 @@ export class PlaidProvider implements BankProvider {
       throw new WebhookVerificationError('unknown key id');
     }
 
-    this.#webhookKeys.set(kid, key);
+    // Plaid retires a signing key by setting `expired_at`; trusting one past
+    // that is trusting whatever leaked with it. Not cached, either way: an
+    // expiry recorded in error recovers on the next fetch rather than at the
+    // next process restart (Phase 5 audit). The cached copy is dropped too, so
+    // a key that expires while cached cannot be served from a stale entry.
+    if (key.expired_at !== null && key.expired_at !== undefined) {
+      this.#webhookKeys.delete(kid);
+      throw new WebhookVerificationError('expired key');
+    }
+
+    this.#webhookKeys.set(kid, { key, fetchedAt: Date.now() });
     return key;
   }
 }

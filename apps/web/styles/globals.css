@@ -12,6 +12,10 @@
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
+  /* Pure white, one step above --text-primary: brand text, text on saturated
+     accent backgrounds (the primary button, the inbox badge), and the gauge's
+     target notch. */
+  --text-bright: #ffffff;
 
   --severity-healthy: #10b981;
   --severity-healthy-bg: rgba(16, 185, 129, 0.12);
@@ -29,6 +33,7 @@
   --accent-cyan-bg: rgba(6, 182, 212, 0.12);
   --accent-indigo: #6366f1;
   --accent-indigo-bg: rgba(99, 102, 241, 0.12);
+  --accent-blue: #2563eb;
 
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -206,8 +211,8 @@ body {
 
 /* Action Buttons */
 .btn-primary {
-  background: #2563eb;
-  color: #ffffff;
+  background: var(--accent-blue);
+  color: var(--text-bright);
   border: 1px solid #3b82f6;
   border-radius: 6px;
   padding: 0.5rem 1rem;

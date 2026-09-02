@@ -13,6 +13,7 @@ import {
   getDb,
   invoicesRepo,
   laborRepo,
+  ownersRepo,
   projectsRepo,
   transactionsRepo,
 } from '@budget-bot/db';
@@ -25,7 +26,8 @@ import { calculateWeeklyCashFlow } from './weeks';
  * ledger, and the spend split by category.
  *
  * `now` is a parameter for the same reason it is on the dashboard: the window
- * is part of the answer.
+ * is part of the answer. The owner's time zone travels with it so "overdue"
+ * is judged against their calendar day, not UTC's.
  */
 
 export interface CashflowPageData {
@@ -41,16 +43,25 @@ export interface CashflowPageData {
 export const getCashflowPage = cache(
   async (ownerId: string, now: Date): Promise<CashflowPageData> => {
     const db = getDb();
-    const [projects, transactions, laborEntries, invoices, cardProfile] = await Promise.all([
-      projectsRepo.listProjects(db, ownerId),
-      transactionsRepo.listTransactions(db, ownerId),
-      laborRepo.listLaborEntries(db, ownerId),
-      invoicesRepo.listInvoices(db, ownerId),
-      bankRepo.getCardProfile(db, ownerId),
-    ]);
+    const [projects, transactions, laborEntries, invoices, cardProfile, timeZone] =
+      await Promise.all([
+        projectsRepo.listProjects(db, ownerId),
+        transactionsRepo.listTransactions(db, ownerId),
+        laborRepo.listLaborEntries(db, ownerId),
+        invoicesRepo.listInvoices(db, ownerId),
+        bankRepo.getCardProfile(db, ownerId),
+        ownersRepo.getTimeZone(db, ownerId),
+      ]);
 
     return {
-      summary: calculateBusinessSummary(projects, transactions, laborEntries, invoices, now),
+      summary: calculateBusinessSummary(
+        projects,
+        transactions,
+        laborEntries,
+        invoices,
+        now,
+        timeZone
+      ),
       weeks: calculateWeeklyCashFlow({ transactions, invoices }, now),
       spend: spendByCategory(transactions),
       invoices,

@@ -59,11 +59,14 @@ skips them when that is genuinely the right call.
 | `packages/bank-connectors` | The `BankProvider` interface and its implementations |
 | `apps/web` | Routing, auth, Server Components, Server Actions, UI |
 
-Reads happen in Server Components and writes in Server Actions. There are three
-route handlers on purpose — Auth.js's own, the health check, and the CSV upload,
-which is a route because its caller is a file rather than a person. A new
-`app/api/*` route needs a reason, and `test/route-gating.test.ts` will ask for
-one.
+Reads happen in Server Components and writes in Server Actions. There are six
+route handlers on purpose — Auth.js's own, because that is how a session is
+made; the health check, because what asks it has no session; the CSV upload,
+because its caller is a file rather than a person; the export, because what it
+reads is a download rather than a page; the Plaid webhook, because Plaid has no
+session to send; and the cron safety net, because a scheduler authenticates by
+bearer token. A new `app/api/*` route needs a reason, and
+`test/route-gating.test.ts` will ask for one.
 
 Schema changes are migrations generated with
 `pnpm --filter @budget-bot/db db:generate` and committed.

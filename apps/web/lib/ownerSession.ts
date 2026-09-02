@@ -11,10 +11,29 @@ import { auth } from '@/auth';
  * id of their own.
  */
 
+/** The signed-in owner, as much of them as an action ever needs. */
+export interface CurrentOwner {
+  id: string;
+  /** The display name the sign-in provider supplied; GitHub profiles may have none. */
+  name: string | null;
+}
+
+/**
+ * The signed-in owner, or null. For the few callers that need more than the
+ * id - a labor entry is logged under the owner's own name - without a second
+ * session lookup, which with a database session strategy is a second query.
+ */
+export async function currentOwner(): Promise<CurrentOwner | null> {
+  const session = await auth();
+  const id = session?.user?.id;
+  if (!id) return null;
+  return { id, name: session?.user?.name ?? null };
+}
+
 /** The signed-in owner, or null. For callers that answer for themselves. */
 export async function currentOwnerId(): Promise<string | null> {
-  const session = await auth();
-  return session?.user?.id ?? null;
+  const owner = await currentOwner();
+  return owner?.id ?? null;
 }
 
 /**

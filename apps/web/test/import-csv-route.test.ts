@@ -261,8 +261,10 @@ describe('POST /api/import/csv', () => {
     // An App Router route handler has no body limit of its own, and a
     // self-hoster's box has no platform limit in front of it either, so
     // `req.text()` would happily buffer whatever arrived. A year of card
-    // statements is well under 1 MiB.
-    const CAP = 5 * 1024 * 1024;
+    // statements is well under 1 MiB. Four MiB, not five: Vercel turns away
+    // anything over 4.5 MB before the route runs, so a higher cap would be one
+    // this code never got to enforce there.
+    const CAP = 4 * 1024 * 1024;
 
     function withLength(bytes: number, body: string): Request {
       return new Request('http://localhost/api/import/csv', {
@@ -276,7 +278,7 @@ describe('POST /api/import/csv', () => {
       const { status, body } = await post(withLength(CAP + 1, CSV));
 
       expect(status).toBe(413);
-      expect(body.error).toMatch(/5 MiB|too large/i);
+      expect(body.error).toMatch(/4 MiB|too large/i);
       expect(db.importCsvBatch).not.toHaveBeenCalled();
       expect(db.importCsvBatch).not.toHaveBeenCalled();
     });

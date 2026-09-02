@@ -34,6 +34,23 @@ vi.mock('@/auth', () => ({ auth: vi.fn(async () => authSession.current) }));
 // has none. Every other action test stubs it the same way.
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 
+/**
+ * A switch that makes the sixth of the seven deletes fail, for the atomicity
+ * case below. The real repository is wrapped rather than replaced, so every
+ * other case in this file still deletes against the real table - and so the
+ * failure happens where a real one would, inside the transaction, after five
+ * deletes have already run on it.
+ */
+const failing = vi.hoisted(() => ({ deleteAllProjects: false }));
+vi.mock('@budget-bot/db', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@budget-bot/db')>();
+  const deleteAllProjects: typeof actual.projectsRepo.deleteAllProjects = async (...args) => {
+    if (failing.deleteAllProjects) throw new Error('boom - the projects delete failed');
+    return actual.projectsRepo.deleteAllProjects(...args);
+  };
+  return { ...actual, projectsRepo: { ...actual.projectsRepo, deleteAllProjects } };
+});
+
 const removeItem = vi.hoisted(() => ({ fn: vi.fn(async (_accessToken: string) => undefined) }));
 const providerRef = vi.hoisted(() => ({ current: null as unknown }));
 vi.mock('@/src/server/bank/provider', () => ({
@@ -181,6 +198,7 @@ describeDb('deleteAllDataAction', () => {
     removeItem.fn.mockResolvedValue(undefined);
     providerRef.current = { id: 'plaid', removeItem: removeItem.fn };
     authSession.current = null;
+    failing.deleteAllProjects = false;
     db = getDb();
   });
 
@@ -332,6 +350,37 @@ describeDb('deleteAllDataAction', () => {
       projects: 0,
       webhookEvents: 0,
     });
+  });
+
+  it('deletes nothing at all when one delete fails partway, rather than leaving a half-emptied account (Phase 5 audit)', async () => {
+    // `deleteAllProjects` is sixth of seven, so by the time it throws the
+    // connections, transactions, labor, invoices and import batches have
+    // already been deleted inside the transaction. Before Phase 5 the seven
+    // ran on the bare connection and those five stayed deleted; now every
+    // row is back and the refusal says so.
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    failing.deleteAllProjects = true;
+    const alice = await createOwner(db);
+    await seedOneOfEverything(db, alice, 'Alice');
+
+    signInAs(alice);
+    const result = await deleteAllDataAction();
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('Nothing was deleted'),
+    });
+    expect(JSON.stringify(result)).not.toContain('boom');
+    expect(await tableCounts(db, alice)).toEqual({
+      connections: 1,
+      transactions: 1,
+      laborEntries: 1,
+      invoices: 1,
+      importBatches: 1,
+      projects: 1,
+      webhookEvents: 1,
+    });
+    logged.mockRestore();
   });
 
   it('reports zeroes for an owner with nothing to delete, rather than failing', async () => {

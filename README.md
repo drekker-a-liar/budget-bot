@@ -7,9 +7,22 @@ It is a private, single-tenant application you host yourself. Sign-in is a
 GitHub OAuth app you own, restricted to an allow list you write, and the data
 lives in a Postgres you control.
 
-Phase 1 of the [architecture](docs/superpowers/specs/2026-08-20-system-architecture-design.md).
-Bank connections, monthly gross margin and the production security audit are
-the sub-projects after it.
+Phases 1–5 of the [architecture](docs/superpowers/specs/2026-08-20-system-architecture-design.md):
+the locked door, bank connections, their lifecycle, monthly gross margin,
+and the production hardening — shipped in that order, each with its spec in
+`docs/superpowers/`.
+
+## Deploy it
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fdrekker-a-liar%2Fbudget-bot&project-name=budget-bot&repository-name=budget-bot&root-directory=apps%2Fweb&env=AUTH_SECRET,AUTH_GITHUB_ID,AUTH_GITHUB_SECRET,ALLOWED_EMAILS,BANK_TOKEN_ENCRYPTION_KEY,DATABASE_URL&envDescription=Every%20variable%20is%20documented%20in%20.env.example%3B%20the%20deploy%20guide%20walks%20each%20one.&envLink=https%3A%2F%2Fgithub.com%2Fdrekker-a-liar%2Fbudget-bot%2Fblob%2Fmain%2Fdocs%2Fself-hosting%2Fvercel.md)
+
+The button clones the repository into your account and asks for the
+variables the app refuses to boot without. It is honestly a **two-pass
+setup**: the GitHub OAuth callback URL only exists after the first deploy,
+so expect the first one to be a deployment you cannot sign in to yet.
+[docs/self-hosting/vercel.md](docs/self-hosting/vercel.md) is the full walk
+— including checking that the project's Root Directory ended up as
+`apps/web`, the one setting a monorepo cannot survive without.
 
 ## Prerequisites
 
@@ -84,9 +97,10 @@ page, action and route handler asks `auth()` again rather than trusting it. A
 production deployment missing `AUTH_SECRET`, the GitHub pair, a non-empty allow
 list or a 32-byte `BANK_TOKEN_ENCRYPTION_KEY` throws at boot instead of serving
 data — `pnpm check:security` says so without deploying to find out. Bank access
-tokens will be AES-256-GCM encrypted with a key that lives only in the
-environment, so a leaked database is not enough on its own. No card number is
-ever stored, processed or transmitted.
+tokens are AES-256-GCM encrypted with a key that lives only in the environment
+([ADR 0002](docs/architecture/adr/0002-app-level-token-encryption.md)), so a
+leaked database is not enough on its own. No card number is ever stored,
+processed or transmitted.
 
 ## Layout
 
@@ -145,7 +159,7 @@ locked out.
 ## Uploading a bank statement
 
 `POST /api/import/csv` takes a CSV export as a raw `text/csv` body — send
-`Content-Type: text/csv` and a `Content-Length`, up to 5 MiB.
+`Content-Type: text/csv` and a `Content-Length`, up to 4 MiB.
 `multipart/form-data` is refused with `415`.
 
 Columns are found by name, not position: a date column (`Date`, `Transaction
@@ -163,6 +177,10 @@ number and what would have worked.
 `/margin` charts the trailing 12 months of gross margin, cash basis — paid
 invoices as revenue against posted transactions and labor as cost, bucketed
 by month in the owner's own time zone, with the current month shown to date.
+The dashboard's margin and "Profit, all jobs" figures are a different view —
+every job's invoiced (or, before invoicing, quoted) revenue against its direct
+costs, across all jobs regardless of date — so the two are not expected to
+agree.
 
 ## Documentation
 
