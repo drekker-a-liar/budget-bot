@@ -72,16 +72,18 @@ export interface ProjectFinancialKPIs {
   grossProfitCents: Cents;
   /** Revenue less every non-labour direct cost; the numerator of realization. */
   netEarningsCents: Cents;
-  grossMarginPct: number;
-  grossMarginSeverity: SeverityLevel;
+  /** Null when there is no revenue - nothing invoiced and no quote - to divide by. */
+  grossMarginPct: number | null;
+  grossMarginSeverity: SeverityLevel | null;
   /** Null when no hours have been logged against the project. */
   netHourlyRealizationCents: Cents | null;
   hourlySeverity: SeverityLevel | null;
   /** Null when no materials have been bought, or none were quoted. */
   materialsMarkupPct: number | null;
   materialsMarkupSeverity: SeverityLevel | null;
-  budgetVariancePct: number;
-  budgetSeverity: SeverityLevel;
+  /** Share of the quote spent so far. Null when nothing was quoted. */
+  budgetVariancePct: number | null;
+  budgetSeverity: SeverityLevel | null;
   isOverBudget: boolean;
 }
 
@@ -103,11 +105,17 @@ export interface WeeklyCashFlow {
   netCents: Cents;
 }
 
+/**
+ * The overview page's figures. The four totals are every project's KPIs
+ * summed - invoiced-or-quoted revenue against all matched costs, across every
+ * job regardless of date - so they are neither year-to-date nor cash basis;
+ * the cash-basis monthly view is `MonthlyMargin` (ADR 0006).
+ */
 export interface BusinessFinancialSummary {
-  totalRevenueYTDCents: Cents;
-  totalMaterialsYTDCents: Cents;
-  totalLaborYTDCents: Cents;
-  totalGrossProfitYTDCents: Cents;
+  totalRevenueCents: Cents;
+  totalMaterialsCents: Cents;
+  totalLaborCents: Cents;
+  totalGrossProfitCents: Cents;
   /** Null when nothing has been invoiced — never a fabricated 0%. */
   averageMarginPct: number | null;
   averageMarginSeverity: SeverityLevel | null;

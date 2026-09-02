@@ -9,14 +9,19 @@ import {
   SEED_INVOICES,
 } from '../fixtures';
 
-const invoice = (status: InvoiceStatus, dollars: number, paidDate?: string): Invoice => ({
-  id: `inv-${status}-${dollars}`,
+const invoice = (
+  status: InvoiceStatus,
+  dollars: number,
+  paidDate?: string,
+  dueDate = '2026-08-19'
+): Invoice => ({
+  id: `inv-${status}-${dollars}-${dueDate}`,
   projectId: 'proj-x',
   invoiceNumber: 'INV-TEST',
   amountCents: parseMoney(dollars),
   depositAmountCents: parseMoney(0),
   dateIssued: '2026-08-18',
-  dueDate: '2026-08-19',
+  dueDate,
   status,
   paidDate,
   createdAt: '2026-08-18T00:00:00.000Z',
@@ -51,6 +56,7 @@ const expense = (
 // CHANGED: those pin behaviour this task deliberately altered.
 
 const NOW = new Date('2026-08-20T12:00:00.000Z');
+const UTC = 'UTC';
 
 const summarize = (now: Date = NOW) =>
   calculateBusinessSummary(
@@ -58,8 +64,13 @@ const summarize = (now: Date = NOW) =>
     SEED_TRANSACTIONS,
     SEED_LABOR,
     SEED_INVOICES,
-    now
+    now,
+    UTC
   );
+
+/** An empty book with just these invoices, summarised at `now` in `timeZone`. */
+const receivables = (invoices: Invoice[], now: Date = NOW, timeZone = UTC) =>
+  calculateBusinessSummary([], [], [], invoices, now, timeZone);
 
 afterEach(() => {
   vi.useRealTimers();
@@ -68,10 +79,10 @@ afterEach(() => {
 describe('calculateBusinessSummary', () => {
   it('aggregates the seed book of business at a given instant', () => {
     expect(summarize()).toEqual({
-      totalRevenueYTDCents: 1_825_000,
-      totalMaterialsYTDCents: 432_140,
-      totalLaborYTDCents: 783_000,
-      totalGrossProfitYTDCents: 578_860,
+      totalRevenueCents: 1_825_000,
+      totalMaterialsCents: 432_140,
+      totalLaborCents: 783_000,
+      totalGrossProfitCents: 578_860,
       averageMarginPct: 31.7,
       averageMarginSeverity: 'caution',
       averageHourlyRealizationCents: 15_132,
@@ -89,6 +100,36 @@ describe('calculateBusinessSummary', () => {
     });
   });
 
+  // CHANGED: the four totals were named `*YTD*` and never were: they sum every
+  // project's KPIs whatever their dates, on the invoiced-or-quoted basis the
+  // project card uses. Pinning the arithmetic under the honest name so nobody
+  // "fixes" the rename by adding a year filter that the per-project basis
+  // cannot support (a quote has no date to filter on).
+  it('CHANGED: the totals cover every job ever entered, not the year to date', () => {
+    const inLastYear = {
+      ...SEED_PROJECTS[0],
+      id: 'proj-old',
+      startDate: '2025-03-01',
+      completedDate: '2025-03-20',
+    };
+    const oldInvoice = {
+      ...invoice('paid', 1000, '2025-03-21', '2025-03-20'),
+      projectId: 'proj-old',
+      dateIssued: '2025-03-20',
+    };
+    const summary = calculateBusinessSummary(
+      [inLastYear],
+      [],
+      [],
+      [oldInvoice],
+      NOW,
+      UTC
+    );
+    expect(summary.totalRevenueCents).toBe(100_000);
+    expect(summary.totalGrossProfitCents).toBe(100_000);
+    expect(summary).not.toHaveProperty('totalGrossProfitYTDCents');
+  });
+
   // CHANGED: in float dollars these two totals came out as 372.84999999999997
   // and 1391.5500000000002. Sums of cents are exact.
   it('CHANGED: totals that used to drift in float are exact', () => {
@@ -101,7 +142,7 @@ describe('calculateBusinessSummary', () => {
   // 'critical' severity for it). /margin's rule — null, never a sentinel —
   // now applies to the dashboard aggregate too.
   it('CHANGED: reports null margin and severity when there is no revenue', () => {
-    const summary = calculateBusinessSummary([], [], [], [], NOW);
+    const summary = calculateBusinessSummary([], [], [], [], NOW, UTC);
     expect(summary.averageMarginPct).toBeNull();
     expect(summary.averageMarginSeverity).toBeNull();
   });
@@ -115,6 +156,9 @@ describe('calculateBusinessSummary', () => {
     expect(summary.weeklyCashInflowCents).toBe(375_000);
     expect(summary.weeklyCashOutflowCents).toBe(139_155);
     expect(summary.weeklyNetCashFlowCents).toBe(235_845);
+    // The due-date check reads the same `now`: the seed's one open invoice
+    // (due 2026-08-20) is not overdue at NOW, however late the clock says it is.
+    expect(summary.overdueReceivablesCents).toBe(0);
   });
 
   it('CHANGED: a different `now` moves the weekly cash-flow window', () => {
@@ -137,17 +181,107 @@ describe('calculateBusinessSummary', () => {
     expect(summarize().averageHourlySeverity).toBe('healthy');
   });
 
-  it.each([
-    [0, 'healthy'],
-    [500, 'healthy'],
-    [500.01, 'caution'],
-    [2000, 'caution'],
-    [2000.01, 'critical'],
-  ])('$%s of overdue receivables is %s', (dollars, expected) => {
-    const invoices = dollars > 0 ? [invoice('overdue', dollars)] : [];
-    expect(calculateBusinessSummary([], [], [], invoices, NOW).receivablesSeverity).toBe(
-      expected
-    );
+  /**
+   * CHANGED: overdue is derived from `dueDate` against today on the owner's
+   * calendar, not read from `status`. Nothing in the product writes
+   * `'overdue'`, so the old `status === 'overdue'` check could never fire and
+   * every book of business reported $0 overdue and a green badge. The seed's
+   * open invoice is due 2026-08-20; NOW is midday UTC that day, so it is
+   * current in these tests and becomes overdue the next morning.
+   */
+  describe('overdue receivables', () => {
+    it('CHANGED: a sent invoice past its due date is overdue without anyone marking it', () => {
+      const summary = receivables([invoice('sent', 300, undefined, '2026-08-19')]);
+      expect(summary.overdueReceivablesCents).toBe(30_000);
+      expect(summary.outstandingReceivablesCents).toBe(30_000);
+    });
+
+    it('is not overdue on its due date, only after it', () => {
+      const dueToday = invoice('sent', 300, undefined, '2026-08-20');
+      expect(receivables([dueToday]).overdueReceivablesCents).toBe(0);
+      expect(
+        receivables([dueToday], new Date('2026-08-21T00:00:00.000Z')).overdueReceivablesCents
+      ).toBe(30_000);
+    });
+
+    it('reads "today" in the owner zone: due yesterday in Auckland while UTC is still on the due date', () => {
+      // 20:00Z on the 19th is 08:00 on the 20th in Auckland (UTC+12).
+      const dueOn19th = invoice('sent', 300, undefined, '2026-08-19');
+      const now = new Date('2026-08-19T20:00:00.000Z');
+      expect(receivables([dueOn19th], now, 'UTC').overdueReceivablesCents).toBe(0);
+      expect(receivables([dueOn19th], now, 'Pacific/Auckland').overdueReceivablesCents).toBe(
+        30_000
+      );
+    });
+
+    it('reads "today" in the owner zone: still the due date in Los Angeles while UTC has moved on', () => {
+      // 03:00Z on the 20th is 20:00 on the 19th in Los Angeles (UTC-7).
+      const dueOn19th = invoice('sent', 300, undefined, '2026-08-19');
+      const now = new Date('2026-08-20T03:00:00.000Z');
+      expect(receivables([dueOn19th], now, 'UTC').overdueReceivablesCents).toBe(30_000);
+      expect(
+        receivables([dueOn19th], now, 'America/Los_Angeles').overdueReceivablesCents
+      ).toBe(0);
+    });
+
+    it('never counts a paid invoice, however old its due date', () => {
+      const summary = receivables([invoice('paid', 300, '2026-08-01', '2026-07-01')]);
+      expect(summary.overdueReceivablesCents).toBe(0);
+      expect(summary.receivablesSeverity).toBe('healthy');
+    });
+
+    it('never counts a draft: nobody has been asked to pay it', () => {
+      const summary = receivables([invoice('draft', 300, undefined, '2026-07-01')]);
+      expect(summary.overdueReceivablesCents).toBe(0);
+      expect(summary.outstandingReceivablesCents).toBe(0);
+    });
+
+    it('keeps an imported row already marked overdue, once its due date has passed', () => {
+      expect(
+        receivables([invoice('overdue', 300, undefined, '2026-08-19')]).overdueReceivablesCents
+      ).toBe(30_000);
+      // The status alone does not make it late; the date does.
+      expect(
+        receivables([invoice('overdue', 300, undefined, '2026-09-01')]).overdueReceivablesCents
+      ).toBe(0);
+    });
+
+    it.each([
+      [0, 'healthy'],
+      [500, 'healthy'],
+      [500.01, 'caution'],
+      [2000, 'caution'],
+      [2000.01, 'critical'],
+    ])('$%s overdue since yesterday is %s', (dollars, expected) => {
+      const invoices = dollars > 0 ? [invoice('sent', dollars, undefined, '2026-08-19')] : [];
+      expect(receivables(invoices).receivablesSeverity).toBe(expected);
+    });
+
+    // CHANGED: THRESHOLDS.RECEIVABLES_OVERDUE_DAYS had no reader. The age of
+    // the oldest overdue invoice now grades the badge alongside the amount.
+    it.each([
+      ['2026-08-07', 13, 'healthy'],
+      ['2026-08-06', 14, 'caution'],
+      ['2026-07-22', 29, 'caution'],
+      ['2026-07-21', 30, 'critical'],
+    ])('CHANGED: $100 due %s (%s days ago) is %s', (dueDate, _days, expected) => {
+      expect(receivables([invoice('sent', 100, undefined, dueDate)]).receivablesSeverity).toBe(
+        expected
+      );
+    });
+
+    it('CHANGED: shows the worse of the amount and the age readings', () => {
+      // Small and very late: amount says healthy, age says critical.
+      const stale = invoice('sent', 100, undefined, '2026-06-01');
+      // Large and barely late: age says healthy, amount says critical.
+      const fresh = invoice('sent', 2500, undefined, '2026-08-19');
+      expect(receivables([stale]).receivablesSeverity).toBe('critical');
+      expect(receivables([fresh]).receivablesSeverity).toBe('critical');
+      // The oldest invoice sets the age, not the newest or the largest.
+      const middling = invoice('sent', 100, undefined, '2026-08-01');
+      expect(receivables([fresh, middling]).receivablesSeverity).toBe('critical');
+      expect(receivables([invoice('sent', 100, undefined, '2026-08-19'), middling]).receivablesSeverity).toBe('caution');
+    });
   });
 
   it.each([
@@ -160,7 +294,7 @@ describe('calculateBusinessSummary', () => {
     // One paid invoice in, one expense out, both inside the seven-day window.
     const invoices = [invoice('paid', 1000, '2026-08-19')];
     const transactions = [expense(1000 - net, '2026-08-19')];
-    const summary = calculateBusinessSummary([], transactions, [], invoices, NOW);
+    const summary = calculateBusinessSummary([], transactions, [], invoices, NOW, UTC);
     expect(summary.weeklyNetCashFlowCents).toBe(parseMoney(net));
     expect(summary.cashFlowSeverity).toBe(expected);
   });
@@ -177,15 +311,11 @@ describe('calculateBusinessSummary', () => {
    */
   describe('weekly cash outflow', () => {
     const spend = expense(1000, '2026-08-19');
+    const outflow = (transactions: ExpenseTransaction[]) =>
+      calculateBusinessSummary([], transactions, [], [], NOW, UTC);
 
     it('leaves out a negative row the user filed as ignored', () => {
-      const summary = calculateBusinessSummary(
-        [],
-        [spend, expense(-400, '2026-08-19', 'ignored')],
-        [],
-        [],
-        NOW
-      );
+      const summary = outflow([spend, expense(-400, '2026-08-19', 'ignored')]);
 
       expect(summary.weeklyCashOutflowCents).toBe(100_000);
       expect(summary.weeklyNetCashFlowCents).toBe(-100_000);
@@ -194,25 +324,13 @@ describe('calculateBusinessSummary', () => {
     it('leaves out a negative row the user filed against a job', () => {
       // `ignored` is the default a refund arrives with, not a promise it
       // keeps: the user can match one to a project. It is still not spending.
-      const summary = calculateBusinessSummary(
-        [],
-        [spend, expense(-400, '2026-08-19', 'matched')],
-        [],
-        [],
-        NOW
-      );
+      const summary = outflow([spend, expense(-400, '2026-08-19', 'matched')]);
 
       expect(summary.weeklyCashOutflowCents).toBe(100_000);
     });
 
     it('leaves out a positive row the user filed as ignored', () => {
-      const summary = calculateBusinessSummary(
-        [],
-        [spend, expense(250, '2026-08-19', 'ignored')],
-        [],
-        [],
-        NOW
-      );
+      const summary = outflow([spend, expense(250, '2026-08-19', 'ignored')]);
 
       expect(summary.weeklyCashOutflowCents).toBe(100_000);
     });
@@ -233,9 +351,7 @@ describe('calculateBusinessSummary', () => {
         postedAt: '2026-08-19T10:00:00.000Z',
       };
 
-      expect(
-        calculateBusinessSummary([], [posted], [], [], NOW).weeklyCashOutflowCents
-      ).toBe(50_000);
+      expect(outflow([posted]).weeklyCashOutflowCents).toBe(50_000);
     });
 
     it('leaves out a row dated this week that posted before it', () => {
@@ -244,9 +360,7 @@ describe('calculateBusinessSummary', () => {
         postedAt: '2026-08-11T10:00:00.000Z',
       };
 
-      expect(
-        calculateBusinessSummary([], [posted], [], [], NOW).weeklyCashOutflowCents
-      ).toBe(0);
+      expect(outflow([posted]).weeklyCashOutflowCents).toBe(0);
     });
 
     it('agrees with the waterfall about which rows are spending', () => {
@@ -259,9 +373,9 @@ describe('calculateBusinessSummary', () => {
       ];
       const spent = rows.filter((row) => row.status !== 'ignored' && row.amountCents > 0);
 
-      expect(
-        calculateBusinessSummary([], rows, [], [], NOW).weeklyCashOutflowCents
-      ).toBe(spent.reduce((total, row) => total + row.amountCents, 0));
+      expect(outflow(rows).weeklyCashOutflowCents).toBe(
+        spent.reduce((total, row) => total + row.amountCents, 0)
+      );
     });
   });
 
@@ -269,7 +383,7 @@ describe('calculateBusinessSummary', () => {
   // and the old code answered 85 - exactly the HOURLY_REALIZATION.HEALTHY
   // threshold - so an empty book of business rendered as green.
   it('CHANGED: realization is null, not $85/hr, when no hours have been logged', () => {
-    const summary = calculateBusinessSummary([], [], [], [], NOW);
+    const summary = calculateBusinessSummary([], [], [], [], NOW, UTC);
     expect(summary.averageHourlyRealizationCents).toBeNull();
     expect(summary.averageHourlySeverity).toBeNull();
   });

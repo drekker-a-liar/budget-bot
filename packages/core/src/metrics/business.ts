@@ -7,7 +7,12 @@ import {
   SeverityLevel,
 } from '../types';
 import { addCents, multiplyCents, percent, subtractCents } from '../money';
-import { getGrossMarginSeverity, getHourlySeverity } from './thresholds';
+import { daysBetween, localDateString } from './dates';
+import {
+  getGrossMarginSeverity,
+  getHourlySeverity,
+  getReceivablesAgeSeverity,
+} from './thresholds';
 import { calculateProjectKPIs } from './project';
 
 /** $2,000 and $500 of overdue receivables, in cents. */
@@ -16,25 +21,68 @@ const OVERDUE_CAUTION_CENTS = 50_000;
 /** A week $500 in the red, in cents. */
 const WEEKLY_CASH_CRITICAL_CENTS = -50_000;
 
+const SEVERITY_RANK: Record<SeverityLevel, number> = { healthy: 0, caution: 1, critical: 2 };
+
+/** The graver of two readings of the same thing. */
+function worstOf(a: SeverityLevel, b: SeverityLevel): SeverityLevel {
+  return SEVERITY_RANK[a] >= SEVERITY_RANK[b] ? a : b;
+}
+
+/**
+ * An invoice is overdue when it is still unpaid and its due date has passed
+ * on the owner's calendar. It is derived here, from `dueDate` against `now`
+ * in `timeZone`, rather than read from `status`: nothing in the product ever
+ * writes `'overdue'` (the enum value exists for imports and hand edits), so a
+ * rule that waited for it would never fire, and the dashboard reported every
+ * book of business as current. `'sent'` and `'overdue'` are both accepted so
+ * an imported row that already carries the status is not demoted; a draft has
+ * not been asked for and a paid one has been answered, so neither can be late.
+ */
+function isOverdue(invoice: Invoice, today: string): boolean {
+  return (
+    (invoice.status === 'sent' || invoice.status === 'overdue') && invoice.dueDate < today
+  );
+}
+
+/**
+ * The whole book of business, summarised for the overview page.
+ *
+ * `now` is an instant and `timeZone` is the owner's IANA zone: together they
+ * decide what "today" is for the due-date check, the same way the monthly
+ * margin decides which month a posting falls in. Neither is read from the
+ * environment, so the summary can be tested against a date boundary.
+ */
 export function calculateBusinessSummary(
   projects: Project[],
   transactions: ExpenseTransaction[],
   laborEntries: LaborEntry[],
   invoices: Invoice[],
-  now: Date
+  now: Date,
+  timeZone: string
 ): BusinessFinancialSummary {
   const kpis = projects.map((p) =>
     calculateProjectKPIs(p, transactions, laborEntries, invoices)
   );
 
-  const totalRevenueYTDCents = addCents(...kpis.map((k) => k.revenueCents));
-  const totalMaterialsYTDCents = addCents(...kpis.map((k) => k.actualMaterialsCostCents));
-  const totalLaborYTDCents = addCents(...kpis.map((k) => k.actualLaborCostCents));
-  const totalGrossProfitYTDCents = addCents(...kpis.map((k) => k.grossProfitCents));
+  // These sum the per-project KPIs as they stand, so they inherit that basis:
+  // a job's revenue is what has been invoiced (any status, drafts included)
+  // or, before anything is invoiced, its quote; costs are every matched
+  // transaction and labor entry regardless of date. That is an accrual-ish
+  // view of every job ever entered, not the year to date and not cash - the
+  // cash-basis, by-month figure lives in `calculateMonthlyMargins` (ADR 0006)
+  // and the two are not expected to agree. These fields were named `*YTD*`
+  // for a while, which they never were; a genuinely YTD figure would need the
+  // per-project basis to change underneath it (which invoices and costs count
+  // depends on their dates, and the quote fallback has no date at all), so the
+  // honest fix was the name and the label, not the arithmetic.
+  const totalRevenueCents = addCents(...kpis.map((k) => k.revenueCents));
+  const totalMaterialsCents = addCents(...kpis.map((k) => k.actualMaterialsCostCents));
+  const totalLaborCents = addCents(...kpis.map((k) => k.actualLaborCostCents));
+  const totalGrossProfitCents = addCents(...kpis.map((k) => k.grossProfitCents));
 
   // Null at zero revenue, same as /margin's monthly figure — a book with no
   // paid invoices has no margin, not a 0% one.
-  const averageMarginPct = percent(totalGrossProfitYTDCents, totalRevenueYTDCents);
+  const averageMarginPct = percent(totalGrossProfitCents, totalRevenueCents);
 
   // Realization uses the same net earnings each project reports, so the
   // business figure is the per-project figure scaled up rather than a second,
@@ -55,18 +103,29 @@ export function calculateBusinessSummary(
   );
 
   // Invoices & Receivables
+  const today = localDateString(now, timeZone);
   const outstandingReceivablesCents = addCents(
     ...invoices
       .filter((i) => i.status === 'sent' || i.status === 'overdue')
       .map((i) => i.amountCents)
   );
-  const overdueReceivablesCents = addCents(
-    ...invoices.filter((i) => i.status === 'overdue').map((i) => i.amountCents)
-  );
+  const overdue = invoices.filter((i) => isOverdue(i, today));
+  const overdueReceivablesCents = addCents(...overdue.map((i) => i.amountCents));
 
+  // Two readings, and the badge shows the worse. Amount alone lets a small
+  // invoice sit unpaid for months in green; age alone shows a $5,000 balance
+  // that went late yesterday in green. Either is something the owner should
+  // be chasing, so neither reading is allowed to hide the other.
   let receivablesSeverity: SeverityLevel = 'healthy';
   if (overdueReceivablesCents > OVERDUE_CRITICAL_CENTS) receivablesSeverity = 'critical';
   else if (overdueReceivablesCents > OVERDUE_CAUTION_CENTS) receivablesSeverity = 'caution';
+  if (overdue.length > 0) {
+    const oldestDaysPastDue = Math.max(...overdue.map((i) => daysBetween(i.dueDate, today)));
+    receivablesSeverity = worstOf(
+      receivablesSeverity,
+      getReceivablesAgeSeverity(oldestDaysPastDue)
+    );
+  }
 
   // Weekly Cash Flow (the seven days ending at `now`)
   const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -111,10 +170,10 @@ export function calculateBusinessSummary(
   else if (weeklyNetCashFlowCents < 0) cashFlowSeverity = 'caution';
 
   return {
-    totalRevenueYTDCents,
-    totalMaterialsYTDCents,
-    totalLaborYTDCents,
-    totalGrossProfitYTDCents,
+    totalRevenueCents,
+    totalMaterialsCents,
+    totalLaborCents,
+    totalGrossProfitCents,
     averageMarginPct,
     averageMarginSeverity:
       averageMarginPct === null ? null : getGrossMarginSeverity(averageMarginPct),

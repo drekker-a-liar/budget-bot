@@ -67,14 +67,28 @@ export function DashboardMetrics({ summary, onOpenInbox }: DashboardMetricsProps
           />
         </div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.25rem' }}>
-          <span className="swiss-header tnum" style={{ fontSize: '2.25rem', color: '#f8fafc' }}>
+          <span className="swiss-header tnum" style={{ fontSize: '2.25rem', color: 'var(--text-primary)' }}>
             {summary.averageMarginPct === null ? '—' : `${summary.averageMarginPct}%`}
           </span>
           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>avg across jobs</span>
         </div>
         <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.5rem' }}>
-          <span>Target: <strong style={{ color: '#f8fafc' }}>{THRESHOLDS.GROSS_MARGIN.HEALTHY.toFixed(1)}%</strong></span>
-          <span>YTD Profit: <strong className="tnum" style={{ color: summary.totalGrossProfitYTDCents >= 0 ? 'var(--severity-healthy)' : 'var(--severity-critical)' }}>{formatCents(summary.totalGrossProfitYTDCents)}</strong></span>
+          <span>Target: <strong style={{ color: 'var(--text-primary)' }}>{THRESHOLDS.GROSS_MARGIN.HEALTHY.toFixed(1)}%</strong></span>
+          {/*
+            Not "YTD Profit", which this figure was labelled for two phases and
+            never was: it is every job's gross profit summed, on the project
+            card's basis (invoiced or, before that, quoted revenue against all
+            matched costs), with no date filter. Making it genuinely YTD would
+            have meant a third basis beside the card's and /margin's cash one,
+            and a quote has no date to filter on anyway, so the label now says
+            what the number is and the basis sits beside it. /margin remains
+            the place to read profit by month.
+          */}
+          <span>
+            Profit, all jobs{' '}
+            <span style={{ color: 'var(--text-muted)' }}>(invoiced or quoted)</span>:{' '}
+            <strong className="tnum" style={{ color: summary.totalGrossProfitCents >= 0 ? 'var(--severity-healthy)' : 'var(--severity-critical)' }}>{formatCents(summary.totalGrossProfitCents)}</strong>
+          </span>
         </div>
       </div>
 
@@ -95,7 +109,7 @@ export function DashboardMetrics({ summary, onOpenInbox }: DashboardMetricsProps
           />
         </div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.25rem' }}>
-          <span className="swiss-header tnum" style={{ fontSize: '2.25rem', color: '#f8fafc' }}>
+          <span className="swiss-header tnum" style={{ fontSize: '2.25rem', color: 'var(--text-primary)' }}>
             {summary.averageHourlyRealizationCents === null
               ? '\u2014'
               : formatCents(summary.averageHourlyRealizationCents, { showCents: false })}
@@ -103,7 +117,7 @@ export function DashboardMetrics({ summary, onOpenInbox }: DashboardMetricsProps
           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>/ billable hr</span>
         </div>
         <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.5rem' }}>
-          <span>Target: <strong style={{ color: '#f8fafc' }}>{formatCents(THRESHOLDS.HOURLY_REALIZATION.HEALTHY)}/hr</strong></span>
+          <span>Target: <strong style={{ color: 'var(--text-primary)' }}>{formatCents(THRESHOLDS.HOURLY_REALIZATION.HEALTHY)}/hr</strong></span>
           <span>After Material Pass-through</span>
         </div>
       </div>
@@ -161,7 +175,7 @@ export function DashboardMetrics({ summary, onOpenInbox }: DashboardMetricsProps
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.25rem' }}>
-          <span className="swiss-header tnum" style={{ fontSize: '2.25rem', color: '#f8fafc' }}>
+          <span className="swiss-header tnum" style={{ fontSize: '2.25rem', color: 'var(--text-primary)' }}>
             {formatCents(summary.unassignedTransactionsTotalCents)}
           </span>
           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>unlinked spend</span>
@@ -190,13 +204,13 @@ export function DashboardMetrics({ summary, onOpenInbox }: DashboardMetricsProps
           />
         </div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.25rem' }}>
-          <span className="swiss-header tnum" style={{ fontSize: '2.25rem', color: '#f8fafc' }}>
+          <span className="swiss-header tnum" style={{ fontSize: '2.25rem', color: 'var(--text-primary)' }}>
             {formatCents(summary.outstandingReceivablesCents)}
           </span>
           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>invoiced</span>
         </div>
         <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.5rem' }}>
-          <span>Overdue: <strong className="tnum" style={{ color: summary.overdueReceivablesCents > 0 ? 'var(--severity-critical)' : '#f8fafc' }}>{formatCents(summary.overdueReceivablesCents)}</strong></span>
+          <span>Overdue: <strong className="tnum" style={{ color: summary.overdueReceivablesCents > 0 ? 'var(--severity-critical)' : 'var(--text-primary)' }}>{formatCents(summary.overdueReceivablesCents)}</strong></span>
           <span>{summary.openProjectsCount} active jobs</span>
         </div>
       </div>

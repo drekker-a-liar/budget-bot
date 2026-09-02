@@ -73,7 +73,7 @@ export function aLaborEntry(overrides: Partial<LaborEntry> = {}): LaborEntry {
     date: '2026-08-17',
     hours: 6,
     hourlyRateCents: parseMoney(85),
-    workerName: 'Mike (Lead)',
+    workerName: 'Lead Carpenter',
     createdAt: '2026-08-17T15:00:00.000Z',
     ...overrides,
   };
@@ -129,10 +129,10 @@ export function aSummary(
   overrides: Partial<BusinessFinancialSummary> = {}
 ): BusinessFinancialSummary {
   return {
-    totalRevenueYTDCents: parseMoney(13250),
-    totalMaterialsYTDCents: parseMoney(3500),
-    totalLaborYTDCents: parseMoney(4200),
-    totalGrossProfitYTDCents: parseMoney(5550),
+    totalRevenueCents: parseMoney(13250),
+    totalMaterialsCents: parseMoney(3500),
+    totalLaborCents: parseMoney(4200),
+    totalGrossProfitCents: parseMoney(5550),
     averageMarginPct: 41.9,
     averageMarginSeverity: 'caution',
     averageHourlyRealizationCents: parseMoney(96.5),

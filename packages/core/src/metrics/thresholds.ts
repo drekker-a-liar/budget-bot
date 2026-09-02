@@ -21,9 +21,11 @@ export const THRESHOLDS = {
     HEALTHY: 90, // <= 90% is green
     CAUTION: 100, // 91% - 100% is yellow, > 100% is red
   },
+  // Age of the oldest unpaid invoice past its due date. Under two weeks late
+  // is the normal lag between mailing and a client paying.
   RECEIVABLES_OVERDUE_DAYS: {
-    HEALTHY: 14,
-    CAUTION: 30,
+    HEALTHY: 14, // < 14 days past due is green
+    CAUTION: 30, // 14 - 29 days is yellow, >= 30 days is red
   },
 };
 
@@ -48,5 +50,12 @@ export function getMaterialMarkupSeverity(markupPct: number): SeverityLevel {
 export function getBudgetSeverity(spentRatioPct: number): SeverityLevel {
   if (spentRatioPct <= THRESHOLDS.BUDGET_VARIANCE.HEALTHY) return 'healthy';
   if (spentRatioPct <= THRESHOLDS.BUDGET_VARIANCE.CAUTION) return 'caution';
+  return 'critical';
+}
+
+/** Grades how long the oldest overdue invoice has been waiting, in whole days past its due date. */
+export function getReceivablesAgeSeverity(daysPastDue: number): SeverityLevel {
+  if (daysPastDue < THRESHOLDS.RECEIVABLES_OVERDUE_DAYS.HEALTHY) return 'healthy';
+  if (daysPastDue < THRESHOLDS.RECEIVABLES_OVERDUE_DAYS.CAUTION) return 'caution';
   return 'critical';
 }

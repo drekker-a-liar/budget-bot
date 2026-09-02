@@ -20,7 +20,7 @@ describe('DashboardMetrics', () => {
     render(
       <DashboardMetrics
         summary={aSummary({
-          totalGrossProfitYTDCents: parseMoney(5550.4),
+          totalGrossProfitCents: parseMoney(5550.4),
           unassignedTransactionsTotalCents: parseMoney(372.85),
           outstandingReceivablesCents: parseMoney(4500),
           averageHourlyRealizationCents: parseMoney(96.5),
@@ -98,12 +98,12 @@ describe('DashboardMetrics', () => {
     expect(screen.getByText('+$2,000')).toBeInTheDocument();
   });
 
-  it('draws a YTD loss as a loss rather than in the healthy colour', () => {
-    // The figure was hardcoded green whatever its sign, so a year in the red
-    // rendered as a year in the black with a minus sign nobody had drawn.
+  it('draws an all-jobs loss as a loss rather than in the healthy colour', () => {
+    // The figure was hardcoded green whatever its sign, so a book in the red
+    // rendered as a book in the black with a minus sign nobody had drawn.
     render(
       <DashboardMetrics
-        summary={aSummary({ totalGrossProfitYTDCents: parseMoney(-500) })}
+        summary={aSummary({ totalGrossProfitCents: parseMoney(-500) })}
       />
     );
 
@@ -111,16 +111,31 @@ describe('DashboardMetrics', () => {
     expect(profit).toHaveStyle({ color: 'var(--severity-critical)' });
   });
 
-  it('draws a YTD profit in the healthy colour', () => {
+  it('draws an all-jobs profit in the healthy colour', () => {
     render(
       <DashboardMetrics
-        summary={aSummary({ totalGrossProfitYTDCents: parseMoney(5550.4) })}
+        summary={aSummary({ totalGrossProfitCents: parseMoney(5550.4) })}
       />
     );
 
     expect(screen.getByText('$5,550.40')).toHaveStyle({
       color: 'var(--severity-healthy)',
     });
+  });
+
+  /**
+   * The profit line said "YTD" for two phases while summing every job ever
+   * entered with no date filter, on invoiced-or-quoted revenue - so it and
+   * /margin (cash basis, by month) disagreed and the label hid why. The label
+   * now names the population and the basis; a "YTD" creeping back in without
+   * a year filter behind it is the regression this pins.
+   */
+  it('labels the profit figure by what it covers, not as year to date', () => {
+    render(<DashboardMetrics summary={aSummary()} />);
+
+    expect(screen.getByText(/Profit, all jobs/)).toBeInTheDocument();
+    expect(screen.getByText(/invoiced or quoted/)).toBeInTheDocument();
+    expect(screen.queryByText(/YTD/)).not.toBeInTheDocument();
   });
 
   it('counts the pending inbox when there is one', () => {
