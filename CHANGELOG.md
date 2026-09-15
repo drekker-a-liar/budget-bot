@@ -4,7 +4,7 @@ Notable changes, newest first. Versions follow the sub-project sequence in the
 [architecture](docs/superpowers/specs/2026-08-20-system-architecture-design.md)
 rather than a release cadence.
 
-## v0.5.0-production — unreleased
+## v0.5.0-production — 2026-09-15
 
 Phase 5: **Docs, Security Audit, Production.** The phase where a stranger can
 run this in production and trust it: the security posture written down and
@@ -103,7 +103,7 @@ audited, the release path documented, and the debts Phase 4 ledgered paid.
   inbox delete button an accessible name, and the inbox category filter the
   Subcontractor option the row select already had.
 
-## v0.4.0-margin — unreleased
+## v0.4.0-margin — 2026-08-26
 
 Phase 4: **Monthly Gross Margin.** `/margin` charts the trailing 12 months of
 gross margin, cash basis (ADR 0006): paid invoices as revenue against posted
@@ -122,7 +122,7 @@ still in progress.
 - `/margin` joined the header nav, gated behind the same session check as
   every other page. The e2e journey grew from 15 to 16 steps to cover it.
 
-## v0.3.0-lifecycle — unreleased
+## v0.3.0-lifecycle — 2026-08-25
 
 Phase 3: **Webhooks, Cron, and Connection Lifecycle.** A linked bank stays
 current and healthy without the user pressing anything: Plaid pushes updates to
@@ -183,7 +183,7 @@ click, and the settings page can disconnect a bank or export/delete everything.
   config, joining the packages that were already there; the dependency-boundary
   rules survived the move rule-for-rule, proven by forbidden-import tests.
 
-## v0.2.0-plaid-sandbox — unreleased
+## v0.2.0-plaid-sandbox — 2026-08-21
 
 Phase 2: **Plaid Sandbox Connector.** A signed-in owner links a bank through
 Plaid Link, the access token is stored encrypted, and **Sync now** pulls
@@ -350,7 +350,7 @@ it proved by tests that need no Plaid credentials.
 - **`db:seed --reset` now proves its blast radius**: the test keeps a second
   owner's connection in the database and asserts it survives.
 
-## v0.1.0-foundation — unreleased
+## v0.1.0-foundation — 2026-08-21
 
 Phase 1: **Foundation + Locked Door.** The application became a monorepo with a
 real database and a real front door. No bank code ships before this is
