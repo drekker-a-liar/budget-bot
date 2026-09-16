@@ -102,6 +102,12 @@ audited, the release path documented, and the debts Phase 4 ledgered paid.
   Buttons gained an explicit `type`, the inbox filters `aria-pressed`, the
   inbox delete button an accessible name, and the inbox category filter the
   Subcontractor option the row select already had.
+- Next.js 15.5.23 → 15.5.25 and the `sharp` override raised to 0.35.4, for
+  two critical Next advisories (GHSA-2xp9-vwfh-vxw4, unauthenticated RCE in
+  the Image Optimization API via AVIF; GHSA-p293-qw3h-jr36) and one high
+  in `sharp`'s bundled libheif (GHSA-rgj7-g3m4-5g8c). CI's blocking
+  `pnpm audit` caught them on release day; a self-hoster on 0.5.0 gets the
+  patched versions, one on an earlier tag should redeploy.
 
 ## v0.4.0-margin — 2026-08-26
 
