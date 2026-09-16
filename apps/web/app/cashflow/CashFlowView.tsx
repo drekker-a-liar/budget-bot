@@ -7,6 +7,7 @@ import { CashFlowWaterfall } from '@/components/CashFlowWaterfall';
 import { Navigation } from '@/components/Navigation';
 import { QuickAddModal, type QuickAddTab } from '@/components/QuickAddModal';
 import { availableCreditOf } from '@/src/client/card';
+import { localCalendarDate } from '@/lib/localDate';
 import { markInvoicePaidAction } from '@/src/server/actions/invoices';
 import type { CashflowPageData } from '@/src/server/queries/cashflow';
 
@@ -22,6 +23,8 @@ const CATEGORIES: Array<{ name: string; key: ExpenseCategory; color: string }> =
   { name: 'Tools & Equipment', key: 'tools', color: 'var(--severity-caution)' },
   { name: 'Fuel & Transit', key: 'mileage_fuel', color: 'var(--accent-indigo)' },
   { name: 'Permits & Dump Fees', key: 'permits_fees', color: 'var(--text-muted)' },
+  // Pink has no token: the cyan, caution, indigo and muted tokens are taken by the
+  // other four categories and this is its only use, so a literal beats a one-off token.
   { name: 'Overhead & Admin', key: 'overhead', color: '#ec4899' },
 ];
 
@@ -41,7 +44,10 @@ export function CashFlowView({
   const markPaid = (invoiceId: string) => {
     setError(null);
     startTransition(async () => {
-      const result = await markInvoicePaidAction({ id: invoiceId });
+      // The day the button was pressed, on the clock the person can see. The
+      // action takes no default for it: the server would have to reach for the
+      // owner's time zone to know which day it is here, and the browser knows.
+      const result = await markInvoicePaidAction({ id: invoiceId, paidDate: localCalendarDate() });
       if (!result.ok) setError(result.error);
     });
   };
@@ -61,12 +67,12 @@ export function CashFlowView({
             <div className="swiss-label" style={{ marginBottom: '0.2rem' }}>
               Liquidity &amp; Runway Intelligence
             </div>
-            <h1 className="swiss-header" style={{ fontSize: '1.85rem', color: '#f8fafc' }}>
+            <h1 className="swiss-header" style={{ fontSize: '1.85rem', color: 'var(--text-primary)' }}>
               Cash Flow Waterfall &amp; Burn Runway
             </h1>
           </div>
 
-          <button onClick={() => setQuickAdd({ tab: 'invoice' })} className="btn-primary">
+          <button type="button" onClick={() => setQuickAdd({ tab: 'invoice' })} className="btn-primary">
             <FileText size={14} />
             <span>+ Create Invoice</span>
           </button>
@@ -100,12 +106,12 @@ export function CashFlowView({
           <div className="swiss-card">
             <div className="swiss-card-header">
               <div>
-                <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#f8fafc', letterSpacing: '-0.02em' }}>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
                   YTD Spend by Expense Category
                 </h3>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                   Total Disbursed:{' '}
-                  <strong className="tnum" style={{ color: '#f8fafc' }}>
+                  <strong className="tnum" style={{ color: 'var(--text-primary)' }}>
                     {formatCents(spend.totalCents)}
                   </strong>
                 </div>
@@ -119,12 +125,12 @@ export function CashFlowView({
                 return (
                   <div key={cat.key}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', marginBottom: '0.25rem' }}>
-                      <span style={{ color: '#f8fafc', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <span style={{ color: 'var(--text-primary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                         <span style={{ width: '8px', height: '8px', borderRadius: '2px', backgroundColor: cat.color }} />
                         {cat.name}
                       </span>
                       <span className="tnum" style={{ color: 'var(--text-secondary)' }}>
-                        <strong style={{ color: '#f8fafc' }}>{formatCents(amountCents)}</strong> ({pct}%)
+                        <strong style={{ color: 'var(--text-primary)' }}>{formatCents(amountCents)}</strong> ({pct}%)
                       </span>
                     </div>
 
@@ -148,7 +154,7 @@ export function CashFlowView({
           <div className="swiss-card" style={{ padding: 0 }}>
             <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#f8fafc', letterSpacing: '-0.02em' }}>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
                   Receivables &amp; Invoice Aging
                 </h3>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
@@ -181,7 +187,7 @@ export function CashFlowView({
                     return (
                       <tr key={inv.id}>
                         <td>
-                          <div style={{ fontWeight: 700, color: '#f8fafc', fontSize: '0.825rem' }}>
+                          <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.825rem' }}>
                             {inv.invoiceNumber}
                           </div>
                           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
@@ -206,6 +212,7 @@ export function CashFlowView({
                         <td>
                           {inv.status !== 'paid' && (
                             <button
+                              type="button"
                               onClick={() => markPaid(inv.id)}
                               disabled={pending}
                               className="btn-success"
@@ -225,12 +232,13 @@ export function CashFlowView({
         </div>
       </div>
 
-      <QuickAddModal
-        initialTab={quickAdd?.tab ?? 'invoice'}
-        projects={projects}
-        isOpen={quickAdd !== null}
-        onClose={() => setQuickAdd(null)}
-      />
+      {quickAdd !== null && (
+        <QuickAddModal
+          initialTab={quickAdd.tab}
+          projects={projects}
+          onClose={() => setQuickAdd(null)}
+        />
+      )}
     </div>
   );
 }

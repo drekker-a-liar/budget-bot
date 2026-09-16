@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { parseMoney } from '@budget-bot/core';
+import { parseMoney, THRESHOLDS } from '@budget-bot/core';
 import { aKpi } from '@/test/helpers/props';
 import { MarginGauge } from './MarginGauge';
 
@@ -76,6 +76,27 @@ describe('MarginGauge', () => {
     );
 
     expect(segment('Profit Margin')).toHaveStyle({ width: '100%' });
+  });
+
+  it('shows an em dash, not "null%", for a job with no revenue to take a margin of', () => {
+    // A quote with nothing invoiced has no margin. The legend used to
+    // interpolate the field straight into the string, which for a zero-quote
+    // job printed "(null%)" next to a real dollar figure.
+    render(<MarginGauge kpi={aKpi({ grossMarginPct: null, grossMarginSeverity: null })} />);
+
+    expect(screen.getByText(/Profit Margin:/).textContent).toContain('(—)');
+    expect(screen.queryByText(/null/)).not.toBeInTheDocument();
+  });
+
+  it('draws the target notch where the healthy-margin threshold puts it', () => {
+    // The notch is the cost ceiling that still leaves THRESHOLDS.GROSS_MARGIN.HEALTHY
+    // as profit. It was once typed as 55%; if the threshold moves and the line
+    // does not, the bar contradicts the badge next to it.
+    render(<MarginGauge kpi={aKpi()} />);
+    const notch = segment('Target Cost Ceiling');
+
+    expect(notch).toHaveStyle({ left: `${100 - THRESHOLDS.GROSS_MARGIN.HEALTHY}%` });
+    expect(notch.getAttribute('title')).toContain(`${THRESHOLDS.GROSS_MARGIN.HEALTHY}% Margin`);
   });
 
   it('hides the legend when the caller only wants the bar', () => {

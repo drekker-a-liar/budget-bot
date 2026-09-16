@@ -4,6 +4,7 @@ import NextAuth from 'next-auth';
 import { authConfig } from '@/auth.config';
 import { isE2eSignInEnabled } from '@/lib/e2eProvider';
 import { mintE2eDatabaseSession } from '@/lib/e2eSession';
+import { stripAccountTokens } from '@/lib/stripAccountTokens';
 import { env } from '@/src/env';
 
 /**
@@ -19,12 +20,23 @@ import { env } from '@/src/env';
  * mocks this module, would otherwise need a reachable database.
  */
 export const { handlers, auth, signIn, signOut } = NextAuth(() => {
-  const adapter = DrizzleAdapter(getDb(), {
+  const drizzleAdapter = DrizzleAdapter(getDb(), {
     usersTable: schema.users,
     accountsTable: schema.accounts,
     sessionsTable: schema.sessions,
     verificationTokensTable: schema.verificationTokens,
   });
+
+  // The GitHub token is used once, transiently, to fetch the verified
+  // profile during sign-in; nothing ever reads it back from `accounts`, so
+  // it is stripped before the row is written - a database dump must not
+  // hand over a live GitHub credential (Phase 5 audit; ADR 0002 makes the
+  // same argument for bank tokens).
+  const adapter = {
+    ...drizzleAdapter,
+    linkAccount: (account: Parameters<typeof stripAccountTokens>[0]) =>
+      drizzleAdapter.linkAccount!(stripAccountTokens(account)),
+  };
 
   return {
     ...authConfig,

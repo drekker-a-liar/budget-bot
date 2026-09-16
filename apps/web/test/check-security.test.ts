@@ -26,6 +26,7 @@ const WEB = fileURLToPath(new URL('..', import.meta.url));
 
 /** A complete production environment, in the shape of the CI fixture. */
 const COMPLETE: Record<string, string> = {
+  DATABASE_URL: 'postgres://user:pw@db.example.com:5432/budget_bot',
   AUTH_SECRET: 'notnotnotnotnotnotnotnotnotnotnot',
   AUTH_GITHUB_ID: 'Iv1.0123456789abcdef',
   AUTH_GITHUB_SECRET: 'notarealgithuboauthclientsecret0',
@@ -157,6 +158,7 @@ describe('reading an explicit --from', () => {
       path,
       [
         '# Created by Vercel CLI',
+        'DATABASE_URL="postgres://user:pw@db.example.com:5432/budget_bot"',
         'AUTH_SECRET="notnotnotnotnotnotnotnotnotnotnot"',
         "AUTH_GITHUB_ID='Iv1.0123456789abcdef'",
         'AUTH_GITHUB_SECRET=notarealgithuboauthclientsecret0',

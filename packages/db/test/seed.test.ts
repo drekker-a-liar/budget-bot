@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { expect, it } from 'vitest';
 import { bankRepo, invoicesRepo, laborRepo, ownersRepo, projectsRepo, transactionsRepo } from '../src/repos';
-import { bankAccounts, bankConnections, users } from '../src/schema';
+import { bankAccounts, bankConnections, users, type UserSettings } from '../src/schema';
 import { SEED_PROJECTS, SEED_TRANSACTIONS, seedOwner } from '../src/seed';
 import { createOwner, describeDb, useTestDb } from './helpers/db';
 
@@ -143,6 +143,39 @@ describeDb('seedOwner', () => {
     await seedOwner(db, ownerId, { reset: true });
 
     expect(await ownersRepo.getTimeZone(db, ownerId)).toBe('America/Los_Angeles');
+  });
+
+  it('keeps settings keys it does not own when it sets the time zone', async () => {
+    // The jsonb can hold keys this build has never heard of; a seed that
+    // replaces the whole object erases them (Phase 4 ledger, spec §3).
+    const db = getDb();
+    const ownerId = await createOwner(db);
+    await db
+      .update(users)
+      .set({ settings: { timeZone: 'America/New_York', theme: 'dark' } as UserSettings })
+      .where(eq(users.id, ownerId));
+
+    await seedOwner(db, ownerId, { reset: true });
+
+    const [row] = await db.select({ settings: users.settings }).from(users).where(eq(users.id, ownerId));
+    expect(row.settings).toEqual({ timeZone: 'America/Los_Angeles', theme: 'dark' });
+  });
+
+  it('writes an evergreen book: the fixtures follow the seeding month', async () => {
+    const db = getDb();
+    const ownerId = await createOwner(db);
+
+    await seedOwner(db, ownerId, { now: new Date('2028-03-15T12:00:00.000Z') });
+
+    const paidDates = (await invoicesRepo.listInvoices(db, ownerId))
+      .map((invoice) => invoice.paidDate)
+      .filter((date): date is string => date != null);
+    expect(paidDates.length).toBeGreaterThan(0);
+    for (const date of paidDates) {
+      // Inside the trailing 13-month margin window of the seeding instant.
+      expect(date >= '2027-03-01').toBe(true);
+      expect(date <= '2028-03-31').toBe(true);
+    }
   });
 
   it('leaves an owner’s own time zone alone when it already had data', async () => {

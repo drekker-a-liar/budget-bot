@@ -1,7 +1,7 @@
 {
   "version": 2,
   "framework": "nextjs",
-  "buildCommand": "pnpm --filter @budget-bot/db db:migrate && pnpm --filter web build",
+  "buildCommand": "if [ \"$VERCEL_ENV\" = production ]; then pnpm --filter @budget-bot/db db:migrate; fi && pnpm --filter web build",
   "devCommand": "pnpm --filter web dev",
   "installCommand": "pnpm install --frozen-lockfile",
   "crons": [{ "path": "/api/internal/sync", "schedule": "0 6 * * *" }]

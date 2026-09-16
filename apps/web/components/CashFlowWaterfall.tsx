@@ -111,7 +111,7 @@ export function CashFlowWaterfall({
         <div className="swiss-card">
           <span className="swiss-label">Average Weekly Outflow</span>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.25rem' }}>
-            <span className="swiss-header tnum" style={{ fontSize: '2rem', color: '#f8fafc' }}>
+            <span className="swiss-header tnum" style={{ fontSize: '2rem', color: 'var(--text-primary)' }}>
               {formatCents(weeklyBurn, { showCents: false })}
             </span>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>/ week</span>
@@ -146,7 +146,7 @@ export function CashFlowWaterfall({
       <div className="swiss-card">
         <div className="swiss-card-header">
           <div>
-            <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#f8fafc', letterSpacing: '-0.02em' }}>
+            <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
               Week-to-Week Cash Flow Waterfall
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
@@ -179,7 +179,7 @@ export function CashFlowWaterfall({
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                  <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#f8fafc' }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-primary)' }}>
                     {weekLabel(week.weekStart)}
                   </div>
                   <div

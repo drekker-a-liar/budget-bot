@@ -55,7 +55,7 @@ export function DashboardView({
             <div className="swiss-label" style={{ marginBottom: '0.2rem' }}>
               Financial Operating Ledger
             </div>
-            <h1 className="swiss-header" style={{ fontSize: '1.85rem', color: '#f8fafc' }}>
+            <h1 className="swiss-header" style={{ fontSize: '1.85rem', color: 'var(--text-primary)' }}>
               Contractor Profit &amp; Expense Command
             </h1>
           </div>
@@ -86,7 +86,7 @@ export function DashboardView({
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem' }}>
               <div>
-                <h2 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#f8fafc', letterSpacing: '-0.02em' }}>
+                <h2 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
                   Active Job Cost Centers
                 </h2>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
@@ -119,7 +119,7 @@ export function DashboardView({
           <div ref={inboxRef}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem' }}>
               <div>
-                <h2 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#f8fafc', letterSpacing: '-0.02em' }}>
+                <h2 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
                   Card Ingestion &amp; Expense Triage
                 </h2>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
@@ -147,7 +147,7 @@ export function DashboardView({
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem' }}>
             <div>
-              <h2 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#f8fafc', letterSpacing: '-0.02em' }}>
+              <h2 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
                 Day-to-Day &amp; Weekly Cash Flow
               </h2>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
@@ -168,13 +168,14 @@ export function DashboardView({
         </div>
       </div>
 
-      <QuickAddModal
-        initialTab={quickAdd?.tab ?? 'expense'}
-        initialProjectId={quickAdd?.projectId}
-        projects={projects}
-        isOpen={quickAdd !== null}
-        onClose={() => setQuickAdd(null)}
-      />
+      {quickAdd !== null && (
+        <QuickAddModal
+          initialTab={quickAdd.tab}
+          initialProjectId={quickAdd.projectId}
+          projects={projects}
+          onClose={() => setQuickAdd(null)}
+        />
+      )}
     </div>
   );
 }

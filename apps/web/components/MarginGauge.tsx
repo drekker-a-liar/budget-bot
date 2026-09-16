@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { addCents, formatCents, ProjectFinancialKPIs } from '@budget-bot/core';
+import { addCents, formatCents, ProjectFinancialKPIs, THRESHOLDS } from '@budget-bot/core';
 import { SeverityBadge } from './SeverityBadge';
 
 interface MarginGaugeProps {
@@ -19,6 +19,12 @@ export function MarginGauge({ kpi, showLabels = true }: MarginGaugeProps) {
     Math.round((otherCostsCents / revenue) * 1000) / 10
   );
   const profitPct = Math.max(0, 100 - materialsPct - laborPct - otherPct);
+
+  // The notch marks the direct-cost ceiling that still leaves a healthy margin.
+  // It is derived from the threshold rather than typed as 55 so that a change
+  // to THRESHOLDS moves the line and the badge together; a marker that stays
+  // put while the badge turns yellow would be worse than no marker at all.
+  const costCeilingPct = 100 - THRESHOLDS.GROSS_MARGIN.HEALTHY;
 
   // Severity color for profit section
   let profitColor = 'var(--severity-healthy)';
@@ -92,19 +98,19 @@ export function MarginGauge({ kpi, showLabels = true }: MarginGaugeProps) {
           />
         )}
 
-        {/* Target 45% Notch Line */}
+        {/* Target margin notch line */}
         <div
           style={{
             position: 'absolute',
-            left: '55%', // 100% - 45% = 55% direct cost threshold
+            left: `${costCeilingPct}%`,
             top: 0,
             bottom: 0,
             width: '2px',
-            backgroundColor: '#ffffff',
+            backgroundColor: 'var(--text-bright)',
             opacity: 0.7,
             zIndex: 2,
           }}
-          title="Target Cost Ceiling (55% / 45% Margin)"
+          title={`Target Cost Ceiling (${costCeilingPct}% / ${THRESHOLDS.GROSS_MARGIN.HEALTHY}% Margin)`}
         />
       </div>
 
@@ -125,18 +131,18 @@ export function MarginGauge({ kpi, showLabels = true }: MarginGaugeProps) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
               <span style={{ width: '8px', height: '8px', borderRadius: '2px', backgroundColor: 'var(--accent-cyan)' }} />
-              Materials: <strong className="tnum" style={{ color: '#f8fafc' }}>{formatCents(kpi.actualMaterialsCostCents)}</strong> ({materialsPct}%)
+              Materials: <strong className="tnum" style={{ color: 'var(--text-primary)' }}>{formatCents(kpi.actualMaterialsCostCents)}</strong> ({materialsPct}%)
             </span>
 
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
               <span style={{ width: '8px', height: '8px', borderRadius: '2px', backgroundColor: 'var(--accent-indigo)' }} />
-              Labor: <strong className="tnum" style={{ color: '#f8fafc' }}>{formatCents(kpi.actualLaborCostCents)}</strong> ({laborPct}%)
+              Labor: <strong className="tnum" style={{ color: 'var(--text-primary)' }}>{formatCents(kpi.actualLaborCostCents)}</strong> ({laborPct}%)
             </span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
             <span style={{ width: '8px', height: '8px', borderRadius: '2px', backgroundColor: profitColor }} />
-            Profit Margin: <strong className="tnum" style={{ color: profitColor }}>{formatCents(kpi.grossProfitCents)} ({kpi.grossMarginPct}%)</strong>
+            Profit Margin: <strong className="tnum" style={{ color: profitColor }}>{formatCents(kpi.grossProfitCents)} ({kpi.grossMarginPct === null ? '—' : `${kpi.grossMarginPct}%`})</strong>
           </div>
         </div>
       )}

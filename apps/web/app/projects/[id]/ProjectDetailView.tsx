@@ -110,7 +110,7 @@ export function ProjectDetailView({
                 style={{
                   background: 'var(--bg-panel)',
                   border: '1px solid var(--border-strong)',
-                  color: '#f8fafc',
+                  color: 'var(--text-primary)',
                   padding: '0.25rem 0.5rem',
                   borderRadius: '4px',
                   fontSize: '0.75rem',
@@ -129,7 +129,7 @@ export function ProjectDetailView({
               </span>
             </div>
 
-            <h1 className="swiss-header" style={{ fontSize: '1.85rem', color: '#f8fafc', marginBottom: '0.4rem' }}>
+            <h1 className="swiss-header" style={{ fontSize: '1.85rem', color: 'var(--text-primary)', marginBottom: '0.4rem' }}>
               {project.name}
             </h1>
 
@@ -147,17 +147,17 @@ export function ProjectDetailView({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <button onClick={() => setQuickAdd({ tab: 'expense' })} className="btn-primary" style={{ fontSize: '0.75rem' }}>
+            <button type="button" onClick={() => setQuickAdd({ tab: 'expense' })} className="btn-primary" style={{ fontSize: '0.75rem' }}>
               <Receipt size={13} />
               <span>+ Add Receipt</span>
             </button>
 
-            <button onClick={() => setQuickAdd({ tab: 'labor' })} className="btn-secondary" style={{ fontSize: '0.75rem' }}>
+            <button type="button" onClick={() => setQuickAdd({ tab: 'labor' })} className="btn-secondary" style={{ fontSize: '0.75rem' }}>
               <Clock size={13} />
               <span>+ Log Labor</span>
             </button>
 
-            <button onClick={() => setQuickAdd({ tab: 'invoice' })} className="btn-secondary" style={{ fontSize: '0.75rem' }}>
+            <button type="button" onClick={() => setQuickAdd({ tab: 'invoice' })} className="btn-secondary" style={{ fontSize: '0.75rem' }}>
               <FileText size={13} />
               <span>+ Invoice</span>
             </button>
@@ -175,7 +175,7 @@ export function ProjectDetailView({
         >
           <div className="swiss-card">
             <span className="swiss-label">Contract Revenue</span>
-            <div className="tnum swiss-header" style={{ fontSize: '1.85rem', color: '#f8fafc', marginTop: '0.2rem' }}>
+            <div className="tnum swiss-header" style={{ fontSize: '1.85rem', color: 'var(--text-primary)', marginTop: '0.2rem' }}>
               {formatCents(kpi.revenueCents)}
             </div>
             <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
@@ -199,8 +199,8 @@ export function ProjectDetailView({
               <span className="swiss-label">Gross Margin</span>
               <SeverityBadge level={kpi.grossMarginSeverity} />
             </div>
-            <div className="tnum swiss-header" style={{ fontSize: '1.85rem', color: '#f8fafc' }}>
-              {kpi.grossMarginPct}%
+            <div className="tnum swiss-header" style={{ fontSize: '1.85rem', color: 'var(--text-primary)' }}>
+              {kpi.grossMarginPct === null ? '—' : `${kpi.grossMarginPct}%`}
             </div>
             <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
               Gross Profit:{' '}
@@ -218,7 +218,7 @@ export function ProjectDetailView({
                 label={kpi.hourlySeverity === null ? 'NO HOURS LOGGED' : undefined}
               />
             </div>
-            <div className="tnum swiss-header" style={{ fontSize: '1.85rem', color: '#f8fafc' }}>
+            <div className="tnum swiss-header" style={{ fontSize: '1.85rem', color: 'var(--text-primary)' }}>
               {kpi.netHourlyRealizationCents === null ? (
                 '—'
               ) : (
@@ -239,7 +239,7 @@ export function ProjectDetailView({
               <span className="swiss-label">Materials Markup</span>
               <SeverityBadge level={kpi.materialsMarkupSeverity} />
             </div>
-            <div className="tnum swiss-header" style={{ fontSize: '1.85rem', color: '#f8fafc' }}>
+            <div className="tnum swiss-header" style={{ fontSize: '1.85rem', color: 'var(--text-primary)' }}>
               {kpi.materialsMarkupPct === null ? '—' : `${kpi.materialsMarkupPct}%`}
             </div>
             <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
@@ -261,14 +261,14 @@ export function ProjectDetailView({
           <div className="swiss-card" style={{ padding: 0 }}>
             <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <h3 style={{ fontSize: '0.95rem', fontWeight: 800, color: '#f8fafc' }}>
+                <h3 style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                   Materials &amp; Job Receipts ({transactions.length})
                 </h3>
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
                   Card charges filed against this job
                 </div>
               </div>
-              <button onClick={() => setQuickAdd({ tab: 'expense' })} className="btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem' }}>
+              <button type="button" onClick={() => setQuickAdd({ tab: 'expense' })} className="btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem' }}>
                 + Add Receipt
               </button>
             </div>
@@ -293,7 +293,7 @@ export function ProjectDetailView({
                     <tr key={t.id}>
                       <td className="tnum" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{t.date}</td>
                       <td>
-                        <div style={{ fontWeight: 600, color: '#f8fafc', fontSize: '0.8rem' }}>{t.vendor}</div>
+                        <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.8rem' }}>{t.vendor}</div>
                         <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{t.description}</div>
                       </td>
                       <td>
@@ -304,6 +304,7 @@ export function ProjectDetailView({
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <button
+                          type="button"
                           onClick={() => run(() => deleteTransactionAction({ id: t.id }))}
                           disabled={pending}
                           title="Delete expense"
@@ -322,14 +323,14 @@ export function ProjectDetailView({
           <div className="swiss-card" style={{ padding: 0 }}>
             <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <h3 style={{ fontSize: '0.95rem', fontWeight: 800, color: '#f8fafc' }}>
+                <h3 style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                   Labor Hours Log ({laborEntries.length})
                 </h3>
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
                   Total: {kpi.actualLaborHours} hrs ({formatCents(kpi.actualLaborCostCents)})
                 </div>
               </div>
-              <button onClick={() => setQuickAdd({ tab: 'labor' })} className="btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem' }}>
+              <button type="button" onClick={() => setQuickAdd({ tab: 'labor' })} className="btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem' }}>
                 + Log Hours
               </button>
             </div>
@@ -354,7 +355,7 @@ export function ProjectDetailView({
                     <tr key={l.id}>
                       <td className="tnum" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{l.date}</td>
                       <td>
-                        <div style={{ fontWeight: 600, color: '#f8fafc', fontSize: '0.8rem' }}>{l.workerName}</div>
+                        <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.8rem' }}>{l.workerName}</div>
                         <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{l.notes || 'Onsite labor'}</div>
                       </td>
                       <td className="tnum" style={{ textAlign: 'right', fontWeight: 700, fontSize: '0.85rem' }}>
@@ -365,6 +366,7 @@ export function ProjectDetailView({
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <button
+                          type="button"
                           onClick={() => run(() => deleteLaborEntryAction({ id: l.id }))}
                           disabled={pending}
                           title="Delete labor entry"
@@ -385,14 +387,14 @@ export function ProjectDetailView({
         <div className="swiss-card" style={{ padding: 0 }}>
           <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <h3 style={{ fontSize: '0.95rem', fontWeight: 800, color: '#f8fafc' }}>
+              <h3 style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                 Client Invoices &amp; Receivables
               </h3>
               <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
                 Billing schedule, deposits, and payment tracking
               </div>
             </div>
-            <button onClick={() => setQuickAdd({ tab: 'invoice' })} className="btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem' }}>
+            <button type="button" onClick={() => setQuickAdd({ tab: 'invoice' })} className="btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem' }}>
               + Issue Invoice
             </button>
           </div>
@@ -416,7 +418,7 @@ export function ProjectDetailView({
               <tbody>
                 {invoices.map((inv) => (
                   <tr key={inv.id}>
-                    <td style={{ fontWeight: 700, color: '#f8fafc' }}>{inv.invoiceNumber}</td>
+                    <td style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{inv.invoiceNumber}</td>
                     <td className="tnum" style={{ color: 'var(--text-secondary)' }}>{inv.dateIssued}</td>
                     <td className="tnum" style={{ color: 'var(--text-secondary)' }}>{inv.dueDate}</td>
                     <td className="tnum" style={{ textAlign: 'right', fontWeight: 700 }}>
@@ -440,13 +442,14 @@ export function ProjectDetailView({
         </div>
       </div>
 
-      <QuickAddModal
-        initialTab={quickAdd?.tab ?? 'expense'}
-        initialProjectId={project.id}
-        projects={[project]}
-        isOpen={quickAdd !== null}
-        onClose={() => setQuickAdd(null)}
-      />
+      {quickAdd !== null && (
+        <QuickAddModal
+          initialTab={quickAdd.tab}
+          initialProjectId={project.id}
+          projects={[project]}
+          onClose={() => setQuickAdd(null)}
+        />
+      )}
     </div>
   );
 }

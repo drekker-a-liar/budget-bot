@@ -58,7 +58,7 @@ export function JobCostCard({
             style={{
               fontSize: '1.05rem',
               fontWeight: 800,
-              color: '#f8fafc',
+              color: 'var(--text-primary)',
               textDecoration: 'none',
               letterSpacing: '-0.02em',
             }}
@@ -70,12 +70,14 @@ export function JobCostCard({
           </div>
         </div>
 
-        {/* Gross Margin Badge */}
+        {/* Gross Margin Badge. Null margin (no quote, nothing invoiced) is an
+            em dash on a neutral badge, as the dashboard's aggregate draws it -
+            not "0%" in red for a job nothing has happened to yet. */}
         <div style={{ textAlign: 'right' }}>
           <div className="swiss-label" style={{ marginBottom: '0.2rem' }}>GROSS MARGIN</div>
           <SeverityBadge
             level={kpi.grossMarginSeverity}
-            label={`${kpi.grossMarginPct}%`}
+            label={kpi.grossMarginPct === null ? '—' : `${kpi.grossMarginPct}%`}
             size="md"
           />
         </div>
@@ -95,7 +97,7 @@ export function JobCostCard({
       >
         <div>
           <div className="swiss-label" style={{ fontSize: '0.65rem' }}>Quoted Price</div>
-          <div className="tnum" style={{ fontSize: '1rem', fontWeight: 700, color: '#f8fafc' }}>
+          <div className="tnum" style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
             {formatCents(kpi.quotedTotalCents)}
           </div>
         </div>
@@ -123,7 +125,7 @@ export function JobCostCard({
 
         <div>
           <div className="swiss-label" style={{ fontSize: '0.65rem' }}>Realized Rate</div>
-          <div className="tnum" style={{ fontSize: '1rem', fontWeight: 700, color: '#f8fafc' }}>
+          <div className="tnum" style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
             {kpi.netHourlyRealizationCents === null ? (
               '\u2014'
             ) : (
@@ -154,13 +156,16 @@ export function JobCostCard({
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
             <Clock size={13} color="var(--accent-indigo)" />
-            Labor: <strong className="tnum" style={{ color: '#f8fafc' }}>{kpi.actualLaborHours} hrs</strong>
+            Labor: <strong className="tnum" style={{ color: 'var(--text-primary)' }}>{kpi.actualLaborHours} hrs</strong>
             <span style={{ color: 'var(--text-muted)' }}>/ {kpi.quotedLaborHours} quoted</span>
           </span>
 
           {kpi.isOverBudget && (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: 'var(--severity-critical)', fontWeight: 600 }}>
-              <AlertTriangle size={12} /> Over Budget ({kpi.budgetVariancePct}%)
+              {/* A zero-quote job with spend is over budget with no ratio to
+                  report: money against nothing. The dash keeps the shape. */}
+              <AlertTriangle size={12} /> Over Budget (
+              {kpi.budgetVariancePct === null ? '—' : `${kpi.budgetVariancePct}%`})
             </span>
           )}
         </div>
@@ -168,6 +173,7 @@ export function JobCostCard({
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
           {onOpenQuickLabor && (
             <button
+              type="button"
               onClick={() => onOpenQuickLabor(project.id)}
               className="btn-secondary"
               style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem' }}

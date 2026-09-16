@@ -72,6 +72,11 @@ export async function createImportBatch(
  * index (spec §7) will drop. `importCsvBatch` calls this in the same
  * transaction once the insert has run, so the persisted batch never claims
  * rows that were silently skipped as duplicates.
+ *
+ * The one repo function without an `ownerId` parameter on purpose: its only
+ * caller holds a batch id it created moments earlier, owner-scoped, in the
+ * same transaction. Growing another caller means growing the owner check
+ * (Phase 5 audit).
  */
 export async function updateImportBatchCounts(
   db: Executor,

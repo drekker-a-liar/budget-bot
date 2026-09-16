@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { aProject } from '@/test/helpers/props';
+import { addCalendarDays, localCalendarDate } from '@/lib/localDate';
 import type { ActionResult } from '@/src/server/actions/result';
 
 /**
@@ -47,12 +48,11 @@ const succeeded: ActionResult<{ id: string }> = { ok: true, data: { id: 'new-1' 
 function renderModal(overrides: Partial<Parameters<typeof QuickAddModal>[0]> = {}) {
   const props = {
     projects: PROJECTS,
-    isOpen: true,
     onClose: vi.fn(),
     ...overrides,
   };
-  render(<QuickAddModal {...props} />);
-  return props;
+  const { unmount } = render(<QuickAddModal {...props} />);
+  return { ...props, unmount };
 }
 
 beforeEach(() => {
@@ -63,10 +63,35 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('QuickAddModal', () => {
-  it('renders nothing at all when it is closed', () => {
-    renderModal({ isOpen: false });
+  it('starts on the job it was opened for, every time it is opened', async () => {
+    // The pages mount this only while open, so a second open is a fresh mount
+    // and the job comes from that open's `initialProjectId`. With the modal
+    // kept mounted behind an `isOpen` flag, the `useState` initialiser ran
+    // once and "log hours" on a second card filed them against the first.
+    const first = renderModal({ initialTab: 'labor', initialProjectId: 'proj-1' });
+    expect(screen.getByLabelText(/project \/ job/i)).toHaveValue('proj-1');
+    first.unmount();
 
-    expect(screen.queryByText('Quick Entry Center')).not.toBeInTheDocument();
+    renderModal({ initialTab: 'labor', initialProjectId: 'proj-2' });
+
+    expect(screen.getByLabelText(/project \/ job/i)).toHaveValue('proj-2');
+  });
+
+  it('defaults every date to the day on the browser’s clock, not the UTC day', () => {
+    // `toISOString().slice(0, 10)` is tomorrow for anyone west of Greenwich
+    // after their evening starts; `localCalendarDate` is what they can see.
+    const today = localCalendarDate();
+
+    renderModal({ initialTab: 'expense' });
+    expect(screen.getByLabelText(/purchase date/i)).toHaveValue(today);
+    cleanup();
+
+    renderModal({ initialTab: 'labor' });
+    expect(screen.getByLabelText(/work date/i)).toHaveValue(today);
+    cleanup();
+
+    renderModal({ initialTab: 'invoice' });
+    expect(screen.getByLabelText(/due date/i)).toHaveValue(addCalendarDays(today, 14));
   });
 
   it('opens on the tab the page asked for', () => {
@@ -168,6 +193,9 @@ describe('QuickAddModal', () => {
             name: 'Bathroom Remodel',
             clientName: 'S Miller',
             quotedTotal: '6,800',
+            // No field for it, but the action will not guess the day from the
+            // server's clock, so the form sends the browser's.
+            startDate: localCalendarDate(),
           })
         )
       );
@@ -198,7 +226,27 @@ describe('QuickAddModal', () => {
 
       await waitFor(() =>
         expect(actions.createLaborEntryAction).toHaveBeenCalledWith(
-          expect.objectContaining({ projectId: 'proj-1', hours: '6.5', hourlyRate: '85' })
+          expect.objectContaining({
+            projectId: 'proj-1',
+            hours: '6.5',
+            hourlyRate: '85',
+            date: localCalendarDate(),
+            // Blank, not a name: the action fills in the signed-in owner from
+            // the session. A hard-coded name here was one person's, forever.
+            workerName: '',
+          })
+        )
+      );
+    });
+
+    it('logs hours under the worker the page named, when it named one', async () => {
+      renderModal({ initialTab: 'labor', initialProjectId: 'proj-1', workerName: 'R Henderson' });
+
+      await userEvent.click(screen.getByRole('button', { name: /log labor hours/i }));
+
+      await waitFor(() =>
+        expect(actions.createLaborEntryAction).toHaveBeenCalledWith(
+          expect.objectContaining({ workerName: 'R Henderson' })
         )
       );
     });
@@ -217,6 +265,8 @@ describe('QuickAddModal', () => {
             projectId: 'proj-2',
             invoiceNumber: 'INV-2026-045',
             amount: '1950',
+            dateIssued: localCalendarDate(),
+            dueDate: addCalendarDays(localCalendarDate(), 14),
           })
         )
       );

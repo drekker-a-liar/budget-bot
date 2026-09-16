@@ -5,6 +5,7 @@ import {
   getHourlySeverity,
   getMaterialMarkupSeverity,
   getBudgetSeverity,
+  getReceivablesAgeSeverity,
 } from '../../src/metrics/thresholds';
 import { parseMoney } from '../../src/money';
 
@@ -54,5 +55,22 @@ describe('severity thresholds (characterization)', () => {
     [100.1, 'critical'],
   ])('budget spend %s%% of quote -> %s', (pct, expected) => {
     expect(getBudgetSeverity(pct)).toBe(expected);
+  });
+
+  // These two numbers sat in THRESHOLDS unused for two phases while the
+  // receivables badge graded on amount alone; now that the age of the oldest
+  // overdue invoice feeds it, the boundaries are part of the contract too.
+  it('keeps the documented receivables age thresholds at 14 / 30 days', () => {
+    expect(THRESHOLDS.RECEIVABLES_OVERDUE_DAYS).toEqual({ HEALTHY: 14, CAUTION: 30 });
+  });
+
+  it.each([
+    [1, 'healthy'],
+    [13, 'healthy'],
+    [14, 'caution'],
+    [29, 'caution'],
+    [30, 'critical'],
+  ])('%s days past due -> %s', (days, expected) => {
+    expect(getReceivablesAgeSeverity(days)).toBe(expected);
   });
 });

@@ -40,12 +40,12 @@ export function TransactionsView({
             <div className="swiss-label" style={{ marginBottom: '0.2rem' }}>
               Card Profile &amp; Transaction Ingestion
             </div>
-            <h1 className="swiss-header" style={{ fontSize: '1.85rem', color: '#f8fafc' }}>
+            <h1 className="swiss-header" style={{ fontSize: '1.85rem', color: 'var(--text-primary)' }}>
               Business Card Reconciliation Center
             </h1>
           </div>
 
-          <button onClick={() => setQuickAdd({ tab: 'expense' })} className="btn-primary">
+          <button type="button" onClick={() => setQuickAdd({ tab: 'expense' })} className="btn-primary">
             + Record Manual Receipt
           </button>
         </div>
@@ -79,7 +79,7 @@ export function TransactionsView({
           >
             <div>
               <span className="swiss-label">Connected Card</span>
-              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#f8fafc', marginTop: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <CreditCard size={18} color="var(--accent-cyan)" />
                 {cardProfile.issuer} {cardProfile.cardName}
               </div>
@@ -90,7 +90,7 @@ export function TransactionsView({
 
             <div>
               <span className="swiss-label">Current Card Balance</span>
-              <div className="tnum swiss-header" style={{ fontSize: '1.75rem', color: '#f8fafc', marginTop: '0.1rem' }}>
+              <div className="tnum swiss-header" style={{ fontSize: '1.75rem', color: 'var(--text-primary)', marginTop: '0.1rem' }}>
                 {formatCents(cardProfile.currentBalanceCents)}
               </div>
               <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
@@ -132,12 +132,13 @@ export function TransactionsView({
         />
       </div>
 
-      <QuickAddModal
-        initialTab={quickAdd?.tab ?? 'expense'}
-        projects={projects}
-        isOpen={quickAdd !== null}
-        onClose={() => setQuickAdd(null)}
-      />
+      {quickAdd !== null && (
+        <QuickAddModal
+          initialTab={quickAdd.tab}
+          projects={projects}
+          onClose={() => setQuickAdd(null)}
+        />
+      )}
     </div>
   );
 }

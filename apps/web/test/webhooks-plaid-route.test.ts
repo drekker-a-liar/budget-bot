@@ -96,6 +96,24 @@ describeDb('POST /api/webhooks/plaid', () => {
     return { status: response.status, body };
   }
 
+  it('refuses an oversized body instead of buffering it (Phase 5 audit)', async () => {
+    // The one unauthenticated POST in the app; without a cap, an unsigned
+    // request could make it buffer and hash arbitrarily many bytes.
+    const huge = `{"pad":"${'x'.repeat(1024 * 1024)}"}`;
+    const { POST } = await import('@/app/api/webhooks/plaid/route');
+
+    const response = await POST(
+      new Request('http://localhost/api/webhooks/plaid', {
+        method: 'POST',
+        headers: { [FAKE_HEADER]: bodyHashHex(huge) },
+        body: huge,
+      })
+    );
+
+    expect(response.status).toBe(413);
+    assertNoIdentifiers(await response.json());
+  });
+
   it('refuses a body whose signature does not check out', async () => {
     const { POST } = await import('@/app/api/webhooks/plaid/route');
     const response = await POST(

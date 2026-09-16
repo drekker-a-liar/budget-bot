@@ -60,9 +60,12 @@ export function calculateProjectKPIs(
   const revenueCents =
     totalInvoicedCents > 0 ? totalInvoicedCents : project.quotedTotalCents;
 
-  // Gross Profit & Margins
+  // Gross Profit & Margins. Null when there is no revenue to divide by - a job
+  // with no quote and nothing invoiced yet has no margin, not a 0% one that
+  // grades 'critical' and puts a red badge on a card for nothing happening.
+  // The dashboard aggregate and /margin already read null the same way.
   const grossProfitCents = subtractCents(revenueCents, totalDirectCostCents);
-  const grossMarginPct = percent(grossProfitCents, revenueCents) ?? 0;
+  const grossMarginPct = percent(grossProfitCents, revenueCents);
 
   // Net Hourly Realization (True earnings per hour after materials and sub
   // costs). Null when nobody has worked on the project: there is no rate to
@@ -86,8 +89,10 @@ export function calculateProjectKPIs(
         )
       : null;
 
-  // Budget Variance
-  const budgetVariancePct = percent(totalDirectCostCents, project.quotedTotalCents) ?? 0;
+  // Budget Variance: share of the quote spent so far. Null with no quote to
+  // spend against; the old `?? 0` read a zero-quote job as 0% spent and graded
+  // it 'healthy' however much had gone out the door.
+  const budgetVariancePct = percent(totalDirectCostCents, project.quotedTotalCents);
 
   return {
     projectId: project.id,
@@ -105,7 +110,8 @@ export function calculateProjectKPIs(
     grossProfitCents,
     netEarningsCents,
     grossMarginPct,
-    grossMarginSeverity: getGrossMarginSeverity(grossMarginPct),
+    grossMarginSeverity:
+      grossMarginPct === null ? null : getGrossMarginSeverity(grossMarginPct),
     netHourlyRealizationCents,
     hourlySeverity:
       netHourlyRealizationCents === null
@@ -115,7 +121,7 @@ export function calculateProjectKPIs(
     materialsMarkupSeverity:
       materialsMarkupPct === null ? null : getMaterialMarkupSeverity(materialsMarkupPct),
     budgetVariancePct,
-    budgetSeverity: getBudgetSeverity(budgetVariancePct),
+    budgetSeverity: budgetVariancePct === null ? null : getBudgetSeverity(budgetVariancePct),
     isOverBudget: totalDirectCostCents > project.quotedTotalCents,
   };
 }

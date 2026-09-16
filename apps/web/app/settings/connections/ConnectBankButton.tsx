@@ -97,7 +97,7 @@ function ConnectButton({
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.4rem' }}>
-      <button onClick={onClick} disabled={busy} className="btn-primary">
+      <button type="button" onClick={onClick} disabled={busy} className="btn-primary">
         {busy ? <Loader2 size={14} /> : <Link2 size={14} />}
         <span>{busy ? 'Connecting…' : 'Connect a bank'}</span>
       </button>

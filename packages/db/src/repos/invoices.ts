@@ -1,6 +1,6 @@
 import type { Invoice, MonthlyMarginRange } from '@budget-bot/core';
 import { and, desc, eq, gte, isNotNull, lte } from 'drizzle-orm';
-import type { Database } from '../client';
+import type { Database, Executor } from '../client';
 import { invoices } from '../schema';
 import { rejectingForeignProject } from './errors';
 import { isUuid, orUndefined, toIso } from './rows';
@@ -132,7 +132,7 @@ export async function updateInvoice(
 }
 
 /** Every invoice the owner has, gone at once (spec §6, delete-all). */
-export async function deleteAllInvoices(db: Database, ownerId: string): Promise<number> {
+export async function deleteAllInvoices(db: Executor, ownerId: string): Promise<number> {
   const deleted = await db
     .delete(invoices)
     .where(eq(invoices.ownerId, ownerId))

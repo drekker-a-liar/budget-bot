@@ -1,6 +1,7 @@
 import type { Cents } from '../money';
 import { addCents, multiplyCents, percent, subtractCents } from '../money';
 import type { ExpenseTransaction, Invoice, LaborEntry, SeverityLevel } from '../types';
+import { localDateString } from './dates';
 import { getGrossMarginSeverity } from './thresholds';
 
 export interface MonthlyMarginRange {
@@ -44,29 +45,11 @@ export interface CalculateMonthlyMarginsInput {
   timeZone: string;
 }
 
-const dateFormatters = new Map<string, Intl.DateTimeFormat>();
-
 /**
- * `postedAt` is an instant; the month (and day, for range checks) it falls on
- * depends on the owner's time zone. `en-CA` renders `Intl.DateTimeFormat` as
- * `YYYY-MM-DD` directly, so one formatted string serves both the range check
- * and the month bucket (its first 7 characters) below.
+ * Cash-basis cost date (spec §2): the bank's posted date, or the entered date.
+ * `postedAt` is an instant; the day (and so the month) it falls on depends on
+ * the owner's time zone, which is what `localDateString` settles.
  */
-function localDateString(instant: Date, timeZone: string): string {
-  let formatter = dateFormatters.get(timeZone);
-  if (!formatter) {
-    formatter = new Intl.DateTimeFormat('en-CA', {
-      timeZone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    });
-    dateFormatters.set(timeZone, formatter);
-  }
-  return formatter.format(instant);
-}
-
-/** Cash-basis cost date (spec §2): the bank's posted date, or the entered date. */
 function transactionBucketDate(transaction: ExpenseTransaction, timeZone: string): string {
   return transaction.postedAt
     ? localDateString(new Date(transaction.postedAt), timeZone)

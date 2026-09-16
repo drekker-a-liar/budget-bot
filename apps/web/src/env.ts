@@ -46,7 +46,12 @@ export const envSchema = z.object({
   AUTH_SECRET: z.string().optional(),
   AUTH_GITHUB_ID: z.string().optional(),
   AUTH_GITHUB_SECRET: z.string().optional(),
-  /** Only needed where Auth.js cannot infer the deployment URL itself. */
+  /**
+   * The deployment's own origin. Auth.js only needs it behind a proxy that
+   * rewrites the host; the Plaid webhook URL is built from it first and the
+   * request's host second, so a forged `Host` cannot choose where an item's
+   * events go (`actions/bank.ts`). Set it in Production.
+   */
   AUTH_URL: z.string().optional(),
   /** Who may sign in. Anyone not on this list is refused before a user row exists. */
   ALLOWED_EMAILS: emailList,
@@ -172,6 +177,14 @@ export function assertProductionSecurity(raw: RawEnv = process.env): void {
 
   const problems: string[] = [];
 
+  // Availability rather than disclosure, but the same shape of mistake: the
+  // schema requires it, yet the schema is only read lazily on the first
+  // request, so without this line a deployment missing its database boots
+  // and then fails on every request instead of failing once, loudly, here.
+  if (!raw.DATABASE_URL) {
+    problems.push('DATABASE_URL is missing; there is no file-backed fallback.');
+  }
+
   if (!raw.AUTH_SECRET || raw.AUTH_SECRET.length < AUTH_SECRET_MIN_LENGTH) {
     problems.push(
       `AUTH_SECRET is missing or shorter than ${AUTH_SECRET_MIN_LENGTH} characters. Generate one with \`openssl rand -base64 32\`.`
@@ -247,6 +260,15 @@ export function assertProductionSecurity(raw: RawEnv = process.env): void {
         'CRON_SECRET is missing, and PLAID_ENV=production means the sync endpoint is live.'
       );
     }
+  }
+
+  // The cron route is live whenever the secret is set, Plaid or no Plaid,
+  // and it is the credential for an endpoint that syncs every owner - so a
+  // guessable one gets the same floor AUTH_SECRET does.
+  if (raw.CRON_SECRET && raw.CRON_SECRET.length < AUTH_SECRET_MIN_LENGTH) {
+    problems.push(
+      `CRON_SECRET is shorter than ${AUTH_SECRET_MIN_LENGTH} characters. Generate one with \`openssl rand -base64 32\`.`
+    );
   }
 
   // Anything but absent or an explicit "0". The variable exists to let a test

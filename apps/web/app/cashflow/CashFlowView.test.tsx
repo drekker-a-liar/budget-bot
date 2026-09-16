@@ -2,6 +2,7 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { localCalendarDate } from '@/lib/localDate';
 import { parseMoney } from '@budget-bot/core';
 import { anInvoice } from '@/test/helpers/props';
 import {
@@ -99,8 +100,14 @@ describe('CashFlowView', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /mark paid/i }));
 
+    // Revenue is recognised on `paidDate` (ADR 0006) and the day is the one on
+    // the browser's clock: the action takes no default, because the server
+    // would have to guess the owner's day from its own.
     await waitFor(() =>
-      expect(actions.markInvoicePaidAction).toHaveBeenCalledWith({ id: 'inv-1' })
+      expect(actions.markInvoicePaidAction).toHaveBeenCalledWith({
+        id: 'inv-1',
+        paidDate: localCalendarDate(),
+      })
     );
   });
 

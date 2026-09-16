@@ -322,6 +322,29 @@ describe('verifyAndParseWebhook', () => {
     expect(client.webhookVerificationKeyGet).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects a key the server marks expired, and does not cache it (Phase 5 audit)', async () => {
+    // Plaid retires a signing key by setting `expired_at`; a verifier that
+    // keeps trusting it keeps trusting whatever leaked with it.
+    const rawBody = '{}';
+    const client = fakeClient();
+    client.webhookVerificationKeyGet.mockResolvedValue(
+      keyResponse({ expired_at: Math.floor(Date.now() / 1000) - 60 })
+    );
+    const provider = new PlaidProvider({ client });
+    const jwt = await signWebhookJwt({ rawBody });
+
+    await expect(provider.verifyAndParseWebhook(rawBody, headers(jwt))).rejects.toBeInstanceOf(
+      WebhookVerificationError
+    );
+
+    // Not cached: the next webhook asks the key server again, so a kid that
+    // was expired in error recovers without a process restart.
+    await expect(provider.verifyAndParseWebhook(rawBody, headers(jwt))).rejects.toBeInstanceOf(
+      WebhookVerificationError
+    );
+    expect(client.webhookVerificationKeyGet).toHaveBeenCalledTimes(2);
+  });
+
   it('caches the key by kid: a second webhook with the same kid does not refetch', async () => {
     const client = fakeClient();
     const provider = new PlaidProvider({ client });

@@ -15,6 +15,13 @@
       "when": 1787368205689,
       "tag": "0001_csv_cross_batch_dedupe",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787808736767,
+      "tag": "0002_strip_oauth_account_tokens",
+      "breakpoints": true
     }
   ]
 }

@@ -15,10 +15,11 @@ import { isPublicPath } from '@/lib/publicPaths';
  *
  * There is very little left under `app/api` on purpose: reads happen in Server
  * Components and writes in Server Actions (spec §6), so the only routes are
- * Auth.js's own, the health check, and the CSV upload - which is a route
- * because its caller is a file, not a person. `test/actions.test.ts` pins the
- * equivalent rule for actions, from a list it reads off
- * `src/server/actions/` the same way this one reads `app/api/`.
+ * the six the list below spells out - each one there because its caller is
+ * not a person on a page: Auth.js's own, the health check, the CSV upload,
+ * the export, the Plaid webhook and the cron safety net.
+ * `test/actions.test.ts` pins the equivalent rule for actions, from a list it
+ * reads off `src/server/actions/` the same way this one reads `app/api/`.
  */
 
 vi.mock('@/auth', () => ({ auth: vi.fn(async () => null) }));

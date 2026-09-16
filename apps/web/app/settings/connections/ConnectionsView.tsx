@@ -186,7 +186,7 @@ export function ConnectionsView({
             <div className="swiss-label" style={{ marginBottom: '0.2rem' }}>
               Bank Connections
             </div>
-            <h1 className="swiss-header" style={{ fontSize: '1.85rem', color: '#f8fafc' }}>
+            <h1 className="swiss-header" style={{ fontSize: '1.85rem', color: 'var(--text-primary)' }}>
               Where the Card Inbox Comes From
             </h1>
           </div>
@@ -199,7 +199,7 @@ export function ConnectionsView({
             <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start' }}>
               <AlertTriangle size={16} color="var(--severity-caution)" />
               <div>
-                <div style={{ fontWeight: 700, color: '#f8fafc', marginBottom: '0.25rem' }}>
+                <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.25rem' }}>
                   Plaid is not configured on this deployment.
                 </div>
                 <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
@@ -217,7 +217,7 @@ export function ConnectionsView({
             <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
               <Landmark size={16} color="var(--accent-cyan)" />
               <div>
-                <div style={{ fontWeight: 700, color: '#f8fafc' }}>No banks connected yet.</div>
+                <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>No banks connected yet.</div>
                 <p style={{ margin: '0.25rem 0 0', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
                   Connecting one fills the card inbox on its own, so charges stop having to be
                   typed in.
@@ -237,7 +237,7 @@ export function ConnectionsView({
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <Landmark size={15} color="var(--accent-cyan)" />
-                        <span style={{ fontWeight: 800, color: '#f8fafc' }}>
+                        <span style={{ fontWeight: 800, color: 'var(--text-primary)' }}>
                           {connection.institutionName ?? 'Connected bank'}
                         </span>
                         <span className={status.className}>{status.label}</span>
@@ -257,6 +257,7 @@ export function ConnectionsView({
 
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                       <button
+                        type="button"
                         onClick={() => sync(connection.id)}
                         disabled={pending}
                         className="btn-secondary"

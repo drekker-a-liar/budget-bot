@@ -37,7 +37,7 @@ function livePlaid(): RawEnv {
     PLAID_ENV: 'production',
     PLAID_CLIENT_ID: 'plaid-client-id',
     PLAID_SECRET: 'plaid-secret',
-    CRON_SECRET: 'cron-shared-secret',
+    CRON_SECRET: 'cron-shared-secret-of-32-or-more-chars',
   };
 }
 
@@ -87,6 +87,12 @@ describe('assertProductionSecurity', () => {
       { ...livePlaid(), CRON_SECRET: undefined },
       /CRON_SECRET/,
     ],
+    [
+      'the cron secret is too short to resist guessing',
+      { CRON_SECRET: 'x'.repeat(31) },
+      /CRON_SECRET/,
+    ],
+    ['there is no database', { DATABASE_URL: undefined }, /DATABASE_URL/],
     [
       'Plaid is live but has no client id',
       { ...livePlaid(), PLAID_CLIENT_ID: undefined },

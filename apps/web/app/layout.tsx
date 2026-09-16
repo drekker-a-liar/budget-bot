@@ -15,6 +15,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        {/* Read by the browser chrome before any stylesheet loads, so this cannot be
+            var(--bg-main); it is that token's value, kept in step by test/design-tokens. */}
         <meta name="theme-color" content="#0a0d14" />
       </head>
       <body>

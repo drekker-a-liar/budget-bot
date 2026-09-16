@@ -66,9 +66,20 @@ export function useTransactionInboxActions(): TransactionInboxActions {
           headers: { 'content-type': 'text/csv' },
           body: text,
         });
-        const result = await response.json();
-        if (!response.ok) {
-          setError(result.error ?? 'That file could not be imported.');
+        // Not every refusal is this route's: Vercel rejects a body over 4.5 MB
+        // before the function runs, with a 413 and a body that is not JSON.
+        // `response.json()` throws on that, and a throw inside a transition
+        // reaches nobody - the user saw the file picker close and nothing
+        // else. So the parse is allowed to fail, and the message falls back to
+        // what the status alone can say.
+        const result = await response.json().catch(() => null);
+        if (!response.ok || result === null) {
+          setError(
+            result?.error ??
+              (response.status === 413
+                ? 'That file is larger than the 4 MiB import limit.'
+                : 'That file could not be imported.')
+          );
           return;
         }
         if (result.skipped > 0) {

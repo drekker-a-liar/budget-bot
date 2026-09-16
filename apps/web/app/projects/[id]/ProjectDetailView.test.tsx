@@ -84,6 +84,18 @@ describe('ProjectDetailView', () => {
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
   });
 
+  it('shows an em dash for a margin on a job with no revenue yet', () => {
+    // A zero-quote job has nothing to take a margin of. The KPI card used to
+    // interpolate the field directly, which rendered "null%" in the headline
+    // figure - and "0%" would have been worse, a loss on a job not yet begun.
+    renderView({ kpi: aKpi({ grossMarginPct: null, grossMarginSeverity: null }) });
+
+    const card = screen.getByText('Gross Margin').closest('.swiss-card');
+    if (!card) throw new Error('no Gross Margin card');
+    expect(within(card as HTMLElement).getAllByText('—').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/null%/)).not.toBeInTheDocument();
+  });
+
   it('lists the receipts and hours filed against this job', () => {
     renderView();
 
@@ -122,7 +134,7 @@ describe('ProjectDetailView', () => {
 
   it('deletes the labor entry whose button was pressed', async () => {
     renderView();
-    const row = screen.getByText('Mike (Lead)').closest('tr')!;
+    const row = screen.getByText('Lead Carpenter').closest('tr')!;
 
     await userEvent.click(within(row).getByRole('button', { name: /delete labor entry/i }));
 

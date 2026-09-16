@@ -87,7 +87,7 @@ function ReconnectButtonUI({
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.4rem' }}>
-      <button onClick={onClick} disabled={busy} className="btn-primary" style={{ padding: '0.4rem 0.75rem', fontSize: '0.78rem' }}>
+      <button type="button" onClick={onClick} disabled={busy} className="btn-primary" style={{ padding: '0.4rem 0.75rem', fontSize: '0.78rem' }}>
         {busy ? <Loader2 size={13} /> : <RefreshCw size={13} />}
         <span>{busy ? 'Reconnecting…' : 'Reconnect'}</span>
       </button>

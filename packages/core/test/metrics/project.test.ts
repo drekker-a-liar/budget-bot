@@ -82,7 +82,12 @@ describe('calculateProjectKPIs', () => {
     expect(kpi.grossMarginPct).toBe(100);
   });
 
-  it('reports 0% rather than no percentage when there is no revenue to divide by', () => {
+  // CHANGED: `percent(...) ?? 0` on both. A job with no quote and nothing
+  // invoiced showed a 0% margin graded 'critical' (a red badge for nothing
+  // having happened) and 0% of budget spent graded 'healthy' (green whatever
+  // had been bought). The averageMarginPct aggregate already answered null for
+  // the same condition; the per-project figures now agree with it.
+  it('CHANGED: margin and budget share are null, not 0%, when there is no revenue or quote to divide by', () => {
     const project = {
       ...SEED_PROJECTS.find((p) => p.id === 'proj-5')!,
       quotedTotalCents: parseMoney(0),
@@ -90,10 +95,24 @@ describe('calculateProjectKPIs', () => {
     const kpi = calculateProjectKPIs(project, [], [], []);
 
     expect(kpi.revenueCents).toBe(0);
-    expect(kpi.grossMarginPct).toBe(0);
-    expect(kpi.grossMarginSeverity).toBe('critical');
-    expect(kpi.budgetVariancePct).toBe(0);
-    expect(kpi.budgetSeverity).toBe('healthy');
+    expect(kpi.grossMarginPct).toBeNull();
+    expect(kpi.grossMarginSeverity).toBeNull();
+    expect(kpi.budgetVariancePct).toBeNull();
+    expect(kpi.budgetSeverity).toBeNull();
+  });
+
+  it('still flags a zero-quote job as over budget once anything is spent on it', () => {
+    // No quote means no percentage, not no problem: money went out against
+    // nothing, and the boolean carries that without inventing a ratio.
+    const project = {
+      ...SEED_PROJECTS.find((p) => p.id === 'proj-4')!,
+      quotedTotalCents: parseMoney(0),
+    };
+    const kpi = calculateProjectKPIs(project, SEED_TRANSACTIONS, SEED_LABOR, []);
+
+    expect(kpi.totalDirectCostCents).toBeGreaterThan(0);
+    expect(kpi.budgetVariancePct).toBeNull();
+    expect(kpi.isOverBudget).toBe(true);
   });
 
   it('separates subcontractor cost from materials and other direct costs', () => {

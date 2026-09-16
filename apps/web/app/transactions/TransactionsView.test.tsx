@@ -153,10 +153,21 @@ describe('TransactionsView', () => {
     const CSV_TEXT = 'Date,Description,Amount\n2026-08-18,LOWES,10.00';
     const file = new File([CSV_TEXT], 'aug.csv', { type: 'text/csv' });
 
+    /**
+     * `body: null` is a response with no JSON in it - what Vercel's own 413
+     * looks like when it turns a body away before the route runs.
+     */
     function stubFetch(status: number, body: unknown) {
       vi.stubGlobal(
         'fetch',
-        vi.fn(async () => ({ ok: status < 400, json: async () => body }))
+        vi.fn(async () => ({
+          ok: status < 400,
+          status,
+          json: async () => {
+            if (body === null) throw new SyntaxError('Unexpected token < in JSON');
+            return body;
+          },
+        }))
       );
     }
 
@@ -211,15 +222,42 @@ describe('TransactionsView', () => {
     });
 
     it('reports a rejected upload and does not refresh', async () => {
-      stubFetch(413, { error: 'That file is larger than the 5 MiB import limit.' });
+      stubFetch(413, { error: 'That file is larger than the 4 MiB import limit.' });
       renderView();
 
       await userEvent.upload(screen.getByLabelText(/import csv statement/i), file);
 
       await waitFor(() =>
-        expect(screen.getByRole('alert')).toHaveTextContent(/5 MiB import limit/)
+        expect(screen.getByRole('alert')).toHaveTextContent(/4 MiB import limit/)
       );
       expect(router.refresh).not.toHaveBeenCalled();
+    });
+
+    it('still tells the user when the platform refused the body with no JSON to read', async () => {
+      // Vercel caps request bodies at 4.5 MB before the function runs and
+      // answers with an HTML 413. `response.json()` used to throw on that
+      // inside the transition, and the user saw the picker close and nothing
+      // else - the one failure that most needed a message had none.
+      stubFetch(413, null);
+      renderView();
+
+      await userEvent.upload(screen.getByLabelText(/import csv statement/i), file);
+
+      await waitFor(() =>
+        expect(screen.getByRole('alert')).toHaveTextContent(/larger than the 4 MiB import limit/)
+      );
+      expect(router.refresh).not.toHaveBeenCalled();
+    });
+
+    it('has a message for any other refusal that carried no JSON', async () => {
+      stubFetch(502, null);
+      renderView();
+
+      await userEvent.upload(screen.getByLabelText(/import csv statement/i), file);
+
+      await waitFor(() =>
+        expect(screen.getByRole('alert')).toHaveTextContent('That file could not be imported.')
+      );
     });
   });
 

@@ -8,13 +8,14 @@ import {
   type ImportedTransaction,
 } from '@budget-bot/db';
 import { currentOwnerId } from '@/lib/ownerSession';
+import { declaredBodyBytes, readCappedBody } from '@/lib/readCappedBody';
 
 /**
  * Uploading a bank statement.
  *
- * The only REST route this application keeps besides `/api/auth/*` and
- * `/api/health` (spec §6). Everything else a person does is a server action;
- * this stays a route because the caller is a file upload, which is a machine
+ * One of six route handlers (spec §6; `test/route-gating.test.ts` lists them),
+ * each here because its caller is not a person on a page. Everything else a
+ * person does is a server action; this stays a route because the caller is a file upload, which is a machine
  * shape, and because a self-hoster with a cron job and `curl` should be able
  * to feed it.
  *
@@ -55,10 +56,17 @@ const CSV_ACCOUNT = 'csv-upload';
  * A route handler has no body limit of its own, and a self-hoster running this
  * on their own box has no platform limit in front of it either, so an
  * unbounded `req.text()` is a way to fill the server's memory from outside.
- * Five MiB is generous for what this is: a year of one contractor's card
+ * Four MiB is generous for what this is: a year of one contractor's card
  * statements is well under one.
+ *
+ * Four rather than five because Vercel refuses any request body over 4.5 MB
+ * before a function runs, with a 413 whose body is not JSON and not this
+ * route's message. A cap above that line is one this route can never enforce
+ * on Vercel, so the number the user is told would have been a lie there: the
+ * platform would have said no first, in a shape the inbox could not read. Below
+ * it, the same message comes back on every deployment.
  */
-const CSV_IMPORT_MAX_BYTES = 5 * 1024 * 1024;
+const CSV_IMPORT_MAX_BYTES = 4 * 1024 * 1024;
 
 interface Upload {
   text: string;
@@ -84,48 +92,29 @@ class UploadRefused extends Error {
  * the caller can fix it by sending one.
  */
 function assertDeclaredSizeIsSane(req: Request): void {
-  const declared = req.headers.get('content-length');
-  if (declared === null) {
+  if (req.headers.get('content-length') === null) {
     throw new UploadRefused(411, 'Send a Content-Length; this endpoint will not read an unmeasured body.');
   }
 
-  const bytes = Number(declared);
-  if (!Number.isFinite(bytes) || bytes < 0) {
+  const bytes = declaredBodyBytes(req);
+  if (bytes === null) {
     throw new UploadRefused(411, 'Content-Length is not a number of bytes.');
   }
   if (bytes > CSV_IMPORT_MAX_BYTES) {
-    throw new UploadRefused(413, 'That file is larger than the 5 MiB import limit.');
+    throw new UploadRefused(413, 'That file is larger than the 4 MiB import limit.');
   }
 }
 
 /**
- * The body, read a chunk at a time and abandoned the moment it goes past the
- * cap. `Content-Length` is the caller's word for it; this is the part that
- * does not take their word.
+ * The body, capped. `Content-Length` is the caller's word for it; this is the
+ * part that does not take their word.
  */
 async function readCappedText(req: Request): Promise<string> {
-  if (!req.body) return '';
-
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  const reader = req.body.getReader();
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > CSV_IMPORT_MAX_BYTES) {
-        throw new UploadRefused(413, 'That file is larger than the 5 MiB import limit.');
-      }
-      chunks.push(value);
-    }
-  } finally {
-    await reader.cancel().catch(() => {
-      // The stream is already going away; nothing here depends on how.
-    });
+  const text = await readCappedBody(req, CSV_IMPORT_MAX_BYTES);
+  if (text === null) {
+    throw new UploadRefused(413, 'That file is larger than the 4 MiB import limit.');
   }
-
-  return new TextDecoder().decode(Buffer.concat(chunks));
+  return text;
 }
 
 /** The file, sent as a raw `text/csv` body. */
@@ -234,7 +223,15 @@ export async function POST(req: Request): Promise<NextResponse> {
     // is here for parity with every other write: a reference to a project that
     // is not the caller's is a bad request, not a server fault.
     if (error instanceof UnknownProjectError) return badRequest(error.message);
-    console.error('Failed to import CSV:', error);
+    // Never the raw error object: a driver error carries the failing `query`
+    // and its `parameters` - the caller's own transaction rows - as enumerable
+    // properties, and logging the object spills them (Phase 5 audit). The
+    // stack is kept, because a 500 on somebody else's CSV is unreproducible
+    // without one, and it says nothing the message does not already say.
+    console.error(
+      'Failed to import CSV:',
+      error instanceof Error ? (error.stack ?? `${error.name}: ${error.message}`) : String(error)
+    );
     return NextResponse.json({ error: 'Failed to import the file' }, { status: 500 });
   }
 }

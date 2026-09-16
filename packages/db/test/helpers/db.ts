@@ -35,10 +35,21 @@ async function probe(): Promise<string | null> {
 
 const skipReason = await probe();
 
-/** `describe`, unless there is no database, in which case it says why. */
+/**
+ * `describe`, unless there is no database, in which case it says why.
+ *
+ * Under `CI` a missing database is a failure, not a skip. The skip exists so
+ * `pnpm test` passes on a laptop with no Docker running; in CI the database is
+ * provisioned by the workflow, and the only way it is unreachable is a
+ * configuration mistake - which is exactly what happened when `turbo`'s strict
+ * env mode hid `DATABASE_URL_TEST` from every task and 231 tests skipped, with
+ * a reason, behind a green check for the whole of Phases 3 to 5.
+ */
 export function describeDb(name: string, suite: () => void): void {
   if (skipReason === null) {
     describe(name, suite);
+  } else if (process.env.CI) {
+    throw new Error(`${name}: database-backed suite cannot run in CI - ${skipReason}`);
   } else {
     describe.skip(`${name} [skipped: ${skipReason}]`, suite);
   }

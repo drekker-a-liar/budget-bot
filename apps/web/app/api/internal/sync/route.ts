@@ -22,6 +22,16 @@ import { runSync, syncFailureOf } from '@/src/server/bank/sync';
  * that caller more than the scheduler ever needed to see.
  */
 
+/**
+ * How long Vercel lets one run go, in seconds. The platform default is 10,
+ * and this route walks every connection on the deployment and syncs each one
+ * to the end - which with the default is a cron that times out on the second
+ * connection and never reaches the purge. 60 is the Hobby plan's ceiling; Pro
+ * allows up to 300, and a self-hoster there can raise this. Ignored outside
+ * Vercel.
+ */
+export const maxDuration = 60;
+
 /** Ledger rows older than this many days are purged on every run (spec §4). */
 const RETENTION_DAYS = 30;
 

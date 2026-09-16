@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useTransition } from 'react';
+import React, { useState, useTransition } from 'react';
 import { Project, ExpenseCategory, PricingType } from '@budget-bot/core';
 import { Receipt, Clock, Hammer, FileText, X } from 'lucide-react';
 import { createInvoiceAction } from '@/src/server/actions/invoices';
@@ -8,6 +8,7 @@ import { createLaborEntryAction } from '@/src/server/actions/labor';
 import { createProjectAction } from '@/src/server/actions/projects';
 import { createTransactionAction } from '@/src/server/actions/transactions';
 import type { ActionResult, FieldErrors } from '@/src/server/actions/result';
+import { addCalendarDays, localCalendarDate } from '@/lib/localDate';
 
 /**
  * The one place a contractor types anything in.
@@ -20,6 +21,13 @@ import type { ActionResult, FieldErrors } from '@/src/server/actions/result';
  *
  * Validation failure comes back as a value, not an exception, so the messages
  * land next to the fields and nothing the user typed is lost.
+ *
+ * The pages mount this only while it is open (`{quickAdd !== null && ...}`),
+ * so every open starts from fresh state: the tab, the job the button was
+ * pressed on, and today's date are `useState` initialisers, not effects. The
+ * modal used to stay mounted with an `isOpen` flag, and the job it was first
+ * opened for stuck for the life of the page - "log hours" on a second card
+ * silently filed them against the first.
  */
 
 export type QuickAddTab = 'project' | 'expense' | 'labor' | 'invoice';
@@ -28,7 +36,12 @@ interface QuickAddModalProps {
   initialTab?: QuickAddTab;
   initialProjectId?: string;
   projects: Project[];
-  isOpen: boolean;
+  /**
+   * Who the labor tab logs hours for. Left out, the entry is sent with a blank
+   * worker and the action fills in the signed-in owner's name from the
+   * session - a page that does not have the name to hand should not invent one.
+   */
+  workerName?: string;
   onClose: () => void;
 }
 
@@ -47,19 +60,13 @@ export function QuickAddModal({
   initialTab = 'expense',
   initialProjectId,
   projects,
-  isOpen,
+  workerName,
   onClose,
 }: QuickAddModalProps) {
   const [activeTab, setActiveTab] = useState<QuickAddTab>(initialTab);
   const [pending, startTransition] = useTransition();
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
-
-  useEffect(() => {
-    if (initialTab) {
-      setActiveTab(initialTab);
-    }
-  }, [initialTab]);
 
   // Project Form State
   const [projName, setProjName] = useState('');
@@ -78,11 +85,11 @@ export function QuickAddModal({
   const [expDesc, setExpDesc] = useState('');
   const [expAmount, setExpAmount] = useState('');
   const [expCategory, setExpCategory] = useState<ExpenseCategory>('materials');
-  const [expDate, setExpDate] = useState(new Date().toISOString().slice(0, 10));
+  const [expDate, setExpDate] = useState(() => localCalendarDate());
 
   // Labor Form State
   const [labProjectId, setLabProjectId] = useState(initialProjectId || (projects[0]?.id || ''));
-  const [labDate, setLabDate] = useState(new Date().toISOString().slice(0, 10));
+  const [labDate, setLabDate] = useState(() => localCalendarDate());
   const [labHours, setLabHours] = useState('8');
   const [labRate, setLabRate] = useState('85');
   const [labNotes, setLabNotes] = useState('');
@@ -92,11 +99,7 @@ export function QuickAddModal({
   const [invNumber, setInvNumber] = useState('');
   const [invAmount, setInvAmount] = useState('2500');
   const [invDeposit, setInvDeposit] = useState('1000');
-  const [invDueDate, setInvDueDate] = useState(
-    new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10)
-  );
-
-  if (!isOpen) return null;
+  const [invDueDate, setInvDueDate] = useState(() => addCalendarDays(localCalendarDate(), 14));
 
   /**
    * One submit path for all four tabs: clear the last complaint, run the
@@ -129,10 +132,11 @@ export function QuickAddModal({
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         {/* Modal Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-          <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#f8fafc', letterSpacing: '-0.02em' }}>
+          <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
             Quick Entry Center
           </div>
           <button
+            type="button"
             onClick={onClose}
             aria-label="Close"
             style={{
@@ -162,7 +166,7 @@ export function QuickAddModal({
             [
               ['expense', 'Receipt', Receipt, 'var(--accent-cyan)'],
               ['labor', 'Labor', Clock, 'var(--accent-indigo)'],
-              ['project', 'Project', Hammer, '#ffffff'],
+              ['project', 'Project', Hammer, 'var(--text-bright)'],
               ['invoice', 'Invoice', FileText, 'var(--severity-healthy)'],
             ] as const
           ).map(([tab, label, Icon, activeColor]) => (
@@ -339,7 +343,7 @@ export function QuickAddModal({
                 date: labDate,
                 hours: labHours,
                 hourlyRate: labRate,
-                workerName: 'Mike (Lead)',
+                workerName: workerName ?? '',
                 notes: labNotes,
               })
             }
@@ -444,6 +448,10 @@ export function QuickAddModal({
                 quotedTotal: projQuotedTotal,
                 quotedMaterials: projQuotedMaterials,
                 quotedLaborHours: projQuotedHours,
+                // Dates the form has no field for are still the browser's day,
+                // read at submit: the action has no way to know which calendar
+                // day the person is on and will not guess from the server's.
+                startDate: localCalendarDate(),
               })
             }
             style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}
@@ -567,6 +575,7 @@ export function QuickAddModal({
                 invoiceNumber: invNumber,
                 amount: invAmount,
                 depositAmount: invDeposit,
+                dateIssued: localCalendarDate(),
                 dueDate: invDueDate,
               })
             }

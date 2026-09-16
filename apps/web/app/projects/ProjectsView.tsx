@@ -56,12 +56,12 @@ export function ProjectsView({ projects, projectKPIs, unassignedCount }: Project
             <div className="swiss-label" style={{ marginBottom: '0.2rem' }}>
               Project Cost Centers
             </div>
-            <h1 className="swiss-header" style={{ fontSize: '1.85rem', color: '#f8fafc' }}>
+            <h1 className="swiss-header" style={{ fontSize: '1.85rem', color: 'var(--text-primary)' }}>
               Contract Margins &amp; Job Costing
             </h1>
           </div>
 
-          <button onClick={() => setQuickAdd({ tab: 'project' })} className="btn-primary">
+          <button type="button" onClick={() => setQuickAdd({ tab: 'project' })} className="btn-primary">
             <Plus size={14} />
             <span>New Project Estimate</span>
           </button>
@@ -72,6 +72,7 @@ export function ProjectsView({ projects, projectKPIs, unassignedCount }: Project
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
             {STATUS_FILTERS.map((st) => (
               <button
+                type="button"
                 key={st}
                 onClick={() => setStatusFilter(st)}
                 className={statusFilter === st ? 'btn-primary' : 'btn-secondary'}
@@ -117,13 +118,14 @@ export function ProjectsView({ projects, projectKPIs, unassignedCount }: Project
         )}
       </div>
 
-      <QuickAddModal
-        initialTab={quickAdd?.tab ?? 'project'}
-        initialProjectId={quickAdd?.projectId}
-        projects={projects}
-        isOpen={quickAdd !== null}
-        onClose={() => setQuickAdd(null)}
-      />
+      {quickAdd !== null && (
+        <QuickAddModal
+          initialTab={quickAdd.tab}
+          initialProjectId={quickAdd.projectId}
+          projects={projects}
+          onClose={() => setQuickAdd(null)}
+        />
+      )}
     </div>
   );
 }

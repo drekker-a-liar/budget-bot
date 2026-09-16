@@ -69,19 +69,19 @@ export function Navigation({
             <div style={{
               width: '32px',
               height: '32px',
-              background: '#2563eb',
+              background: 'var(--accent-blue)',
               borderRadius: '6px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               fontWeight: 900,
               fontSize: '1rem',
-              color: '#ffffff'
+              color: 'var(--text-bright)'
             }}>
               BB
             </div>
             <div>
-              <div style={{ fontSize: '0.95rem', fontWeight: 800, letterSpacing: '-0.02em', color: '#ffffff' }}>
+              <div style={{ fontSize: '0.95rem', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text-bright)' }}>
                 BUDGET BOT <span style={{ color: 'var(--accent-cyan)', fontSize: '0.75rem', fontWeight: 600 }}>{'// TRADE OPS'}</span>
               </div>
               <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
@@ -107,7 +107,7 @@ export function Navigation({
                     borderRadius: '6px',
                     fontSize: '0.825rem',
                     fontWeight: active ? 700 : 500,
-                    color: active ? '#ffffff' : 'var(--text-secondary)',
+                    color: active ? 'var(--text-bright)' : 'var(--text-secondary)',
                     backgroundColor: active ? 'var(--bg-panel)' : 'transparent',
                     border: active ? '1px solid var(--border-strong)' : '1px solid transparent',
                     textDecoration: 'none',
@@ -119,7 +119,7 @@ export function Navigation({
                   {item.badge !== undefined && (
                     <span style={{
                       background: 'var(--severity-critical)',
-                      color: '#ffffff',
+                      color: 'var(--text-bright)',
                       fontSize: '0.65rem',
                       fontWeight: 800,
                       padding: '0.05rem 0.4rem',
@@ -156,7 +156,7 @@ export function Navigation({
                       one machine and a lie on every other deployment. */}
                   {cardProfile.cardName || cardProfile.issuer || 'Card'} ••• {cardProfile.last4}:
                 </span>{' '}
-                <span className="tnum" style={{ fontWeight: 700, color: '#f8fafc' }}>
+                <span className="tnum" style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
                   {formatCents(cardProfile.currentBalanceCents)}
                 </span>
               </div>
@@ -167,6 +167,7 @@ export function Navigation({
           {onOpenQuickAdd && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
               <button
+                type="button"
                 onClick={() => onOpenQuickAdd('expense')}
                 className="btn-secondary"
                 style={{ padding: '0.4rem 0.65rem', fontSize: '0.75rem' }}
@@ -177,6 +178,7 @@ export function Navigation({
               </button>
 
               <button
+                type="button"
                 onClick={() => onOpenQuickAdd('labor')}
                 className="btn-secondary"
                 style={{ padding: '0.4rem 0.65rem', fontSize: '0.75rem' }}
@@ -187,6 +189,7 @@ export function Navigation({
               </button>
 
               <button
+                type="button"
                 onClick={() => onOpenQuickAdd('project')}
                 className="btn-primary"
                 style={{ padding: '0.4rem 0.75rem', fontSize: '0.75rem' }}

@@ -7,6 +7,7 @@ import {
   ExpenseTransaction,
   Project,
   ExpenseCategory,
+  ExpenseCategorySchema,
 } from '@budget-bot/core';
 import { CreditCard, Check, Upload, CheckCircle2, Trash2 } from 'lucide-react';
 
@@ -20,6 +21,21 @@ interface TransactionInboxProps {
   onImportCsv: (text: string) => void;
   onDeleteTransaction: (transactionId: string) => void;
 }
+
+/**
+ * One label per category, keyed by the enum core owns, so that a category added
+ * there is a type error here until it has a label. The filter used to be a
+ * second hand-typed list that had quietly lost `subcontractor`: a sub invoice
+ * could be filed under that category but never filtered back out.
+ */
+const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
+  materials: 'Materials',
+  tools: 'Tools & Equip',
+  subcontractor: 'Subcontractor',
+  mileage_fuel: 'Fuel & Van',
+  permits_fees: 'Permits & Fees',
+  overhead: 'Overhead',
+};
 
 export function TransactionInbox({
   transactions,
@@ -96,7 +112,7 @@ export function TransactionInbox({
             <CreditCard size={22} />
           </div>
           <div>
-            <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#f8fafc', letterSpacing: '-0.02em' }}>
+            <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
               {unassignedCount > 0 ? `${unassignedCount} Unassigned Card Transactions` : 'All Card Transactions Reconciled'}
             </div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
@@ -140,7 +156,9 @@ export function TransactionInbox({
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
           <button
+            type="button"
             onClick={() => setFilter('unassigned')}
+            aria-pressed={filter === 'unassigned'}
             className={filter === 'unassigned' ? 'btn-primary' : 'btn-secondary'}
             style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
           >
@@ -148,7 +166,9 @@ export function TransactionInbox({
           </button>
 
           <button
+            type="button"
             onClick={() => setFilter('matched')}
+            aria-pressed={filter === 'matched'}
             className={filter === 'matched' ? 'btn-primary' : 'btn-secondary'}
             style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
           >
@@ -156,7 +176,9 @@ export function TransactionInbox({
           </button>
 
           <button
+            type="button"
             onClick={() => setFilter('all')}
+            aria-pressed={filter === 'all'}
             className={filter === 'all' ? 'btn-primary' : 'btn-secondary'}
             style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
           >
@@ -181,11 +203,11 @@ export function TransactionInbox({
             style={{ width: '150px', padding: '0.35rem 0.65rem', fontSize: '0.78rem' }}
           >
             <option value="all">All Categories</option>
-            <option value="materials">Materials</option>
-            <option value="tools">Tools & Equip</option>
-            <option value="mileage_fuel">Fuel & Van</option>
-            <option value="permits_fees">Permits & Fees</option>
-            <option value="overhead">Overhead</option>
+            {ExpenseCategorySchema.options.map((category) => (
+              <option key={category} value={category}>
+                {CATEGORY_LABELS[category]}
+              </option>
+            ))}
           </select>
         </div>
       </div>
@@ -195,7 +217,7 @@ export function TransactionInbox({
         {filtered.length === 0 ? (
           <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
             <CheckCircle2 size={32} style={{ margin: '0 auto 0.75rem auto', color: 'var(--severity-healthy)' }} />
-            <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#f8fafc' }}>No transactions found</div>
+            <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)' }}>No transactions found</div>
             <div style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>
               {filter === 'unassigned'
                 ? 'All recent card charges have been matched to projects.'
@@ -226,7 +248,7 @@ export function TransactionInbox({
 
                     {/* Description & Vendor */}
                     <td>
-                      <div style={{ fontWeight: 600, color: '#f8fafc', fontSize: '0.85rem' }}>
+                      <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.85rem' }}>
                         {t.vendor}
                       </div>
                       <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.1rem' }}>
@@ -249,24 +271,23 @@ export function TransactionInbox({
                         style={{
                           background: 'var(--bg-panel)',
                           border: '1px solid var(--border-subtle)',
-                          color: '#f8fafc',
+                          color: 'var(--text-primary)',
                           padding: '0.25rem 0.4rem',
                           borderRadius: '4px',
                           fontSize: '0.72rem',
                           outline: 'none',
                         }}
                       >
-                        <option value="materials">Materials</option>
-                        <option value="tools">Tools</option>
-                        <option value="mileage_fuel">Fuel & Van</option>
-                        <option value="permits_fees">Permits</option>
-                        <option value="subcontractor">Subcontractor</option>
-                        <option value="overhead">Overhead</option>
+                        {ExpenseCategorySchema.options.map((category) => (
+                          <option key={category} value={category}>
+                            {CATEGORY_LABELS[category]}
+                          </option>
+                        ))}
                       </select>
                     </td>
 
                     {/* Amount */}
-                    <td className="tnum" style={{ textAlign: 'right', fontWeight: 700, fontSize: '0.9rem', color: '#f8fafc' }}>
+                    <td className="tnum" style={{ textAlign: 'right', fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
                       {formatCents(t.amountCents)}
                     </td>
 
@@ -281,7 +302,7 @@ export function TransactionInbox({
                             width: '100%',
                             background: t.projectId ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
                             border: `1px solid ${t.projectId ? 'rgba(16, 185, 129, 0.4)' : 'rgba(245, 158, 11, 0.4)'}`,
-                            color: t.projectId ? '#10b981' : '#f59e0b',
+                            color: t.projectId ? 'var(--severity-healthy)' : 'var(--severity-caution)',
                             padding: '0.35rem 0.5rem',
                             borderRadius: '4px',
                             fontSize: '0.75rem',
@@ -308,6 +329,7 @@ export function TransactionInbox({
                     {/* Delete button */}
                     <td style={{ textAlign: 'center' }}>
                       <button
+                        type="button"
                         onClick={() => onDeleteTransaction(t.id)}
                         style={{
                           background: 'transparent',
@@ -317,6 +339,7 @@ export function TransactionInbox({
                           padding: '0.2rem',
                         }}
                         title="Delete expense"
+                        aria-label="Delete expense"
                       >
                         <Trash2 size={13} />
                       </button>

@@ -11,14 +11,18 @@
  * them: no leading slash, and `favicon.ico`'s dot left as a regex wildcard,
  * which is how the framework's own example writes it.
  *
- * `privacy` and `api/webhooks/plaid` have no route yet. They are excluded now
- * so that adding them in a later phase is not a change to this boundary, which
- * is the kind of change that deserves review.
+ * `privacy` has no route yet. Spec §7 reserves it for the page a self-hoster
+ * publishes `docs/self-hosting/privacy-template.md` at (Plaid's Production
+ * review asks for the URL), and it is excluded now so that adding that page is
+ * not a change to this boundary, which is the kind of change that deserves
+ * review. Until then it is a 404 with no session behind it, which gives
+ * nothing away.
  *
- * `api/internal/sync` (spec §4) is excluded for a different reason than the
- * rest: it does not authenticate by session at all. The cron safety net
- * checks a bearer token itself, so a redirect-to-login from this middleware
- * would only ever be in its way.
+ * `api/webhooks/plaid` (spec §3) and `api/internal/sync` (spec §4) are
+ * excluded for a different reason than the rest: neither authenticates by
+ * session at all. The webhook verifies Plaid's signature and the cron safety
+ * net checks a bearer token, each in its own handler, so a redirect-to-login
+ * from this middleware would only ever be in their way.
  */
 const MIDDLEWARE_EXCLUSIONS = [
   '_next/static',

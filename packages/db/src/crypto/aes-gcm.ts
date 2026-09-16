@@ -35,6 +35,8 @@ const ALGORITHM = 'aes-256-gcm';
 const KEY_BYTES = 32;
 /** 96 bits: the IV length AES-GCM is specified and fastest for. */
 const IV_BYTES = 12;
+/** The full 128-bit tag. Anything shorter lowers the forgery bar. */
+const TAG_BYTES = 16;
 
 /** Hex characters of the key fingerprint written into each ciphertext. */
 const KEY_ID_LENGTH = 8;
@@ -121,9 +123,22 @@ export function decryptToken(ciphertext: string, options: DecryptTokenOptions): 
   }
   assertKeyLength(key, `Encryption key '${keyId}'`);
 
-  const decipher = createDecipheriv(ALGORITHM, key, Buffer.from(iv, 'base64'));
+  const ivBytes = Buffer.from(iv, 'base64');
+  const tagBytes = Buffer.from(tag, 'base64');
+  // GCM authenticates against however many tag bytes it is handed, so a
+  // rewritten row carrying a 4-byte tag would be forgeable in 2^32 tries.
+  // Both lengths are pinned before the cipher ever sees them, with the same
+  // message as any other failed authentication - which is what a wrong
+  // length is.
+  if (ivBytes.length !== IV_BYTES || tagBytes.length !== TAG_BYTES) {
+    throw new Error(
+      'Encrypted token failed authentication: wrong key, wrong row, or tampered ciphertext'
+    );
+  }
+
+  const decipher = createDecipheriv(ALGORITHM, key, ivBytes, { authTagLength: TAG_BYTES });
   decipher.setAAD(Buffer.from(options.aad, 'utf8'));
-  decipher.setAuthTag(Buffer.from(tag, 'base64'));
+  decipher.setAuthTag(tagBytes);
 
   try {
     return Buffer.concat([
