@@ -4,6 +4,22 @@ Notable changes, newest first. Versions follow the sub-project sequence in the
 [architecture](docs/superpowers/specs/2026-08-20-system-architecture-design.md)
 rather than a release cadence.
 
+## v0.5.1 — unreleased
+
+- When Plaid refuses a request, the connections screen now shows Plaid's own
+  sentence beside the error code (`INVALID_FIELD. Plaid said: "redirect_uri
+  must be registered: …"`), and the server log carries the same sentence with
+  Plaid's `request_id`. Until now only the code was shown, which on the first
+  production deployment left the owner guessing which of four fields in the
+  Link request had been rejected. The screen is behind the allow list, and
+  access tokens were already redacted where the message is built.
+- Three transitive dependencies moved for high advisories CI's blocking
+  `pnpm audit` caught: `axios` (the Plaid SDK's HTTP client) 1.19.0 → 1.20.0 for
+  GHSA-c29m-xwm3-cm6r, GHSA-mghh-pgcx-3jjj and two more; `source-map-js` (under
+  Next's postcss) to 1.2.2 for GHSA-68fv-2mgg-jv7q; and the `sharp` override to
+  0.35.5 for GHSA-wq5f-xc86-pv6w in librsvg. Each parent's own range already
+  allowed the fix, so these are lockfile moves and nothing else.
+
 ## v0.5.0-production — 2026-09-15
 
 Phase 5: **Docs, Security Audit, Production.** The phase where a stranger can

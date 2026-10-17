@@ -1080,20 +1080,54 @@ describe('syncing on demand', () => {
  * island's `await` rejected with a button that says "Connecting…" for ever.
  *
  * So a provider failure is a value here, mapped by the same `syncFailureOf`
- * the connection's recorded state uses, and rendered as the code rather than
- * as the provider's message.
+ * the connection's recorded state uses, and rendered as the code *and* Plaid's
+ * own sentence about it. The sentence used to be withheld, in case it echoed a
+ * request value; the first production deployment spent a fortnight on a bare
+ * `INVALID_FIELD` that Plaid's sentence would have explained in one line, and
+ * the screen is behind the allow list (see `plaidExplanation` in the action).
  */
 describe('when the provider refuses', () => {
-  it('reports a refused link token rather than throwing out of the action', async () => {
+  it('reports a refused link token with the code and what Plaid said, rather than throwing', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
     bank.createLinkToken.mockRejectedValueOnce(
-      new PlaidRequestError('INVALID_FIELD', 'redirect_uri must be registered: https://app.example')
+      new PlaidRequestError(
+        'INVALID_FIELD',
+        'INVALID_FIELD: redirect_uri must be registered: https://app.example',
+        'req-123'
+      )
     );
 
     const result = await createLinkTokenAction();
 
-    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('INVALID_FIELD') });
-    // The code, not Plaid's sentence - and certainly not a URL it echoed back.
-    expect(JSON.stringify(result)).not.toContain('must be registered');
+    expect(result).toMatchObject({
+      ok: false,
+      error:
+        'Plaid would not start a connection: INVALID_FIELD. Plaid said: "redirect_uri must be registered: https://app.example". Nothing has changed - try again.',
+    });
+    // The same sentence lands in the server log, with the request id Plaid's
+    // support asks for - and as a string, never the error object.
+    expect(logged).toHaveBeenCalledTimes(1);
+    expect(logged.mock.calls[0]).toEqual([
+      'Plaid refused a request: INVALID_FIELD: redirect_uri must be registered: https://app.example (request req-123)',
+    ]);
+    logged.mockRestore();
+  });
+
+  it('names only the code when Plaid sent no sentence, with no empty quotation', async () => {
+    // `toPlaidError` builds the message from `error_code` alone when the body
+    // has no `error_message`, so the message *is* the code. Repeating it as an
+    // explanation, or quoting an empty string, would read as a rendering bug.
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    bank.createLinkToken.mockRejectedValueOnce(new PlaidRequestError('INVALID_FIELD', 'INVALID_FIELD'));
+
+    const result = await createLinkTokenAction();
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'Plaid would not start a connection: INVALID_FIELD. Nothing has changed - try again.',
+    });
+    expect(logged).not.toHaveBeenCalled();
+    logged.mockRestore();
   });
 
   it('reports a refused exchange, and stores no connection at all', async () => {
