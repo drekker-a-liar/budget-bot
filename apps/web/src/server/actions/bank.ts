@@ -1,6 +1,6 @@
 'use server';
 
-import type { BankProvider } from '@budget-bot/bank-connectors';
+import { PlaidItemError, PlaidRequestError, type BankProvider } from '@budget-bot/bank-connectors';
 import {
   ConnectionAlreadyExistsError,
   bankRepo,
@@ -357,25 +357,72 @@ async function forgetOrphanedItem(provider: BankProvider, accessToken: string): 
  * sentence differs by operation, because "the sync stopped" is the wrong thing
  * to tell somebody whose Link token was refused before a sync existed.
  *
- * The code, never the provider's message: the message is free text from
- * somebody else's system and this is a screen (spec §9).
+ * The code first, so the row and the screen agree, then Plaid's own sentence
+ * when it sent one - the reversal of spec §9's "the code, never the message",
+ * for the reasons `plaidExplanation` gives.
  */
-function readable(error: unknown, sentence: (code: string) => string): string {
+function readable(error: unknown, sentence: Refusal): string {
   const failure = syncFailureOf(error);
   if (failure.status === 'reauth_required') {
     return 'Your bank needs you to sign in again before it will share transactions. Reconnect it to carry on.';
   }
-  return sentence(failure.code);
+  const explanation = plaidExplanation(error);
+  if (explanation !== null) {
+    // The same sentence the owner sees, so the log and the screen can be
+    // matched up later - and only strings: a Plaid error is built to carry
+    // nothing of its request, but the rule is not to log error objects at all.
+    console.error(`Plaid refused a request: ${failure.code}: ${explanation}${requestIdSuffix(error)}`);
+  }
+  return sentence(failure.code, explanation);
 }
 
-const LINK_REFUSED = (code: string) =>
-  `Plaid would not start a connection: ${code}. Nothing has changed - try again.`;
+/** A refusal sentence: the code, and Plaid's own explanation when it gave one. */
+type Refusal = (code: string, explanation: string | null) => string;
 
-const EXCHANGE_REFUSED = (code: string) =>
-  `That bank could not be connected: ${code}. Nothing has been stored - try again.`;
+/**
+ * What Plaid said, without the code it said it about.
+ *
+ * `error.message` on a provider error is `error_code: error_message` (see
+ * `describe` in `@budget-bot/bank-connectors`), or the bare code when Plaid
+ * sent no sentence. The code is already in the refusal, so only the sentence is
+ * wanted here, and a message that *is* the code yields nothing rather than an
+ * explanation that repeats it.
+ *
+ * Until Phase 5 shipped this was deliberately *not* shown: the connections
+ * screen named the code and nothing else, on the grounds that Plaid's sentence
+ * can echo a value from the request - the redirect URI, most often. The first
+ * production deployment showed what that costs. `INVALID_FIELD` on its own told
+ * the owner that *something* in the Link request was rejected and left them to
+ * guess which of four fields; Plaid's sentence names the field and the value.
+ * The screen is behind the allow list and everyone on it is fully trusted
+ * (threat model, "Who it holds it for"); the URL Plaid echoes is the
+ * deployment's own; and access tokens are redacted where the message is built.
+ * So the sentence is shown, and the log gets the same one.
+ */
+function plaidExplanation(error: unknown): string | null {
+  if (!(error instanceof PlaidRequestError) && !(error instanceof PlaidItemError)) return null;
+  const prefix = `${error.code}: `;
+  const text = error.message.startsWith(prefix) ? error.message.slice(prefix.length) : error.message;
+  return text.length === 0 || text === error.code ? null : text;
+}
 
-const SYNC_STOPPED = (code: string) =>
-  `The sync stopped: ${code}. Nothing already imported was lost - try again in a minute.`;
+/** Plaid's `request_id`, which is the one field its support asks for. */
+function requestIdSuffix(error: unknown): string {
+  return error instanceof PlaidRequestError && error.requestId ? ` (request ${error.requestId})` : '';
+}
+
+/** `Plaid said: "..."`, or nothing, so a bare code never gets an empty quotation. */
+const saidBy = (explanation: string | null) =>
+  explanation === null ? '' : ` Plaid said: "${explanation}".`;
+
+const LINK_REFUSED: Refusal = (code, explanation) =>
+  `Plaid would not start a connection: ${code}.${saidBy(explanation)} Nothing has changed - try again.`;
+
+const EXCHANGE_REFUSED: Refusal = (code, explanation) =>
+  `That bank could not be connected: ${code}.${saidBy(explanation)} Nothing has been stored - try again.`;
+
+const SYNC_STOPPED: Refusal = (code, explanation) =>
+  `The sync stopped: ${code}.${saidBy(explanation)} Nothing already imported was lost - try again in a minute.`;
 
 /**
  * Refreshes a connection's accounts and pulls everything new behind them.

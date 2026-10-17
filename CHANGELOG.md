@@ -4,6 +4,16 @@ Notable changes, newest first. Versions follow the sub-project sequence in the
 [architecture](docs/superpowers/specs/2026-08-20-system-architecture-design.md)
 rather than a release cadence.
 
+## v0.5.1 — unreleased
+
+- When Plaid refuses a request, the connections screen now shows Plaid's own
+  sentence beside the error code (`INVALID_FIELD. Plaid said: "redirect_uri
+  must be registered: …"`), and the server log carries the same sentence with
+  Plaid's `request_id`. Until now only the code was shown, which on the first
+  production deployment left the owner guessing which of four fields in the
+  Link request had been rejected. The screen is behind the allow list, and
+  access tokens were already redacted where the message is built.
+
 ## v0.5.0-production — 2026-09-15
 
 Phase 5: **Docs, Security Audit, Production.** The phase where a stranger can

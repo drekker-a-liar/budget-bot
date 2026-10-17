@@ -240,7 +240,8 @@ http://localhost:3000/plaid/oauth-return
 
 Plaid validates `redirect_uri` against that list on every `/link/token/create`,
 so an unregistered host is a Link token that is never issued — the connections
-screen shows the refusal code rather than opening Link.
+screen shows the refusal code and Plaid's own sentence about it (which names
+the field and the value it rejected) rather than opening Link.
 
 The application never takes that URI from the browser. It builds it from the
 request's own origin, falling back to `AUTH_URL`, so a caller cannot point a
