@@ -13,6 +13,12 @@ rather than a release cadence.
   production deployment left the owner guessing which of four fields in the
   Link request had been rejected. The screen is behind the allow list, and
   access tokens were already redacted where the message is built.
+- Three transitive dependencies moved for high advisories CI's blocking
+  `pnpm audit` caught: `axios` (the Plaid SDK's HTTP client) 1.19.0 → 1.20.0 for
+  GHSA-c29m-xwm3-cm6r, GHSA-mghh-pgcx-3jjj and two more; `source-map-js` (under
+  Next's postcss) to 1.2.2 for GHSA-68fv-2mgg-jv7q; and the `sharp` override to
+  0.35.5 for GHSA-wq5f-xc86-pv6w in librsvg. Each parent's own range already
+  allowed the fix, so these are lockfile moves and nothing else.
 
 ## v0.5.0-production — 2026-09-15
 
